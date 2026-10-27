@@ -1,0 +1,21 @@
+# Same posture as the platform monorepo (ADR-0010): latest stable, but only
+# releases at least 14 days old.
+minimumReleaseAge: 20160
+allowBuilds:
+  sharp: true
+
+# Conscious exception: next 16.0.0–16.4.0 carry published advisories
+# (GHSA-673q-mjm6-r5xr, GHSA-p3m5-59mp-jv5r and one more); the patch line
+# 16.4.1+ was under 14 days old when this was set. Drop these once 16.4.2 ages past
+# the gate.
+minimumReleaseAgeExclude:
+  - next@16.4.2
+  - '@next/env@16.4.2'
+  - '@next/swc-darwin-arm64@16.4.2'
+  - '@next/swc-darwin-x64@16.4.2'
+  - '@next/swc-linux-arm64-gnu@16.4.2'
+  - '@next/swc-linux-arm64-musl@16.4.2'
+  - '@next/swc-linux-x64-gnu@16.4.2'
+  - '@next/swc-linux-x64-musl@16.4.2'
+  - '@next/swc-win32-arm64-msvc@16.4.2'
+  - '@next/swc-win32-x64-msvc@16.4.2'

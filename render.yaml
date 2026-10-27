@@ -1,0 +1,12 @@
+# Render static site. Vercel and Netlify also work with no config:
+# build `pnpm build`, publish `out/`.
+services:
+  - type: web
+    name: coversight-demo
+    runtime: static
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm build
+    staticPublishPath: out
+    headers:
+      - path: /_next/static/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable
