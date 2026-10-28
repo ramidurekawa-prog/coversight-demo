@@ -17,7 +17,7 @@ import { Shell } from '../components/shell';
 export const metadata: Metadata = {
   title: 'Coversight Product Demo',
   description: 'Coversight on a sample three-room restaurant group: every figure computed, labelled with how strong the claim is, and clickable.',
-  icons: { icon: '/brand-mark.png' },
+  icons: { icon: [{ url: '/favicon-32.png', sizes: '32x32' }, { url: '/icon.png', sizes: '180x180' }], apple: '/icon.png' },
 };
 
 export const viewport: Viewport = { width: 'device-width', initialScale: 1 };
