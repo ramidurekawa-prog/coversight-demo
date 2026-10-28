@@ -405,8 +405,10 @@ const CV_FEEDS = [
   { name: "Toast", what: "Sales, items, voids, comps, covers", last: "2 minutes ago", state: "healthy", risk: 0 },
   { name: "7shifts", what: "Schedules and clock-ins", last: "18 hours ago", state: "stale", risk: 370, note: "The access token expired. Labour verification is degraded, which puts the Tuesday dinner test at risk.", fix: "Reconnect" },
   { name: "Recipe costs", what: "Plate costs, uploaded as CSV", last: "18 days ago", state: "stale", risk: CV_SALMON_WK, note: "Too old to price the salmon from. The plate-cost test is quarantined and the salmon price move can't verify.", fix: "Upload CSV" },
-  { name: "Kitchen display", what: "Ticket times by station", last: "1 hour ago", state: "partial", risk: 0, note: "Exporting daily totals only, not each ticket. Ticket-time changes can be estimated, not measured.", fix: "Fix export" },
+  { name: "Kitchen display", what: "Ticket times by station", last: "1 hour ago", state: "partial", risk: 0, note: "Exporting hourly averages by station, not each ticket. Ticket-time changes can be estimated, not measured.", fix: "Fix export" },
+  { name: "Inventory counts", what: "Monthly manual count, entered in Toast", last: "Oct 1 count", state: "partial", risk: 0, note: "Counted once a month by hand. A single count carries about ±3% error, so smaller usage gaps are noise.", fix: "Add a spot count" },
   { name: "Invoices", what: "Vendor invoices from your inbox", last: "3 days ago", state: "healthy", risk: 0 },
+  { name: "Delivery statements", what: "DoorDash and Uber Eats payouts, commissions, refunds", last: "Monday payout", state: "healthy", risk: 0 },
   { name: "QuickBooks Online", what: "Ledger, for reconciliation", last: "Sep 30 close", state: "healthy", risk: 0 },
   { name: "Waitlist", what: "Guests turned away or waiting", last: "Not connected", state: "off", risk: 0, note: "Without it, faster turns can never be claimed.", fix: "Connect" },
 ];
@@ -419,7 +421,7 @@ function CvSources() {
       <PageHead over="Sources · Rosewood Oakland" q="Can I trust these numbers?"
         sub="Freshness for each feed from its last successful sync, and the dollars each one puts at risk. If two feeds touch the same dollar, it's counted once, under the feed that would fix it first." />
       <div className="cv-grid g3">
-        <div className="cv-card" style={{ gap: 6 }}><span className="cv-xs cv-faint">Feeds healthy</span><span className="cv-fig md">3 of 7</span></div>
+        <div className="cv-card" style={{ gap: 6 }}><span className="cv-xs cv-faint">Feeds healthy</span><span className="cv-fig md">{CV_FEEDS.filter((f) => f.state === "healthy").length} of {CV_FEEDS.length}</span></div>
         <div className="cv-card" style={{ gap: 6 }}><span className="cv-xs cv-faint">Weekly value at risk</span><span className="cv-fig md cv-exp">{cvMoney(total)}</span><span className="cv-xs cv-faint">counted once across feeds</span></div>
         <div className="cv-card" style={{ gap: 6 }}><span className="cv-xs cv-faint">Fixes that clear it</span><span className="cv-fig md">2</span><span className="cv-xs cv-faint">about 6 minutes</span></div>
       </div>
@@ -548,4 +550,4 @@ function CvSystem() {
   );
 }
 
-export { CvProof, CvPacket, CvAccountant, CvLedger, CvComparison, CvSources, CvSystem };
+export { CV_FEEDS, CvProof, CvPacket, CvAccountant, CvLedger, CvComparison, CvSources, CvSystem };

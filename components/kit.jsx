@@ -5,6 +5,21 @@
  * (lucide-react), imported by name so only the icons used ship. */
 
 import {
+  LayoutGrid,
+  Package,
+  ChefHat,
+  Bike,
+  Database,
+  MessageSquareQuote,
+  RefreshCcw,
+  MonitorCog,
+  ScanSearch,
+  ChartColumn,
+  MousePointerClick,
+  Tag,
+  CloudSun,
+  Wine,
+  Heart,
   Activity,
   Archive,
   Armchair,
@@ -100,6 +115,21 @@ import {
 } from 'lucide-react';
 
 const ICONS = {
+  LayoutGrid,
+  Package,
+  ChefHat,
+  Bike,
+  Database,
+  MessageSquareQuote,
+  RefreshCcw,
+  MonitorCog,
+  ScanSearch,
+  ChartColumn,
+  MousePointerClick,
+  Tag,
+  CloudSun,
+  Wine,
+  Heart,
   Activity,
   Archive,
   Armchair,
