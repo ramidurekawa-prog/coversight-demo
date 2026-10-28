@@ -7,6 +7,9 @@ import { CV_PAGES } from '../../lib/pages';
 import { useCv, cvMoney, cvFill, CV_D, CV_GROUP, CV_ROOM, CV_NOW, CV_PERSIST, cvChoosePlan, Claim, Pill, Callout, Interval, PageHead } from './core';
 import { engine } from '../engine';
 import { LoopStrip } from './areas';
+import { tmpl } from '../../lib/data/model';
+
+const M_fillLower = (t, tokens) => { const x = tmpl(t, tokens); return x.charAt(0).toLowerCase() + x.slice(1); };
 
 /* Coversight — screens added in v2: First six weeks, Portfolio, Weekly meeting,
    Finding detail, Fences & alerts, Billing, the Ask panel, and the
@@ -134,13 +137,13 @@ function CvPortfolio() {
         <div className="cv-card" style={{ gap: 6 }}><span className="cv-xs cv-faint">Needs your attention</span><span className="cv-fig lg">{attention}</span><span className="cv-xs cv-faint">{G.alarms} alarm{G.alarms === 1 ? "" : "s"} · {G.stale} stale feed{G.stale === 1 ? "" : "s"} across {CV_ROOMS.filter((r) => r.stale).length} rooms</span></div>
       </div>
       <section className="cv-card flush">
-        <div className="cv-tablewrap">
+        <div className="cv-tablewrap" tabIndex={0} role="group" aria-label="Scrollable table">
           <table className="cv-table">
             <thead><tr><th>Room</th><th className="r">Banked /wk</th><th className="r">Earned /wk</th><th>Alarms</th><th>Tests in flight</th><th>Feeds</th><th>What's happening</th></tr></thead>
             <tbody>
               {CV_ROOMS.map((r) => (
                 <tr key={r.id} className="cv-tr" onClick={() => { cv.pickRoom(r.id); cv.go("week"); }}>
-                  <td style={{ fontWeight: 600 }}>Rosewood {r.name}</td>
+                  <td style={{ fontWeight: 600 }}>{r.d.profile.name}</td>
                   <td className="r">{cvMoney(r.banked)}</td>
                   <td className="r">{cvMoney(Math.round(r.earned))}</td>
                   <td>{r.alarms ? <Pill tone="warn" icon="Siren">{r.alarms} alarm</Pill> : <Pill tone="good" icon="ShieldCheck">Quiet</Pill>}</td>
@@ -153,7 +156,7 @@ function CvPortfolio() {
           </table>
         </div>
       </section>
-      <Callout icon="Lightbulb">{weakest.name} earns the least and has {weakest.banked ? `only ${cvMoney(weakest.banked)}` : "nothing"} banked. This week's best use of your time there: {weakest.d.room.queue[0].title.charAt(0).toLowerCase() + weakest.d.room.queue[0].title.slice(1)}.</Callout>
+      <Callout icon="Lightbulb">{weakest.name} earns the least and has {weakest.banked ? `only ${cvMoney(weakest.banked)}` : "nothing"} banked. {weakest.d.queue[0] ? <> This week&apos;s best use of your time there: {M_fillLower(weakest.d.queue[0].title, weakest.d.tokens)}.</> : null}</Callout>
       <Callout icon="MousePointerClick">Click a room to open its week. Every screen follows the room you pick.</Callout>
     </div>
   );
@@ -162,7 +165,7 @@ function CvPortfolio() {
 /* ================================================================ Weekly meeting */
 function CvMeeting() {
   const cv = useCv();
-  const CV_AGENDA = CV_D.room.meeting.map((a) => ({ ...a, body: cvFill(a.body) }));
+  const CV_AGENDA = CV_D.meeting.map((a) => ({ ...a, body: cvFill(a.body) }));
   const [i, setI] = React.useState(-1);
   const [left, setLeft] = React.useState(0);
   const [decision, setDecision] = React.useState(null);
@@ -406,7 +409,7 @@ function CvBilling() {
         </section>
       </div>
       <section className="cv-card flush">
-        <div className="cv-tablewrap">
+        <div className="cv-tablewrap" tabIndex={0} role="group" aria-label="Scrollable table">
           <table className="cv-table">
             <thead><tr><th>Month</th><th className="r">Reconciled savings</th><th className="r">Subscription</th><th className="r">Performance fee</th><th className="r">You kept, net</th></tr></thead>
             <tbody>
@@ -517,7 +520,7 @@ function CvBuild({ focus, onOpen }) {
             <span className="cv-h4">Platform gaps</span>
             <Tabs value={grade} onChange={setGrade} tabs={[{ value: "all", label: "All" }, { value: "A", label: "A" }, { value: "B", label: "B" }, { value: "C", label: "C" }, { value: "D", label: "D" }]} />
           </div>
-          <div className="cv-tablewrap">
+          <div className="cv-tablewrap" tabIndex={0} role="group" aria-label="Scrollable table">
             <table className="cv-table">
               <thead><tr><th>#</th><th>Gap</th><th>Today</th><th>Value at stake</th><th>Effort</th><th>Grade</th><th>Wave</th><th>Screens it unblocks</th></tr></thead>
               <tbody>
@@ -543,7 +546,7 @@ function CvBuild({ focus, onOpen }) {
         </section>
         <section className="cv-card flush">
           <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)" }}><span className="cv-h4">Build waves</span></div>
-          <div className="cv-tablewrap">
+          <div className="cv-tablewrap" tabIndex={0} role="group" aria-label="Scrollable table">
             <table className="cv-table">
               <thead><tr><th>Wave</th><th>Weeks</th><th>Gaps</th><th>Owner</th><th>Done when</th></tr></thead>
               <tbody>
@@ -562,9 +565,9 @@ function CvBuild({ focus, onOpen }) {
         </section>
         <section className="cv-card flush">
           <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)" }}><span className="cv-h4">Screens and what they wait on</span></div>
-          <div className="cv-tablewrap">
+          <div className="cv-tablewrap" tabIndex={0} role="group" aria-label="Scrollable table">
             <table className="cv-table">
-              <thead><tr><th>Screen</th><th>Gaps</th><th>Worst grade</th><th /></tr></thead>
+              <thead><tr><th>Screen</th><th>Gaps</th><th>Worst grade</th><th><span className="sr-only">Open</span></th></tr></thead>
               <tbody>
                 {Object.entries(CV_PAGE_DEPS).map(([p, d]) => {
                   const worst = ["A", "B", "C", "D"].find((g) => d.some((n) => CV_GAPS[n - 1].grade === g));

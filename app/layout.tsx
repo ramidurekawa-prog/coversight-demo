@@ -24,7 +24,15 @@ export const viewport: Viewport = { width: 'device-width', initialScale: 1 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        {/* Hide the sample room until a viewer's saved room is applied (no flash). Fails open after 1.5 s. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{var r=localStorage.getItem('coversight-demo:v2');if(r&&r!=='{"room":"oakland","inputs":{},"log":[]}'){document.documentElement.classList.add('cv-pending');setTimeout(function(){document.documentElement.classList.remove('cv-pending')},1500)}}catch(e){}`,
+          }}
+        />
+      </head>
       <body>
         <Shell>{children}</Shell>
       </body>

@@ -3,7 +3,7 @@
 import * as React from 'react';
 
 import { Button, Icon, Tabs } from '../kit';
-import { CV_CLAIM, CV_D, CV_ROOM, Callout, Claim, Money, Pill, PageHead, cvMoney, cvScale, useCv } from './core';
+import { CV_CLAIM, CV_D, CV_ROOM, Callout, Claim, Money, Pill, PageHead, cvMoney, cvScale, useCv, SampleNote } from './core';
 import { EXCEPTION_TYPES, controlLimits } from '../../lib/data/model';
 
 /* Operating areas (V3, from the "map of restaurant inefficiencies" sheets).
@@ -139,7 +139,7 @@ function CvControls() {
         <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)' }} className="cv-row">
           <Tabs value={type} onChange={setType} tabs={EXCEPTION_TYPES.map((t) => ({ value: t.k, label: `${t.label}${S.types[t.k].signals.length ? ` · ${S.types[t.k].signals.length}` : ''}` }))} />
         </div>
-        <div className="cv-tablewrap" style={{ maxHeight: 520, overflowY: 'auto' }}>
+        <div className="cv-tablewrap" tabIndex={0} role="group" aria-label="Scrollable table" style={{ maxHeight: 520, overflowY: 'auto' }}>
           <table className="cv-table">
             <thead><tr><th>Person</th><th className="r">Sales, 28 days</th><th className="r">{meta.label}</th><th className="r">Rate</th><th className="r">Limit for volume</th><th>Signal</th></tr></thead>
             <tbody>
@@ -204,6 +204,7 @@ function CvKitchen() {
     <div className="cv-page wide">
       <PageHead over={`Kitchen · ticket times · ${CV_ROOM.name}`} q="Where does the line slow down, and does it cost anything?"
         sub="Ticket time at the pass by hour and station. A slow kitchen only costs money when it costs a table: when the room is full and someone is waiting." />
+      <SampleNote what="Ticket times by station" />
       <LoopStrip stage={stale ? 'detect' : 'understand'} notes={{ detect: `${late} dinner hours over target`, understand: `${t.bottleneck}, Fri and Sat peak`, act: 'Waits on measured ticket times', verify: 'Needs ticket-level export' }} />
       {stale && <Callout tone="warn" icon="Clock">The kitchen display hasn&apos;t exported since Oct 21, so these are the last good weeks. {kds.note}</Callout>}
       <div className="cv-grid g-hero">
@@ -291,7 +292,7 @@ function CvInventory() {
             <p className="cv-small" style={{ lineHeight: 1.55 }}>{top.label} is the biggest: <b className="cv-num">{(+top.unexplained.toFixed(1)).toLocaleString('en-US')} {top.unit}</b> more than the plates sold needed ({top.why}), {cvMoney(Math.round(top.dollars))} this month at the current invoice price.{U.barWeek > 0 ? ` Bar pours add ${cvMoney(Math.round(U.barWeek))}/wk.` : ''}</p>
           ) : <p className="cv-small" style={{ lineHeight: 1.55 }}>Every counted item is inside its tolerance at {CV_ROOM.short}.</p>}
           {U.wasteWeek > 0 && <Callout tone="info" icon="Trash2">The waste log accounts for {cvMoney(Math.round(U.wasteWeek))}/wk of known loss. That part is explained, so it&apos;s shown separately and never counted as a usage gap.</Callout>}
-          {salmonTest && <Callout icon="Layers">The salmon gap and the salmon plate-cost test share one lever key. Whichever verifies first claims the dollars; the other can&apos;t.</Callout>}
+          {salmonTest && CV_D.usage.flagged.some((r) => r.item === "Salmon fillet") && <Callout icon="Layers">The salmon gap and the salmon plate-cost test share one lever key. Whichever verifies first claims the dollars; the other can&apos;t.</Callout>}
           <div className="cv-row">
             <Button icon="ClipboardList" onClick={() => cv.go('inputs', { kind: 'counts' })}>Enter a spot count</Button>
             <Button variant="secondary" icon="Trash2" onClick={() => cv.go('inputs', { kind: 'waste' })}>Log waste</Button>
@@ -299,7 +300,7 @@ function CvInventory() {
         </section>
       </div>
       <section className="cv-card flush">
-        <div className="cv-tablewrap">
+        <div className="cv-tablewrap" tabIndex={0} role="group" aria-label="Scrollable table">
           <table className="cv-table">
             <thead><tr><th>Item</th><th>Should use</th><th className="r">Theoretical</th><th className="r">Actual</th><th className="r">Logged waste</th><th className="r">Unexplained</th><th className="r">Gap</th><th className="r">Unit cost</th><th className="r">28-day cost</th></tr></thead>
             <tbody>
@@ -364,7 +365,7 @@ function CvChannels() {
         </section>
       </div>
       <section className="cv-card flush">
-        <div className="cv-tablewrap">
+        <div className="cv-tablewrap" tabIndex={0} role="group" aria-label="Scrollable table">
           <table className="cv-table">
             <thead><tr><th>Channel</th><th className="r">Sales / wk</th><th className="r">Orders</th><th className="r">Food</th><th className="r">Commission or card fees</th><th className="r">Packaging</th><th className="r">Refunds</th><th className="r">Contribution</th></tr></thead>
             <tbody>
@@ -423,7 +424,7 @@ function CvCoverage() {
         ))}
       </ol>
       <section className="cv-card flush">
-        <div className="cv-tablewrap">
+        <div className="cv-tablewrap" tabIndex={0} role="group" aria-label="Scrollable table">
           <table className="cv-table cv-areas">
             <thead><tr><th>Area</th><th>What leaks</th><th>Data it reads</th><th>How it&apos;s shown</th><th>At {CV_ROOM.short}</th><th className="r">What the data supports</th></tr></thead>
             <tbody>

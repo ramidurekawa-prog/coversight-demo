@@ -27,7 +27,7 @@ const CV_NOW = NOW;
 const CV_ACCRUAL_START = M.ACCRUAL_START;
 const CV_DAYS_TO_DATE = M.DAYS_TO_DATE;
 const CV_SUB = M.SUBSCRIPTION;
-const CV_LOCS = LOCS;
+let CV_LOCS = LOCS;
 const CV_PERSIST = M.PERSIST;
 const cvPriceMove = M.priceMove;
 const cvPriceMoveInterval = M.priceMoveInterval;
@@ -54,10 +54,12 @@ function cvLoad(ds, roomId) {
   CV_PRICE_LEG = CV_D.inv.priceLeg;
   CV_MIX_LEG = CV_D.inv.mixLeg;
   CV_EXPOSURE = CV_D.exposure;
+  /* The sample menu's salmon; a replaced menu may not have one. */
   const salmon = CV_MENU.find((m) => m.key === "salmon");
-  CV_SALMON = cvPriceMoveInterval(salmon, salmon.price + 2);
+  CV_SALMON = salmon ? cvPriceMoveInterval(salmon, salmon.price + 2) : { delta: 0, lost: 0, lo: 0, hi: 0 };
   CV_SALMON_WK = Math.round(CV_SALMON.delta);
   CV_SALMON_LOST = Math.round(CV_SALMON.lost);
+  CV_LOCS = LOCS.map((l) => ds.rooms[l.id]?.profile || l);
   CV_PROOF = CV_D.allProof;
   CV_DAILY = CV_D.banked.daily;
   CV_DERIV = buildDeriv(CV_D);
@@ -73,6 +75,15 @@ const CV_OUTCOME = {
   inconclusive: { label: "Inconclusive", tone: "neutral", icon: "CircleHelp" },
   directional: { label: "Directionally positive", tone: "neutral", icon: "TrendingUp" },
 };
+
+/* Hour-by-hour operating figures (staffing need by hour, ticket times, seat
+   use, tonight's pacing) come from 7shifts, the kitchen display and the
+   waitlist, which manual inputs don't cover. Once a room carries your own
+   data, those screens say plainly that these parts are still the sample. */
+function SampleNote({ what, why }) {
+  if (!CV_D || !CV_D.ownData) return null;
+  return <Callout icon="FlaskConical">{what} on this screen {/s$/.test(what) ? "are" : "is"} still sample. {why || "It needs 7shifts, the kitchen display and the waitlist connected; nothing entered by hand reaches it."}</Callout>;
+}
 
 /** Text with {tokens} filled from the current room. */
 function cvFill(str) { return M.tmpl(str, CV_D.tokens); }
@@ -203,7 +214,7 @@ function Interval({ lo, pt, hi, min, max, billedLabel = "billed" }) {
   const x = (v) => `${((v - min) / span) * 100}%`;
   return (
     <div className="cv-col" style={{ gap: 4 }}>
-      <div className="cv-interval" aria-label={`Interval ${cvMoney(lo)} to ${cvMoney(hi)}, point ${cvMoney(pt)}`}>
+      <div className="cv-interval" role="img" aria-label={`Interval ${cvMoney(lo)} to ${cvMoney(hi)}, point ${cvMoney(pt)}`}>
         <span className="track" />
         <span className="band" style={{ left: x(lo), width: `calc(${x(hi)} - ${x(lo)})` }} />
         <span className="lo" style={{ left: x(lo) }} />
@@ -429,4 +440,4 @@ function MiniBars({ values, color = "var(--accent)", h = 48, neg = "var(--money-
 
 cvLoad(SEED, "oakland");
 
-export { CvCtx, useCv, cvMoney, cvPct, cvRound, cvLoad, cvFill, cvApproval, CV_DS, CV_D, CV_GROUP, CV_ROOM, CV_NOW, CV_DAILY, CV_ACCRUAL_START, CV_DAYS_TO_DATE, CV_SUB, CV_LOCS, CV_MENU, CV_CM_UNWEIGHTED, CV_CM_WEIGHTED, cvPriceMove, cvPriceMoveInterval, CV_INVOICES, CV_PRICE_LEG, CV_MIX_LEG, CV_PERSIST, cvPlanCandidates, cvChoosePlan, CV_EXPOSURE, CV_SALMON, CV_SALMON_WK, CV_SALMON_LOST, CV_PROOF, CV_OUTCOME, CV_DERIV, CV_CLAIM, Claim, Money, Pill, Outcome, Callout, Interval, PageHead, DerivDrawer, ApprovalModal, CV_APPROVALS, cvScale, MiniBars };
+export { CvCtx, useCv, cvMoney, cvPct, cvRound, cvLoad, cvFill, cvApproval, CV_DS, CV_D, CV_GROUP, CV_ROOM, CV_NOW, CV_DAILY, CV_ACCRUAL_START, CV_DAYS_TO_DATE, CV_SUB, CV_LOCS, CV_MENU, CV_CM_UNWEIGHTED, CV_CM_WEIGHTED, cvPriceMove, cvPriceMoveInterval, CV_INVOICES, CV_PRICE_LEG, CV_MIX_LEG, CV_PERSIST, cvPlanCandidates, cvChoosePlan, CV_EXPOSURE, CV_SALMON, CV_SALMON_WK, CV_SALMON_LOST, CV_PROOF, CV_OUTCOME, CV_DERIV, CV_CLAIM, Claim, Money, Pill, Outcome, Callout, Interval, PageHead, SampleNote, DerivDrawer, ApprovalModal, CV_APPROVALS, cvScale, MiniBars };
