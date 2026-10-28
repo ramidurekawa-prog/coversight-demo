@@ -5,6 +5,7 @@ import * as React from 'react';
 import { Icon, Button, Tabs } from '../kit';
 import { CV_PAGES } from '../../lib/pages';
 import { useCv, cvMoney, CV_NOW, CV_PERSIST, cvPlanCandidates, cvChoosePlan, CV_SALMON_WK, Claim, Pill, Callout, Interval, PageHead } from './core';
+import { LoopStrip } from './areas';
 
 /* Coversight — screens added in v2: First six weeks, Portfolio, Weekly meeting,
    Finding detail, Fences & alerts, Billing, the Ask panel, and the
@@ -27,12 +28,17 @@ const CV_GAPS = [
   { n: 13, title: "Invoicing on the reconciled figure, with credits", state: "No billing surface", value: "The commercial model, made visible", effort: "M", grade: "C", wave: 4 },
   { n: 14, title: "Notification service (one message per service)", state: "No push or SMS", value: "Service screen only works if the phone buzzes", effort: "M", grade: "B", wave: 1 },
   { n: 15, title: "Copilot answers only from records, with lineage", state: "\"Ask SKC\" button with no grounding contract", value: "Plain-language access without new risk", effort: "M", grade: "C", wave: 5 },
+  { n: 16, title: "Kitchen display ticket-level export", state: "Hourly station averages only", value: "Ticket times measured, not estimated", effort: "S", grade: "C", wave: 3 },
+  { n: 17, title: "Usage variance: depletion × recipe vs counts + invoices", state: "No theoretical-vs-actual; counts are monthly", value: "Waste, portioning and pours become a lever", effort: "M", grade: "B", wave: 3 },
+  { n: 18, title: "Per-person exception limits (voids, comps, discounts)", state: "Comp chart exists for one bar; nothing per person", value: "Register leakage found in days, with a known false-alarm rate", effort: "S", grade: "B", wave: 1 },
+  { n: 19, title: "Delivery statement ingestion + channel contribution", state: "Channel totals only; no commissions or refunds", value: "Channel pricing tests with takeout as control", effort: "M", grade: "C", wave: 3 },
+  { n: 20, title: "Review and loyalty feeds", state: "Guest retention has no data", value: "Ties order errors to repeat visits", effort: "M", grade: "D", wave: 5 },
 ];
 const CV_WAVES = [
   { w: 0, name: "Make the number real", weeks: "1–3", owner: "Engineer + Claude Code", done: "The Rosewood $97 comes out of the pipeline with an interval; a dead feed reads stale" },
   { w: 1, name: "Close the labour loop", weeks: "3–6", owner: "Engineer", done: "One real \"cut one server at 8\" approved on a phone writes back and opens a window" },
   { w: 2, name: "Weeks 0–6 and the meeting", weeks: "4–7", owner: "You (design) + Claude Code", done: "A new tenant gets useful value on day 1 with $0 banked" },
-  { w: 3, name: "New levers", weeks: "6–10", owner: "Engineer", done: "Purchasing split reconciles to invoices to the cent; menu prices from data or refuses" },
+  { w: 3, name: "New levers", weeks: "6–10", owner: "Engineer", done: "Purchasing split reconciles to invoices to the cent; menu prices from data or refuses; usage gaps tie counts to invoices" },
   { w: 4, name: "The accountant", weeks: "10–14", owner: "Engineer + a pilot's controller", done: "One September-style package signed by a real controller; invoice cites it" },
   { w: 5, name: "Scale extras", weeks: "14+", owner: "Engineer", done: "Waitlist connected at one room; copilot answers cite records" },
 ];
@@ -40,6 +46,7 @@ const CV_PAGE_DEPS = {
   today: [3, 4], service: [4, 5, 8, 14], week: [1, 3, 8], portfolio: [1, 3, 8], meeting: [1, 8, 11], plan: [2, 7],
   finding: [2, 6, 7], menu: [7], labour: [4, 5], throughput: [12], purchasing: [6], proof: [1, 2], packet: [1, 2, 10],
   ledger: [1, 9, 10], accountant: [9], billing: [9, 13], comparison: [2], sources: [3], start: [3, 4, 6], fences: [11, 14], system: [11],
+  coverage: [3, 16, 17, 18, 19, 20], inventory: [6, 17], kitchen: [12, 16], controls: [8, 18], channels: [19],
 };
 const CV_GRADE_TONE = { A: "bad", B: "warn", C: "info", D: "neutral" };
 
@@ -83,7 +90,7 @@ function CvStart() {
           <ul className="cv-ul">
             <li><Icon name="ShieldCheck" size={15} />Two overtime moves before Thursday kept $96 of premium from happening. We show it, and we never bill it.</li>
             <li><Icon name="Truck" size={15} />Valley Greens raised romaine 29.7%. That's a phone call you can make today, no test needed.</li>
-            <li><Icon name="Cable" size={15} />Your kitchen display was exporting daily totals only. Fixed, so ticket times can now be measured.</li>
+            <li><Icon name="Cable" size={15} />Your kitchen display was exporting hourly averages only. Fixed, so ticket times can now be measured.</li>
             <li><Icon name="Timer" size={15} />The first test is registered before it starts, so nobody can move the goalposts later.</li>
           </ul>
           <Callout icon="Info">Slow on purpose. A restaurant week is noisy, and a saving has to stand out from an ordinary busy or quiet night before we'll put it on an invoice.</Callout>
@@ -241,6 +248,7 @@ function CvFinding({ params }) {
     <div className="cv-page">
       <button className="cv-link" onClick={() => cv.go("plan")}><Icon name="ArrowLeft" size={14} />The plan</button>
       <PageHead over={`Finding · ${c.lever} · Rosewood Oakland`} q={c.title} right={chosen.has(c.id) ? <Pill tone="good" icon="Check">Chosen this week</Pill> : <Pill icon="Clock">Not chosen this week</Pill>} />
+      <LoopStrip stage={chosen.has(c.id) ? "act" : "understand"} notes={{ detect: ev ? ev.detector : "Found in your data", understand: c.claim === "obs" ? "Read straight from your systems" : "Modelled from your own history", act: chosen.has(c.id) ? "In this week's plan" : "Waiting for manager time", verify: c.prevent ? "Prevented cost: never counted" : `${Math.round(c.p * 100)}% chance it verifies` }} />
       <div className="cv-grid g-hero">
         <section className="cv-card">
           <div className="cv-card-head"><span className="cv-over">Expected effect</span><Claim k={c.claim} /></div>
@@ -538,7 +546,7 @@ function CvBuild({ focus, onOpen }) {
                   const worst = ["A", "B", "C", "D"].find((g) => d.some((n) => CV_GAPS[n - 1].grade === g));
                   return (
                     <tr key={p}>
-                      <td style={{ fontWeight: 600 }}>{CV_PAGES[p].title}{CV_PAGES[p].added && <span className="cv-xs" style={{ marginLeft: 8, color: "var(--teal-700)", fontWeight: 700 }}>ADDED IN V2</span>}</td>
+                      <td style={{ fontWeight: 600 }}>{CV_PAGES[p].title}{CV_PAGES[p].added && <span className="cv-xs" style={{ marginLeft: 8, color: "var(--teal-700)", fontWeight: 700 }}>ADDED IN {CV_PAGES[p].added === true ? "V2" : CV_PAGES[p].added}</span>}</td>
                       <td className="n">{d.join(", ")}</td>
                       <td><Pill tone={CV_GRADE_TONE[worst]} icon="Flag">{worst}</Pill></td>
                       <td className="r"><button className="cv-link" onClick={() => onOpen(p, true)}>Open screen <Icon name="ArrowRight" size={14} /></button></td>

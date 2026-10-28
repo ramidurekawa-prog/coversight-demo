@@ -7,6 +7,7 @@ import { CvPlan, CvService, CvThisWeek, CvToday } from './screens/week';
 import { CvLabour, CvMenu, CvPurchasing, CvThroughput } from './screens/levers';
 import { CvAccountant, CvComparison, CvLedger, CvPacket, CvProof, CvSources, CvSystem } from './screens/proof';
 import { CvBilling, CvBuild, CvFences, CvFinding, CvMeeting, CvPortfolio, CvStart } from './screens/extra';
+import { CvChannels, CvControls, CvCoverage, CvInventory, CvKitchen } from './screens/areas';
 import { pathFor } from '../lib/pages';
 
 /** Page id → screen component. Every key in CV_PAGES has one (tests check). */
@@ -22,6 +23,11 @@ export const SCREENS = {
   labour: CvLabour,
   throughput: CvThroughput,
   purchasing: CvPurchasing,
+  coverage: CvCoverage,
+  inventory: CvInventory,
+  kitchen: CvKitchen,
+  controls: CvControls,
+  channels: CvChannels,
   proof: CvProof,
   packet: CvPacket,
   ledger: CvLedger,

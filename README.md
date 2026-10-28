@@ -33,7 +33,7 @@ pnpm start          # serve out/ locally
 |---|---|
 | Every day | Today, Service |
 | Every week | This week (home), All rooms, Weekly meeting, The plan → Finding |
-| Levers | Menu, Labour, Throughput, Purchasing |
+| Levers | Coverage map (all 12 operating areas), Labour, Menu, Purchasing, Inventory & waste, Kitchen, Throughput, Controls, Delivery & channels |
 | Proof | Proof → Verification packet, Savings ledger, Accountant, Billing |
 | Setup | First six weeks, Comparison, Sources, Fences & alerts, System |
 | Build plan | `/build`: the platform gaps behind each screen, graded, in build order |
@@ -53,7 +53,11 @@ gaps behind it.
 4. **All rooms** (room switcher): Walnut Creek's September, reconciled to
    the ledger.
 5. **Billing**: the fee is a share of what's bookable, never what's estimated.
-6. **Build plan**: what has to exist behind each screen before it's real.
+6. **Coverage map**: twelve operating areas on one closed loop (detect →
+   understand → act → verify), each with the one figure the data supports.
+   The column is deliberately not summed.
+7. **Controls**: one server above her own control limit; the room inside its.
+8. **Build plan**: what has to exist behind each screen before it's real.
 
 ## Layout
 
@@ -61,7 +65,7 @@ gaps behind it.
 app/                 routes (static export) + globals.css (design tokens + kit)
 components/shell.jsx sidebar, top bar, drawers, toasts
 components/screen.jsx page id → screen component
-components/screens/  the screens and the sample data (core.jsx)
+components/screens/  the screens and the sample data (core.jsx; areas.jsx = V3 operating areas)
 lib/pages.js         page registry, nav, roles, URLs
 tests/               pinned figures, routing, icon coverage
 ```
