@@ -3,7 +3,7 @@
 import * as React from 'react';
 
 import { Icon, Button } from '../kit';
-import { useCv, cvMoney, cvFill, CV_D, CV_ROOM, CV_NOW, CV_PERSIST, cvPlanCandidates, cvChoosePlan, Claim, Money, Pill, Callout, Interval, PageHead, cvScale } from './core';
+import { useCv, cvMoney, cvFill, CV_D, CV_ROOM, CV_NOW, CV_PERSIST, cvPlanCandidates, cvChoosePlan, Claim, Money, Pill, Callout, Interval, PageHead, cvScale, SampleNote } from './core';
 
 /* Coversight — weekly and daily surfaces: This week, Today, Service, The plan.
    Everything reads the current room (CV_D). */
@@ -103,8 +103,8 @@ function CvThisWeek() {
       <div className="cv-grid g2">
         <section className="cv-card">
           <span className="cv-h4">What alarmed</span>
-          {d.room.alarms.length === 0 && <Callout tone="good" icon="ShieldCheck">Nothing alarmed at {CV_ROOM.short}. Every control chart moved a little and stayed inside its limits.</Callout>}
-          {d.room.alarms.map((a) => (
+          {d.alarms.length === 0 && <Callout tone="good" icon="ShieldCheck">Nothing alarmed at {CV_ROOM.short}. Every control chart moved a little and stayed inside its limits.</Callout>}
+          {d.alarms.map((a) => (
             <div key={a.title} className="cv-row nowrap" style={{ alignItems: 'flex-start', gap: 12 }}>
               <span className="cv-q-ico warn"><Icon name="Siren" size={18} /></span>
               <div className="cv-col" style={{ gap: 4 }}>
@@ -165,7 +165,7 @@ function CvThisWeek() {
 /* ================================================================ Today (work queue) */
 function CvToday() {
   const cv = useCv();
-  const queue = CV_D.room.queue.map((q) => ({ ...q, value: cvFill(q.value), body: cvFill(q.body) }));
+  const queue = CV_D.queue.map((q) => ({ ...q, title: cvFill(q.title), value: cvFill(q.value), body: cvFill(q.body) }));
   const [done, setDone] = React.useState({});
   const [refused, setRefused] = React.useState({});
   const left = queue.filter((q) => !done[q.id] && !refused[q.id]);
@@ -261,6 +261,7 @@ function CvService() {
     <div className="cv-page">
       <PageHead over={`The only screen a manager opens during service · ${CV_ROOM.name}`} q="Is tonight going the way it should?"
         sub="Live pacing against a comparable night, an intraday forecast with its band, and at most one labour decision. Built for a phone in one hand." />
+      <SampleNote what="Tonight’s pacing" />
       <div className="cv-phone-stage">
         <div className="cv-phone" aria-label="Phone view">
           <span className="notch" />
@@ -290,7 +291,7 @@ function CvService() {
               <span style={{ fontWeight: 700, fontSize: 'var(--text-lg)' }}>{s.title}</span>
               <span className="cv-small cv-muted" style={{ lineHeight: 1.5 }}>{s.body} Saves <Money id="service-cut">{cvMoney(s.value)}</Money> tonight.</span>
               <div className="cv-row" style={{ gap: 8 }}>
-                <Button className="btn-lg" style={{ flex: 1 }} onClick={() => cv.approve(s.approval, () => setState('yes'))}>{s.yes}</Button>
+                <Button className="btn-lg" style={{ flex: 1 }} onClick={() => cv.approve(s.approval, () => setState('yes'))}>{CV_D.ownData ? 'Yes, cut one server at 8' : s.yes}</Button>
                 <Button variant="secondary" className="btn-lg" onClick={() => { setState('no'); cv.toast('Kept everyone on. Logged as declined.'); }}>Not tonight</Button>
               </div>
             </section>

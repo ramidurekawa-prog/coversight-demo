@@ -3,7 +3,7 @@
 import * as React from 'react';
 
 import { Icon, Button, Tabs } from '../kit';
-import { useCv, cvMoney, CV_D, CV_ROOM, CV_LOCS, CV_MENU, CV_CM_WEIGHTED, cvPriceMove, cvPriceMoveInterval, CV_INVOICES, CV_PRICE_LEG, CV_MIX_LEG, CV_PROOF, Claim, Money, Pill, Outcome, Callout, Interval, PageHead, cvApproval, cvScale } from './core';
+import { useCv, cvMoney, CV_D, CV_ROOM, CV_LOCS, CV_MENU, CV_CM_WEIGHTED, cvPriceMove, cvPriceMoveInterval, CV_INVOICES, CV_PRICE_LEG, CV_MIX_LEG, CV_PROOF, Claim, Money, Pill, Outcome, Callout, Interval, PageHead, cvApproval, cvScale, SampleNote } from './core';
 
 /* Coversight — the four levers: Menu, Labour, Throughput, Purchasing. */
 
@@ -17,7 +17,7 @@ function MenuScatter({ sel, onSel }) {
   const selItem = CV_MENU.find((m) => m.key === sel);
   const nearSel = (m) => selItem && m.key !== sel && Math.abs(m.units - selItem.units) < 30 && Math.abs(m.cm - selItem.cm) < 1.5;
   return (
-    <svg className="cv-chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Menu items by weekly units and contribution margin">
+    <svg className="cv-chart" viewBox={`0 0 ${W} ${H}`} role="group" aria-label="Menu items by weekly units and contribution margin. Each dish is a button.">
       {Array.from({ length: maxCM / 4 + 1 }, (_, i) => i * 4).map((v) => <g key={v}><line className="grid" x1={P.l} x2={W - P.r} y1={y(v)} y2={y(v)} /><text x={P.l - 8} y={y(v) + 3} textAnchor="end">${v}</text></g>)}
       {Array.from({ length: Math.floor(maxU / 50) + 1 }, (_, i) => i * 50).map((v) => <text key={v} x={x(v)} y={H - 14} textAnchor="middle">{v}</text>)}
       <text className="lbl" x={W - P.r} y={H - 2} textAnchor="end">units per week →</text>
@@ -30,7 +30,7 @@ function MenuScatter({ sel, onSel }) {
           <g key={m.key} style={{ cursor: "pointer" }} onClick={() => onSel(m.key)} tabIndex={0} role="button" aria-label={`${m.name}, ${m.units} a week, $${m.cm.toFixed(2)} margin`}
             onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSel(m.key); } }}>
             <circle cx={x(m.units)} cy={y(m.cm)} r={on ? 8 : 5.5} fill={on ? "var(--accent)" : "var(--surface)"} stroke={m.e == null ? "var(--fg-3)" : "var(--accent)"} strokeWidth="2" strokeDasharray={m.e == null ? "2 2" : undefined} />
-            {(on || (["salmon", "ribeye", "burger", "benedict"].includes(m.key) && !nearSel(m))) && (
+            {(on || ((["salmon", "ribeye", "burger", "benedict"].includes(m.key) || m.added) && !nearSel(m))) && (
               <text className="lbl" x={m.units > maxU * 0.75 ? x(m.units) - 10 : x(m.units) + 10} y={m.units > maxU * 0.75 ? y(m.cm) - 10 : y(m.cm) + 4} textAnchor={m.units > maxU * 0.75 ? "end" : "start"} style={{ fontWeight: on ? 700 : 400, fill: on ? "var(--fg-1)" : "var(--fg-2)" }}>{m.name}</text>
             )}
           </g>
@@ -61,7 +61,7 @@ function CvMenu() {
             <span className="cv-h4">Every dish, by how often it sells and what it earns</span>
             <Claim k="obs" />
           </div>
-          <MenuScatter sel={sel} onSel={setSel} />
+          <MenuScatter sel={item.key} onSel={setSel} />
           <div className="cv-legend">
             <span><i className="line" style={{ background: "var(--accent)" }} />Weighted by units: what a dish actually earns on average</span>
             <span><i className="ring" style={{ borderColor: "var(--fg-3)", borderStyle: "dashed" }} />Not enough price history</span>
@@ -106,7 +106,7 @@ function CvMenu() {
       </div>
 
       <section className="cv-card flush">
-        <div className="cv-tablewrap">
+        <div className="cv-tablewrap" tabIndex={0} role="group" aria-label="Scrollable table">
           <table className="cv-table">
             <thead><tr><th>Dish</th><th className="r">Price</th><th className="r">Plate cost</th><th className="r">Food cost</th><th className="r">Margin</th><th className="r">Per week</th><th className="r">Elasticity</th><th className="r">+$1 is worth</th></tr></thead>
             <tbody>
@@ -175,6 +175,7 @@ function CvLabour() {
     <div className="cv-page wide">
       <PageHead over={`Labour · ${CV_ROOM.name} · ${CV_D.room.staff.length} people, ${cvMoney(Math.round(CV_D.week.labour))} this week`} q="How many people does each hour need, and did the last change work?"
         sub="Staffing from your measured service rate, with short hours shown beside idle ones. A schedule that only ever cuts is not one anyone should trust." />
+      <SampleNote what="The hour-by-hour staffing needs" />
       <div className="cv-grid g4">
         {[["Idle server-hours this week", `${L.kpis.idle} h`, "cv-exp", "obs"], ["Short server-hours this week", `${L.kpis.short} h`, "cv-down", "obs"], ["Your measured service rate", L.kpis.rate.toFixed(2), "", "obs"], ["Last change", lastLab ? `${cvMoney(lastLab.bookable)}/wk` : "$0", lastLab ? "cv-up" : "", lastLab ? "book" : "none"]].map(([k, v, c, cl]) => (
           <div key={k} className="cv-card" style={{ gap: 6 }}>
@@ -209,7 +210,7 @@ function CvLabour() {
         </section>
       </div>
       <section className="cv-card flush">
-        <div className="cv-tablewrap">
+        <div className="cv-tablewrap" tabIndex={0} role="group" aria-label="Scrollable table">
           <table className="cv-table">
             <thead><tr><th>Recent labour changes</th><th>Room</th><th>Outcome</th><th className="r">Bookable /wk</th></tr></thead>
             <tbody>
@@ -238,6 +239,7 @@ function CvThroughput() {
     <div className="cv-page">
       <PageHead over={`Throughput · ${CV_ROOM.name}`} q="Is the room constrained, and is a faster turn worth anything?"
         sub="A faster turn only earns money when the room is full and people are waiting. So the first number is how often the room is actually full." />
+      <SampleNote what="The seat-use and ceiling figures" />
       <div className="cv-grid g-hero">
         <section className="cv-card">
           <span className="cv-over">Claimable from faster turns this week</span>
@@ -257,7 +259,7 @@ function CvThroughput() {
         </section>
       </div>
       <section className="cv-card flush">
-        <div className="cv-tablewrap">
+        <div className="cv-tablewrap" tabIndex={0} role="group" aria-label="Scrollable table">
           <table className="cv-table">
             <thead><tr><th>Day</th><th><span className="cv-row" style={{ gap: 6 }}><Icon name="Sun" size={13} />Lunch, share of time full</span></th><th><span className="cv-row" style={{ gap: 6 }}><Icon name="Moon" size={13} />Dinner, share of time full</span></th></tr></thead>
             <tbody>
@@ -340,7 +342,7 @@ function CvPurchasing() {
         </section>
       </div>
       <section className="cv-card flush">
-        <div className="cv-tablewrap">
+        <div className="cv-tablewrap" tabIndex={0} role="group" aria-label="Scrollable table">
           <table className="cv-table">
             <thead><tr><th>Item</th><th>Vendor</th><th className="r">Unit price before</th><th className="r">Now</th><th className="r">Change</th><th className="r">Vendor's part</th><th className="r">Your part</th></tr></thead>
             <tbody>

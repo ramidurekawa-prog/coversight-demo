@@ -26,7 +26,7 @@ function Sidebar({ page, role, onNavigate }) {
       <div className="sb-head">
         <div className="cv-brand">
           <span className="glyph">
-            <img src="/brand-mark.png" alt="" width="30" height="30" />
+            <picture><source srcSet="/brand-mark.webp" type="image/webp" /><img src="/brand-mark-96.png" alt="" width="30" height="30" /></picture>
           </span>
           <span className="wm">Coversight</span>
         </div>
@@ -53,7 +53,7 @@ function Sidebar({ page, role, onNavigate }) {
                     <Icon name={p.icon} size={18} />
                   </span>
                   {p.title}
-                  {id === 'today' && <span className="count">{CV_D.room.queue.length}</span>}
+                  {id === 'today' && <span className="count">{CV_D.queue.length}</span>}
                   {p.isNew && <span className="cv-new">New</span>}
                   {p.dot && <span className="cv-dot" title="2 feeds stale" />}
                 </Link>
@@ -188,7 +188,7 @@ function TopBar({ page, loc, onLoc, role, onRole, go, onMenu, onAsk }) {
 
 function ModeStrip({ build }) {
   return (
-    <div className="cv-strip">
+    <nav className="cv-strip" aria-label="Demo view">
       <div className="seg" role="tablist" aria-label="View">
         <Link role="tab" aria-selected={!build} className={`cv-seg-link${!build ? ' on' : ''}`} href="/">
           Finished product
@@ -212,7 +212,7 @@ function ModeStrip({ build }) {
       <span className="cv-strip-pill">
         <Pill icon="FlaskConical">Demo · sample restaurant group</Pill>
       </span>
-    </div>
+    </nav>
   );
 }
 
@@ -232,8 +232,12 @@ export function Shell({ children }) {
   const scrollRef = React.useRef(null);
   const toastTimer = React.useRef(null);
 
-  // Restore a viewer's room and inputs once, after the first render.
-  React.useEffect(() => { engine.hydrate(); }, []);
+  // Restore a viewer's room and inputs before first paint; the inline head
+  // script hides the sample room until this has run, so nothing flashes.
+  React.useLayoutEffect(() => {
+    engine.hydrate();
+    document.documentElement.classList.remove('cv-pending');
+  }, []);
 
   // Each screen opens at the top, like a new page.
   React.useEffect(() => {
@@ -248,6 +252,11 @@ export function Shell({ children }) {
     clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(null), 4200);
   }, []);
+  // A saved state that couldn't be loaded resets itself and says so once.
+  React.useEffect(() => {
+    if (eng.notice) { showToast(eng.notice); engine.dismissNotice(); }
+  }, [eng.notice, showToast]);
+
   const ctx = React.useMemo(
     () => ({
       go,
@@ -282,7 +291,10 @@ export function Shell({ children }) {
     return (
       <CvCtx.Provider value={ctx}>
         <ModeStrip build />
-        <div className="cv-host"><React.Fragment key={`${eng.room}-${eng.version}`}>{children}</React.Fragment></div>
+        <main className="cv-host">
+          <h1 className="sr-only">Build plan</h1>
+          <React.Fragment key={`${eng.room}-${eng.version}`}>{children}</React.Fragment>
+        </main>
       </CvCtx.Provider>
     );
   }
@@ -296,7 +308,7 @@ export function Shell({ children }) {
           {navOpen && <div className="cv-scrim" style={{ zIndex: 'calc(var(--z-drawer) - 1)' }} onClick={() => setNavOpen(false)} />}
           <div className="content">
             <TopBar page={page} loc={loc} onLoc={chooseLoc} role={role} onRole={chooseRole} go={go} onMenu={() => setNavOpen(true)} onAsk={() => setAsk(true)} />
-            <main className="scroll" ref={scrollRef}>
+            <main className="scroll" ref={scrollRef} tabIndex={0} aria-label="Screen">
               <React.Fragment key={`${eng.room}-${eng.version}`}>{children}</React.Fragment>
             </main>
           </div>

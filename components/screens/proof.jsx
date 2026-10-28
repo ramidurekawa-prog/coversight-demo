@@ -3,7 +3,7 @@
 import * as React from 'react';
 
 import { Icon, Button, Tabs } from '../kit';
-import { useCv, cvMoney, CV_D, CV_DS, CV_GROUP, CV_ROOM, CV_DAYS_TO_DATE, CV_LOCS, CV_PROOF, CV_OUTCOME, Claim, Money, Pill, Outcome, Callout, Interval, PageHead, cvScale } from './core';
+import { useCv, cvMoney, CV_D, CV_DS, CV_GROUP, CV_ROOM, CV_DAYS_TO_DATE, CV_LOCS, CV_PROOF, CV_OUTCOME, Claim, Money, Pill, Outcome, Callout, Interval, PageHead, cvScale, SampleNote } from './core';
 
 /* Coversight — proof surfaces: Proof, Verification packet, Accountant, Savings ledger,
    Comparison, Sources, System. */
@@ -23,6 +23,7 @@ function CvProof() {
         sub="Every claimed dollar with its controls, interval, gates and how long it lasts. The ones that failed stay on screen with the reason, because a ledger that only goes up isn't a ledger."
         right={<>
           <Tabs value={scope} onChange={setScope} tabs={[{ value: "all", label: "All rooms" }, { value: "oakland", label: "Oakland" }, { value: "berkeley", label: "Berkeley" }, { value: "walnut", label: "Walnut Creek" }]} />
+      <SampleNote what="The verification history" why="Banked dollars come from tests that ran for weeks on the sample group. A real restaurant starts at $0 banked, and its first result lands after its first test window closes." />
         </>} />
       <div className="cv-life">
         {[["Verified", ["verified", "limited"]], ["In testing", ["testing"]], ["Data failure", ["data"]], ["Reversed", ["reversed"]], ["Inconclusive", ["inconclusive"]], ["Directional only", ["directional"]]].map(([k, ks]) => (
@@ -38,7 +39,7 @@ function CvProof() {
         <Button variant="secondary" icon="FileOutput" onClick={() => cv.go("accountant")}>Package for your accountant</Button>
       </div>
       <section className="cv-card flush">
-        <div className="cv-tablewrap">
+        <div className="cv-tablewrap" tabIndex={0} role="group" aria-label="Scrollable table">
           <table className="cv-table">
             <thead><tr><th>Change</th><th>Room</th><th>Outcome</th><th className="r">Bookable /wk</th><th className="r">Measured interval</th><th>Status</th></tr></thead>
             <tbody>
@@ -214,7 +215,7 @@ function CvAccountant() {
         <span className="cv-small cv-muted">Fee basis for this claim: <b className="cv-num">≤ $1,447</b>. If your books support less than our lower bound, the claim is capped at your figure and the gap is shown. We never argue with the books.</span>
       </section>
       <section className="cv-card flush">
-        <div className="cv-tablewrap">
+        <div className="cv-tablewrap" tabIndex={0} role="group" aria-label="Scrollable table">
           <table className="cv-table">
             <thead><tr><th>Claim</th><th>Room</th><th>Account</th><th className="r">Operational</th><th className="r">Reconciled</th><th>Status</th></tr></thead>
             <tbody>
@@ -376,7 +377,7 @@ function CvComparison() {
       <PageHead over="Comparison" q="Which of my rooms runs best?"
         sub="Your three rooms, compared with each other. Peer benchmarks unlock when there are 40 comparable rooms in the network. Until then, we won't pretend to compare you with rooms like yours." />
       <div className="cv-legend" style={{ fontSize: "var(--text-sm)" }}>
-        {CV_SHAPES.map((s) => <span key={s.loc}><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">{s.draw(8, 8)}</svg>Rosewood {s.loc}</span>)}
+        {CV_SHAPES.map((s, i) => <span key={s.loc}><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">{s.draw(8, 8)}</svg>{CV_LOCS[i].name}</span>)}
       </div>
       <section className="cv-card flush">
         {CV_CMP.map((m, idx) => {
@@ -526,7 +527,7 @@ function CvSystem() {
           <div className="cv-row" style={{ padding: "14px 16px", borderBottom: "1px solid var(--border)", justifyContent: "space-between" }}>
             <span className="cv-h4">Sixteen roles</span><span className="cv-xs cv-faint">Most can only read or propose</span>
           </div>
-          <div className="cv-tablewrap" style={{ maxHeight: 460, overflowY: "auto" }}>
+          <div className="cv-tablewrap" tabIndex={0} role="group" aria-label="Scrollable table" style={{ maxHeight: 460, overflowY: "auto" }}>
             <table className="cv-table">
               <tbody>
                 {CV_AGENTS.map(([n, w, a]) => (

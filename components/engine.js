@@ -4,6 +4,7 @@ import * as React from 'react';
 
 import { applyInputs, KIND_LABEL } from '../lib/data/apply';
 import { SEED } from '../lib/data/seed';
+import { KINDS } from '../lib/data/ingest';
 import { cvLoad } from './screens/core';
 
 /* The demo's data engine: which room is loaded, what's been entered by hand,
@@ -11,11 +12,14 @@ import { cvLoad } from './screens/core';
  * `version`, which the shell uses to re-render every screen.
  *
  * Browser storage keeps a viewer's inputs and room across visits. It's a
- * convenience only: reads and writes are wrapped, and the demo works the same
- * with storage blocked (it just starts fresh). */
+ * convenience only: every read is validated, a failed load resets to the
+ * sample group instead of breaking the page, and the demo works the same with
+ * storage blocked. Bump KEY when the input shape changes so old saves are
+ * dropped rather than misread. */
 
-const KEY = 'coversight-demo:v1';
-const INITIAL = { room: 'oakland', inputs: {}, log: [], version: 0 };
+const KEY = 'coversight-demo:v2';
+const OLD_KEYS = ['coversight-demo:v1'];
+const INITIAL = { room: 'oakland', inputs: {}, log: [], version: 0, notice: null };
 let state = INITIAL;
 const subs = new Set();
 
@@ -25,8 +29,44 @@ function persist() {
     window.localStorage.setItem(KEY, JSON.stringify({ room: state.room, inputs: state.inputs, log: state.log }));
   } catch { /* storage blocked: keep going in memory */ }
 }
+function clearSaved() {
+  try {
+    window.localStorage.removeItem(KEY);
+    OLD_KEYS.forEach((k) => window.localStorage.removeItem(k));
+  } catch { /* ignore */ }
+}
+
+const isObj = (v) => v != null && typeof v === 'object' && !Array.isArray(v);
+
+/** Keep only what the current dataset understands; drop everything else. */
+export function sanitizeSaved(saved) {
+  if (!isObj(saved)) return null;
+  const room = typeof saved.room === 'string' && SEED.rooms[saved.room] ? saved.room : 'oakland';
+  const inputs = {};
+  if (isObj(saved.inputs)) {
+    Object.entries(saved.inputs).forEach(([roomId, kinds]) => {
+      if (!SEED.rooms[roomId] || !isObj(kinds)) return;
+      Object.entries(kinds).forEach(([kind, entry]) => {
+        if (!KINDS.includes(kind) || !isObj(entry) || !Array.isArray(entry.rows) || !entry.rows.every(isObj)) return;
+        inputs[roomId] ??= {};
+        inputs[roomId][kind] = { rows: entry.rows, date: String(entry.date || ''), label: KIND_LABEL[kind], n: entry.rows.length, ...(isObj(entry.opts) ? { opts: entry.opts } : {}) };
+      });
+    });
+  }
+  const log = Array.isArray(saved.log) ? saved.log.filter((e) => isObj(e) && typeof e.id === 'string' && KINDS.includes(e.kind) && SEED.rooms[e.room]).slice(0, 50) : [];
+  return { room, inputs, log };
+}
+
+/** Re-derive; if the data can't be derived, fall back to the sample group and say so. */
 function reload() {
-  cvLoad(applyInputs(SEED, state.inputs), state.room);
+  try {
+    cvLoad(applyInputs(SEED, state.inputs), state.room);
+  } catch (err) {
+    console.error('Coversight demo: could not load saved data, resetting', err);
+    state = { ...state, room: SEED.rooms[state.room] ? state.room : 'oakland', inputs: {}, log: [], notice: 'Saved demo data couldn’t be loaded, so the demo is back on the sample group.' };
+    clearSaved();
+    cvLoad(SEED, state.room);
+  }
   state = { ...state, version: state.version + 1 };
   emit();
 }
@@ -38,14 +78,28 @@ export const engine = {
   server: () => INITIAL,
   subscribe(f) { subs.add(f); return () => subs.delete(f); },
 
-  /** Restore a viewer's room and inputs after first render (keeps hydration identical to the server). */
+  /** True when a viewer has a non-default saved state (the shell holds paint until it's applied). */
+  hasSaved() {
+    try {
+      const raw = window.localStorage.getItem(KEY);
+      return !!raw && raw !== JSON.stringify({ room: 'oakland', inputs: {}, log: [] });
+    } catch { return false; }
+  },
+
+  /** Restore a viewer's room and inputs (called from a layout effect, before first paint). */
   hydrate() {
+    let raw = null;
+    try { raw = window.localStorage.getItem(KEY); } catch { raw = null; }
+    try { OLD_KEYS.forEach((k) => window.localStorage.removeItem(k)); } catch { /* ignore */ }
+    if (!raw) return;
     let saved = null;
-    try { saved = JSON.parse(window.localStorage.getItem(KEY) || 'null'); } catch { saved = null; }
-    if (!saved) return;
-    state = { ...state, room: saved.room || 'oakland', inputs: saved.inputs || {}, log: saved.log || [] };
+    try { saved = sanitizeSaved(JSON.parse(raw)); } catch { saved = null; }
+    if (!saved) { clearSaved(); return; }
+    state = { ...state, ...saved };
     if (state.room !== 'oakland' || Object.keys(state.inputs).length) reload();
   },
+
+  dismissNotice() { state = { ...state, notice: null }; emit(); },
 
   setRoom(id) {
     if (!id || id === state.room || !SEED.rooms[id]) return;
@@ -55,9 +109,9 @@ export const engine = {
   },
 
   /** Commit validated rows for one kind in one room. Replaces that kind's previous entry. */
-  commit(kind, roomId, rows, summary) {
+  commit(kind, roomId, rows, summary, opts) {
     const prev = state.inputs[roomId]?.[kind] || null;
-    const entry = { rows, date: today(), label: KIND_LABEL[kind], n: rows.length };
+    const entry = { rows, date: today(), label: KIND_LABEL[kind], n: rows.length, ...(opts ? { opts } : {}) };
     const id = `${Date.now().toString(36)}-${kind}`;
     state = {
       ...state,
@@ -85,9 +139,17 @@ export const engine = {
 
   /** Back to the sample restaurant group. */
   reset() {
-    state = { ...state, inputs: {}, log: [] };
+    state = { ...state, inputs: {}, log: [], notice: null };
     persist();
     reload();
+  },
+
+  /** Hard reset from the error screen: clears storage even if the engine never loaded. */
+  hardReset() {
+    clearSaved();
+    state = { ...INITIAL, version: state.version + 1 };
+    try { cvLoad(SEED, 'oakland'); } catch { /* the seed always loads */ }
+    emit();
   },
 };
 

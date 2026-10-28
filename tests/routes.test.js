@@ -13,7 +13,7 @@ describe('routing', () => {
     expect([...PACKET_IDS].sort()).toEqual(CV_PROOF.map((r) => r.id).sort());
     expect(FINDING_IDS).toEqual(expect.arrayContaining(cvPlanCandidates().map((c) => c.id)));
     expect(new Set(FINDING_IDS).size).toBe(FINDING_IDS.length);
-    expect(FINDING_IDS.length).toBe(30);
+    expect(FINDING_IDS.length).toBe(32); // 30 sample findings + 2 own-dish price moves created by inputs
     expect(PACKET_IDS).toContain(DEFAULT_IDS.packet);
     expect(FINDING_IDS).toContain(DEFAULT_IDS.finding);
   });
