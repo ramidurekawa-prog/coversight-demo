@@ -11,7 +11,9 @@ describe('routing', () => {
 
   test('pre-rendered ids match the screens’ own data', () => {
     expect([...PACKET_IDS].sort()).toEqual(CV_PROOF.map((r) => r.id).sort());
-    expect([...FINDING_IDS].sort()).toEqual(cvPlanCandidates().map((c) => c.id).sort());
+    expect(FINDING_IDS).toEqual(expect.arrayContaining(cvPlanCandidates().map((c) => c.id)));
+    expect(new Set(FINDING_IDS).size).toBe(FINDING_IDS.length);
+    expect(FINDING_IDS.length).toBe(30);
     expect(PACKET_IDS).toContain(DEFAULT_IDS.packet);
     expect(FINDING_IDS).toContain(DEFAULT_IDS.finding);
   });

@@ -6,7 +6,8 @@ import * as React from 'react';
 
 import { CV_NAV, CV_PAGES, CV_ROLES, GROUP_PAGES, pageFromPath, pathFor } from '../lib/pages';
 import { Button, Icon } from './kit';
-import { ApprovalModal, Claim, CV_APPROVALS, CV_CLAIM, CV_LOCS, CV_NOW, CvCtx, DerivDrawer, Pill } from './screens/core';
+import { ApprovalModal, Claim, cvApproval, CV_CLAIM, CV_D, CV_LOCS, CV_NOW, CvCtx, DerivDrawer, Pill } from './screens/core';
+import { engine, useEngine } from './engine';
 import { CV_PAGE_DEPS, CvAsk } from './screens/extra';
 
 /* The app chrome around every screen: a strip that switches between the
@@ -16,7 +17,9 @@ import { CV_PAGE_DEPS, CvAsk } from './screens/extra';
  * live here so any screen can open them through CvCtx. */
 
 function Sidebar({ page, role, onNavigate }) {
-  const r = CV_ROLES[role];
+  const base = CV_ROLES[role];
+  const gm = CV_D.profile.gm;
+  const r = role === 'gm' ? { ...base, person: gm, sub: `GM · ${CV_D.profile.short}`, initials: gm.split(' ').map((w) => w[0]).join('') } : base;
   const groups = CV_NAV.filter((g) => !r.nav || r.nav.includes(g.label));
   return (
     <aside className="sidebar" aria-label="Main navigation">
@@ -50,7 +53,7 @@ function Sidebar({ page, role, onNavigate }) {
                     <Icon name={p.icon} size={18} />
                   </span>
                   {p.title}
-                  {id === 'today' && <span className="count">5</span>}
+                  {id === 'today' && <span className="count">{CV_D.room.queue.length}</span>}
                   {p.isNew && <span className="cv-new">New</span>}
                   {p.dot && <span className="cv-dot" title="2 feeds stale" />}
                 </Link>
@@ -135,9 +138,15 @@ function TopBar({ page, loc, onLoc, role, onRole, go, onMenu, onAsk }) {
         </button>
         {pop === 'legend' && <LegendPop onClose={() => setPop(null)} />}
       </div>
-      <button className="cv-health cv-hide-sm" onClick={() => go('sources')} title="2 feeds stale">
-        <i />2 feeds stale
-      </button>
+      {CV_D.staleCount > 0 ? (
+        <button className="cv-health cv-hide-sm" onClick={() => go('sources')} title={`${CV_D.staleCount} feeds stale`}>
+          <i />{CV_D.staleCount} feed{CV_D.staleCount === 1 ? '' : 's'} stale
+        </button>
+      ) : (
+        <button className="cv-health cv-hide-sm" onClick={() => go('sources')} title="All feeds fresh">
+          <Icon name="CircleCheck" size={15} color="var(--success-600)" />Feeds fresh
+        </button>
+      )}
       <div className="cv-pop-wrap">
         <button className="locpick" onClick={() => setPop(pop === 'loc' ? null : 'loc')} aria-expanded={pop === 'loc'}>
           <Icon name="MapPin" size={15} color="var(--accent)" />
@@ -146,7 +155,7 @@ function TopBar({ page, loc, onLoc, role, onRole, go, onMenu, onAsk }) {
         </button>
         {pop === 'loc' && (
           <div className="cv-pop" role="menu">
-            {CV_LOCS.filter((x) => x.id === 'oakland' || x.id === 'all').map((x) => (
+            {CV_LOCS.map((x) => (
               <button
                 key={x.id}
                 role="menuitem"
@@ -159,7 +168,7 @@ function TopBar({ page, loc, onLoc, role, onRole, go, onMenu, onAsk }) {
                 <Icon name={x.id === 'all' ? 'Building2' : 'Store'} size={16} />
                 <span>
                   {x.name}
-                  <small>{x.id === 'all' ? 'Oakland, Berkeley and Walnut Creek together' : `${x.addr} · ${x.seats} seats`}</small>
+                  <small>{x.id === 'all' ? 'Oakland, Berkeley and Walnut Creek together' : `${x.addr} · ${x.seats} seats · GM ${x.gm}`}</small>
                 </span>
               </button>
             ))}
@@ -211,7 +220,9 @@ export function Shell({ children }) {
   const router = useRouter();
   const pathname = usePathname();
   const { page } = pageFromPath(pathname);
-  const [loc, setLoc] = React.useState('oakland');
+  const eng = useEngine();
+  const [allMode, setAllMode] = React.useState(false);
+  const loc = allMode ? 'all' : eng.room;
   const [role, setRole] = React.useState('owner');
   const [deriv, setDeriv] = React.useState(null);
   const [approval, setApproval] = React.useState(null);
@@ -221,6 +232,9 @@ export function Shell({ children }) {
   const scrollRef = React.useRef(null);
   const toastTimer = React.useRef(null);
 
+  // Restore a viewer's room and inputs once, after the first render.
+  React.useEffect(() => { engine.hydrate(); }, []);
+
   // Each screen opens at the top, like a new page.
   React.useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
@@ -228,6 +242,7 @@ export function Shell({ children }) {
   }, [pathname]);
 
   const go = React.useCallback((p, params) => router.push(pathFor(p, params)), [router]);
+  const pickRoom = React.useCallback((id) => { setAllMode(false); engine.setRoom(id); }, []);
   const showToast = React.useCallback((m) => {
     setToast(m);
     clearTimeout(toastTimer.current);
@@ -237,12 +252,15 @@ export function Shell({ children }) {
     () => ({
       go,
       loc,
+      room: eng.room,
+      version: eng.version,
+      pickRoom,
       role,
       openDeriv: (id) => setDeriv(id),
       approve: (id, onOk) => setApproval({ id, onOk }),
       toast: showToast,
     }),
-    [go, loc, role, showToast],
+    [go, loc, eng.room, eng.version, pickRoom, role, showToast],
   );
 
   const chooseRole = (r) => {
@@ -251,16 +269,20 @@ export function Shell({ children }) {
   };
   // Room screens walk through Oakland; group screens read every room.
   const chooseLoc = (id) => {
-    setLoc(id);
-    if (id === 'all' && !GROUP_PAGES.includes(page)) go('portfolio');
-    if (id !== 'all' && page === 'portfolio') go('week');
+    if (id === 'all') {
+      setAllMode(true);
+      if (!GROUP_PAGES.includes(page)) go('portfolio');
+      return;
+    }
+    pickRoom(id);
+    if (page === 'portfolio') go('week');
   };
 
   if (page === 'build') {
     return (
       <CvCtx.Provider value={ctx}>
         <ModeStrip build />
-        <div className="cv-host">{children}</div>
+        <div className="cv-host"><React.Fragment key={`${eng.room}-${eng.version}`}>{children}</React.Fragment></div>
       </CvCtx.Provider>
     );
   }
@@ -275,7 +297,7 @@ export function Shell({ children }) {
           <div className="content">
             <TopBar page={page} loc={loc} onLoc={chooseLoc} role={role} onRole={chooseRole} go={go} onMenu={() => setNavOpen(true)} onAsk={() => setAsk(true)} />
             <main className="scroll" ref={scrollRef}>
-              {children}
+              <React.Fragment key={`${eng.room}-${eng.version}`}>{children}</React.Fragment>
             </main>
           </div>
         </div>
@@ -288,7 +310,7 @@ export function Shell({ children }) {
           onClose={() => setApproval(null)}
           onConfirm={(id) => {
             approval.onOk && approval.onOk();
-            showToast(`${CV_APPROVALS[id].title}: approved and written back.`);
+            showToast(`${cvApproval(id).title}: approved and written back.`);
           }}
         />
       )}

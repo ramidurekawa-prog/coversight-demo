@@ -4,7 +4,8 @@ import * as React from 'react';
 
 import { Icon, Button, Tabs } from '../kit';
 import { CV_PAGES } from '../../lib/pages';
-import { useCv, cvMoney, CV_NOW, CV_PERSIST, cvPlanCandidates, cvChoosePlan, CV_SALMON_WK, Claim, Pill, Callout, Interval, PageHead } from './core';
+import { useCv, cvMoney, cvFill, CV_D, CV_GROUP, CV_ROOM, CV_NOW, CV_PERSIST, cvChoosePlan, Claim, Pill, Callout, Interval, PageHead } from './core';
+import { engine } from '../engine';
 import { LoopStrip } from './areas';
 
 /* Coversight — screens added in v2: First six weeks, Portfolio, Weekly meeting,
@@ -33,6 +34,7 @@ const CV_GAPS = [
   { n: 18, title: "Per-person exception limits (voids, comps, discounts)", state: "Comp chart exists for one bar; nothing per person", value: "Register leakage found in days, with a known false-alarm rate", effort: "S", grade: "B", wave: 1 },
   { n: 19, title: "Delivery statement ingestion + channel contribution", state: "Channel totals only; no commissions or refunds", value: "Channel pricing tests with takeout as control", effort: "M", grade: "C", wave: 3 },
   { n: 20, title: "Review and loyalty feeds", state: "Guest retention has no data", value: "Ties order errors to repeat visits", effort: "M", grade: "D", wave: 5 },
+  { n: 21, title: "Manual ingestion API with validation and audit log", state: "Demo validates in the browser; the platform has no upload path", value: "Restaurants without a connector still get counted", effort: "M", grade: "B", wave: 2 },
 ];
 const CV_WAVES = [
   { w: 0, name: "Make the number real", weeks: "1–3", owner: "Engineer + Claude Code", done: "The Rosewood $97 comes out of the pipeline with an interval; a dead feed reads stale" },
@@ -47,6 +49,7 @@ const CV_PAGE_DEPS = {
   finding: [2, 6, 7], menu: [7], labour: [4, 5], throughput: [12], purchasing: [6], proof: [1, 2], packet: [1, 2, 10],
   ledger: [1, 9, 10], accountant: [9], billing: [9, 13], comparison: [2], sources: [3], start: [3, 4, 6], fences: [11, 14], system: [11],
   coverage: [3, 16, 17, 18, 19, 20], inventory: [6, 17], kitchen: [12, 16], controls: [8, 18], channels: [19],
+  trends: [3, 8], inputs: [3, 21],
 };
 const CV_GRADE_TONE = { A: "bad", B: "warn", C: "info", D: "neutral" };
 
@@ -113,23 +116,22 @@ function CvStart() {
 }
 
 /* ================================================================ Portfolio */
-const CV_ROOMS = [
-  { id: "oakland", name: "Oakland", banked: 97, earned: 18940, alarms: 0, tests: 1, stale: 2, note: "Tuesday dinner test, checkpoint 1 of 2" },
-  { id: "berkeley", name: "Berkeley", banked: 0, earned: 14210, alarms: 0, tests: 0, stale: 1, note: "Friday server cut reversed; expo test inconclusive" },
-  { id: "walnut", name: "Walnut Creek", banked: 382, earned: 16880, alarms: 1, tests: 0, stale: 0, note: "Comp reset paused: control chart outside its limit" },
-];
 function CvPortfolio() {
   const cv = useCv();
-  const banked = CV_ROOMS.reduce((s, r) => s + r.banked, 0);
-  const earned = CV_ROOMS.reduce((s, r) => s + r.earned, 0);
+  const G = CV_GROUP;
+  const CV_ROOMS = G.rows;
+  const banked = G.banked;
+  const earned = G.earned;
+  const weakest = [...CV_ROOMS].sort((a, b) => a.banked - b.banked || a.earned - b.earned)[0];
+  const attention = CV_ROOMS.filter((r) => r.alarms || r.stale).length;
   return (
     <div className="cv-page wide">
       <PageHead over={`Rosewood Restaurant Group · ${CV_NOW.week}`} q="How are all three rooms doing this week?"
         sub="One line per room, so an owner with several rooms sees where to spend this week's attention." />
       <div className="cv-grid g3">
-        <div className="cv-card" style={{ gap: 6 }}><div className="cv-row" style={{ justifyContent: "space-between" }}><span className="cv-xs cv-faint">Banked this week, all rooms</span><Claim k="book" /></div><span className="cv-fig lg cv-up">{cvMoney(banked)}</span><span className="cv-xs cv-faint">Walnut Creek's $88 comp reset is paused this week</span></div>
+        <div className="cv-card" style={{ gap: 6 }}><div className="cv-row" style={{ justifyContent: "space-between" }}><span className="cv-xs cv-faint">Banked this week, all rooms</span><Claim k="book" /></div><span className="cv-fig lg cv-up">{cvMoney(banked)}</span><span className="cv-xs cv-faint">{G.paused ? `${cvMoney(G.paused)} paused this week while a guardrail is amber` : "Nothing paused"}</span></div>
         <div className="cv-card" style={{ gap: 6 }}><div className="cv-row" style={{ justifyContent: "space-between" }}><span className="cv-xs cv-faint">Earned this week, all rooms</span><Claim k="obs" /></div><span className="cv-fig lg">{cvMoney(earned)}</span><span className="cv-xs cv-faint">Contribution margin from your registers</span></div>
-        <div className="cv-card" style={{ gap: 6 }}><span className="cv-xs cv-faint">Needs your attention</span><span className="cv-fig lg">2</span><span className="cv-xs cv-faint">1 alarm · 3 stale feeds across 2 rooms</span></div>
+        <div className="cv-card" style={{ gap: 6 }}><span className="cv-xs cv-faint">Needs your attention</span><span className="cv-fig lg">{attention}</span><span className="cv-xs cv-faint">{G.alarms} alarm{G.alarms === 1 ? "" : "s"} · {G.stale} stale feed{G.stale === 1 ? "" : "s"} across {CV_ROOMS.filter((r) => r.stale).length} rooms</span></div>
       </div>
       <section className="cv-card flush">
         <div className="cv-tablewrap">
@@ -137,10 +139,10 @@ function CvPortfolio() {
             <thead><tr><th>Room</th><th className="r">Banked /wk</th><th className="r">Earned /wk</th><th>Alarms</th><th>Tests in flight</th><th>Feeds</th><th>What's happening</th></tr></thead>
             <tbody>
               {CV_ROOMS.map((r) => (
-                <tr key={r.id} className="cv-tr" onClick={() => cv.go("proof")}>
+                <tr key={r.id} className="cv-tr" onClick={() => { cv.pickRoom(r.id); cv.go("week"); }}>
                   <td style={{ fontWeight: 600 }}>Rosewood {r.name}</td>
                   <td className="r">{cvMoney(r.banked)}</td>
-                  <td className="r">{cvMoney(r.earned)}</td>
+                  <td className="r">{cvMoney(Math.round(r.earned))}</td>
                   <td>{r.alarms ? <Pill tone="warn" icon="Siren">{r.alarms} alarm</Pill> : <Pill tone="good" icon="ShieldCheck">Quiet</Pill>}</td>
                   <td className="cv-num">{r.tests}</td>
                   <td>{r.stale ? <Pill tone="warn" icon="Clock">{r.stale} stale</Pill> : <Pill tone="good" icon="CircleCheck">Healthy</Pill>}</td>
@@ -151,21 +153,16 @@ function CvPortfolio() {
           </table>
         </div>
       </section>
-      <Callout icon="Lightbulb">Berkeley earns the least and has nothing banked. This week's best use of your time there is fixing the KDS export, so the next ticket-time test can actually be measured.</Callout>
+      <Callout icon="Lightbulb">{weakest.name} earns the least and has {weakest.banked ? `only ${cvMoney(weakest.banked)}` : "nothing"} banked. This week's best use of your time there: {weakest.d.room.queue[0].title.charAt(0).toLowerCase() + weakest.d.room.queue[0].title.slice(1)}.</Callout>
+      <Callout icon="MousePointerClick">Click a room to open its week. Every screen follows the room you pick.</Callout>
     </div>
   );
 }
 
 /* ================================================================ Weekly meeting */
-const CV_AGENDA = [
-  { k: "What banked", mins: 2, icon: "BadgeCheck", body: "$97 at Oakland from Thursday prep, week 18 and holding. Walnut Creek's Tuesday close added $382. Nothing new verified, nothing reversed.", go: "ledger" },
-  { k: "What alarmed", mins: 3, icon: "Siren", body: "Walnut Creek bar comps crossed the control limit on the Saturday Oct 17 close. Same bartender on 4 of 5 excursions. Accrual on the comp reset is paused.", go: "proof" },
-  { k: "In flight", mins: 3, icon: "Timer", body: "Tuesday dinner with five servers: checkpoint 1 of 2 passed, turn time 47 min against the 52-minute guard. Window closes Nov 3.", go: "proof" },
-  { k: "One decision", mins: 5, icon: "Gavel", body: `Raise the salmon from $28 to $30? About ${cvMoney(CV_SALMON_WK)}/wk, 61% chance it verifies. It needs current recipe costs first.`, decision: true },
-  { k: "Commit this week's plan", mins: 2, icon: "Route", body: "Three actions fit 2 manager-hours: salmon price, ribeye price, renegotiate salmon and romaine.", go: "plan" },
-];
 function CvMeeting() {
   const cv = useCv();
+  const CV_AGENDA = CV_D.room.meeting.map((a) => ({ ...a, body: cvFill(a.body) }));
   const [i, setI] = React.useState(-1);
   const [left, setLeft] = React.useState(0);
   const [decision, setDecision] = React.useState(null);
@@ -184,7 +181,7 @@ function CvMeeting() {
   const fmt = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
   return (
     <div className="cv-page" style={{ maxWidth: 900 }}>
-      <PageHead over="Tuesday 9:00 · Owner + GM · 15 minutes" q="The weekly meeting"
+      <PageHead over={`Tuesday 9:00 · ${CV_ROOM.name} · Owner + ${CV_ROOM.gm} · 15 minutes`} q="The weekly meeting"
         sub="A fixed agenda the product fills in. You leave with one decision made and the week's plan committed."
         right={i < 0 ? <Button icon="Play" onClick={() => setI(0)}>Start the meeting</Button> : done ? <Pill tone="good" icon="CircleCheck">Finished in 15 min</Pill> : <span className="cv-fig md">{fmt(left)}</span>} />
       <section className="cv-card flush">
@@ -198,7 +195,7 @@ function CvMeeting() {
                 <span className="cv-small cv-muted" style={{ lineHeight: 1.5 }}>{a.body}</span>
                 {a.decision && state === "now" && (
                   <div className="cv-row" style={{ gap: 6 }}>
-                    {["Approve $30 after recipes upload", "Hold for two weeks", "Not for us"].map((d) => (
+                    {a.decision.map((d) => (
                       <Button key={d} size="sm" variant={decision === d ? "primary" : "secondary"} onClick={() => setDecision(d)}>{d}</Button>
                     ))}
                   </div>
@@ -216,7 +213,7 @@ function CvMeeting() {
         <section className="cv-card">
           <span className="cv-h4">Logged from this meeting</span>
           <ul className="cv-ul">{log.map((l) => <li key={l}><Icon name="Check" size={15} />{l}</li>)}</ul>
-          <span className="cv-small cv-muted">Sent to Maria and Marcus. The plan is committed, and the salmon decision is on Thursday's queue.</span>
+          <span className="cv-small cv-muted">Sent to Maria Reyes and {CV_ROOM.gm}. The plan is committed, and the decision is on Thursday's queue.</span>
           <Button size="sm" variant="secondary" onClick={() => { setI(-1); setLog([]); setDecision(null); }}>Reset the demo</Button>
         </section>
       )}
@@ -230,24 +227,50 @@ function CvMeeting() {
 }
 
 /* ================================================================ Finding detail */
-const CV_FINDING_EVIDENCE = {
-  salmon: { detector: "Menu margin + price response", evidence: [["Weeks observed", "13"], ["Price changes in your history", "4 ($24 → $26 → $27 → $28)"], ["Food cost now", "43%, up from 34% before the vendor increase"], ["Price response", "−0.80 ± 0.30"], ["Where lost orders go", "31% to the ribeye, which earns more"], ["Repeats", "3 weeks running"]],
-    overlap: "The vendor price rise on salmon is counted first. This price move is valued after it, so one dollar can't be claimed by both findings." },
-  ribeye: { detector: "Menu margin + price response", evidence: [["Weeks observed", "13"], ["Price changes in your history", "3 ($38 → $40 → $42)"], ["Price response", "−0.31 ± 0.14"], ["Units after the last rise", "−2% vs matched weeks"], ["Repeats", "3 weeks running"]],
-    overlap: "No other finding touches the ribeye." },
-  vendor: { detector: "Invoice price/mix decomposition", evidence: [["Invoices read", "14 months"], ["Salmon, unit price", "$11.40 → $13.65 per lb"], ["Romaine, unit price", "$38.00 → $49.29 per case"], ["Vendor's share of the increase", "$1,286 per 28 days"], ["Typical win-back", "60%"]],
-    overlap: "Counted before the salmon price move, which is valued net of it." },
-};
+/** Evidence for any finding, built from the rows it was computed from. */
+function cvEvidence(c, d) {
+  if (c.kind === "price") {
+    const m = d.menu.menu.find((x) => x.key === c.item);
+    return { detector: "Menu margin + price response", evidence: [["Weeks observed", "52"], ["Price now", cvMoney(m.price, { cents: true })], ["Plate cost", `${cvMoney(m.cost, { cents: true })} (${Math.round((m.cost / m.price) * 100)}% food cost)`], ["Sold per week", String(m.units)], ["Price response", `${m.e < 0 ? "−" : ""}${Math.abs(m.e).toFixed(2)} ± ${m.se.toFixed(2)}`], ["Plates lost at the new price", `about ${Math.round(c.move.lost)} a week`]],
+      overlap: c.item === "salmon" ? "The vendor price rise on salmon is counted first. This price move is valued after it, so one dollar can't be claimed by both findings." : `No other finding touches the ${m.name.toLowerCase()}.` };
+  }
+  if (c.kind === "vendor") {
+    const rows = c.skus.map((k) => d.inv.invoices.find((r) => r.item === k)).filter(Boolean);
+    return { detector: "Invoice price/mix decomposition", evidence: [["Invoice lines read", `${d.inv.invoices.length}, last 28 days vs the 28 before`], ...rows.map((r) => [`${r.item}, unit price`, `${cvMoney(r.p0, { cents: true })} → ${cvMoney(r.p1, { cents: true })} per ${r.unit}`]), ["Vendor's share of these increases", `${cvMoney(Math.round(rows.reduce((s, r) => s + r.priceLeg, 0)))} per 28 days`], ["Typical win-back", "60%"]],
+      overlap: "Counted before any price move on the same dish, which is valued after it." };
+  }
+  if (c.kind === "usage") {
+    const rows = d.usage.rows.filter((r) => c.skus.includes(r.item));
+    return { detector: "Theoretical vs actual usage", evidence: rows.map((r) => [r.label, `${(r.pct * 100).toFixed(1)}% over (tolerance ${(r.tol * 100).toFixed(0)}%), ${cvMoney(Math.round(r.dollars))} in 28 days`]),
+      overlap: "Shares a lever key with any plate-cost test on the same items. Whichever verifies first claims the dollars." };
+  }
+  if (c.kind === "voids" || c.kind === "comps") {
+    const k = c.kind === "voids" ? "postVoid" : "comps";
+    const t = d.staff.types[k];
+    return { detector: "Per-person control limits", evidence: [...t.signals.map((p) => [p.name, `${(p[`${k}Rate`] * 100).toFixed(2)}% vs limit ${(p[`${k}Ucl`] * 100).toFixed(2)}%`]), ["Rest of the room", `${(t.base * 100).toFixed(2)}%`], ["Over the limit, 28 days", cvMoney(Math.round(t.excess))]],
+      overlap: "Register exceptions have their own lever key. Nothing else claims them." };
+  }
+  if (c.kind === "markup") {
+    return { detector: "Channel contribution", evidence: [["Delivery share of sales", `${(d.chan.deliveryShare * 100).toFixed(1)}%`], ...d.chan.delivery.map((x) => [`${x.name} keeps, per $100`, `$${x.per100.toFixed(0)}`]), ["Range if 0 to 1 in 6 orders leave", `${cvMoney(Math.round(d.chan.markupLo))} to ${cvMoney(Math.round(d.chan.markupHi))}/wk`]],
+      overlap: "Channel pricing has its own lever key; dine-in prices are untouched." };
+  }
+  return null;
+}
 function CvFinding({ params }) {
   const cv = useCv();
-  const cands = cvPlanCandidates();
-  const c = cands.find((x) => x.id === (params && params.id)) || cands[0];
-  const ev = CV_FINDING_EVIDENCE[c.id];
-  const { chosen } = cvChoosePlan(cands, 2);
+  const want = params && params.id;
+  /* A finding belongs to one room. Opening another room's finding switches the room. */
+  const owner = CV_GROUP.rooms.find((r) => r.candidates.some((x) => x.id === want));
+  React.useEffect(() => { if (owner && owner.id !== CV_D.id) engine.setRoom(owner.id); }, [owner]);
+  const d = owner || CV_D;
+  const cands = d.candidates;
+  const c = cands.find((x) => x.id === want) || cands[0];
+  const ev = cvEvidence(c, d);
+  const { chosen } = cvChoosePlan(cands, d.room.managerHours);
   return (
     <div className="cv-page">
       <button className="cv-link" onClick={() => cv.go("plan")}><Icon name="ArrowLeft" size={14} />The plan</button>
-      <PageHead over={`Finding · ${c.lever} · Rosewood Oakland`} q={c.title} right={chosen.has(c.id) ? <Pill tone="good" icon="Check">Chosen this week</Pill> : <Pill icon="Clock">Not chosen this week</Pill>} />
+      <PageHead over={`Finding · ${c.lever} · ${d.profile.name}`} q={c.title} right={chosen.has(c.id) ? <Pill tone="good" icon="Check">Chosen this week</Pill> : <Pill icon="Clock">Not chosen this week</Pill>} />
       <LoopStrip stage={chosen.has(c.id) ? "act" : "understand"} notes={{ detect: ev ? ev.detector : "Found in your data", understand: c.claim === "obs" ? "Read straight from your systems" : "Modelled from your own history", act: chosen.has(c.id) ? "In this week's plan" : "Waiting for manager time", verify: c.prevent ? "Prevented cost: never counted" : `${Math.round(c.p * 100)}% chance it verifies` }} />
       <div className="cv-grid g-hero">
         <section className="cv-card">
@@ -264,7 +287,7 @@ function CvFinding({ params }) {
             <dt>Manager time</dt><dd>{c.hours * 60} min</dd>
             <dt>Value per manager-hour</dt><dd>{cvMoney(Math.round(c.perHour))}</dd>
           </dl>
-          <span className="cv-xs cv-faint">{chosen.has(c.id) ? "It fits inside this week's 2 manager-hours." : "Higher-value-per-hour actions filled this week's 2 manager-hours first."}</span>
+          <span className="cv-xs cv-faint">{chosen.has(c.id) ? `It fits inside this week's ${d.room.managerHours} manager-hours.` : `Higher-value-per-hour actions filled this week's ${d.room.managerHours} manager-hours first.`}</span>
         </section>
       </div>
       {ev ? (
@@ -279,9 +302,10 @@ function CvFinding({ params }) {
             <span className="cv-xs cv-faint">One lever key per dollar. Overlapping findings can't both claim it.</span>
           </section>
         </div>
-      ) : <Callout icon="Info">Detailed evidence for this finding isn't filled in for the mockup. In the product, every finding shows the rows it was computed from.</Callout>}
+      ) : <Callout icon="Info">{c.claim === "obs" && c.value === 0 ? "Worth $0 on purpose: the data that would make it measurable isn't connected yet." : "Evidence for this finding comes from the schedule and the matched services behind it."}</Callout>}
       <div className="cv-row">
-        {c.id === "ribeye" && <Button onClick={() => cv.approve("ribeye")}>Review the price change</Button>}
+        {c.kind === "price" && <Button onClick={() => cv.approve(`price:${c.item}:${c.to}`)}>Review the price change</Button>}
+        {c.kind === "markup" && <Button onClick={() => cv.approve("delivery-markup")}>Review the markup</Button>}
         <Button variant="secondary" onClick={() => cv.toast("Dismissed for 90 days. The ranker will learn from it.")}>Not for us</Button>
       </div>
     </div>
@@ -311,7 +335,7 @@ function CvFences() {
   );
   return (
     <div className="cv-page">
-      <PageHead over="Fences & alerts · Rosewood Oakland" q="What may the system do without asking, and when does it speak up?"
+      <PageHead over={`Fences & alerts · ${CV_ROOM.name}`} q="What may the system do without asking, and when does it speak up?"
         sub="Fences are hard limits. Every draft and every automated change is checked against them, and a breach drops that lever back to recommending." />
       <div className="cv-grid g2">
         <section className="cv-card">

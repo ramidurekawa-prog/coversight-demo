@@ -8,10 +8,16 @@ here ships to customers.
 
 ## Rules
 
-- **Numbers are computed, never typed.** Headline figures derive from the data
-  in `components/screens/core.jsx`. `tests/figures.test.js` pins them; if you
-  change data and a pinned figure moves, update every screen that quotes it
-  and the test together, deliberately.
+- **Numbers are computed, never typed.** All data lives in `lib/data/seed.js`;
+  every figure comes from `lib/data/model.js`; screens read the current room
+  via `CV_D` from `components/screens/core.jsx`. `tests/figures.test.js` and
+  `tests/data.test.js` pin the headline figures and check every room's totals
+  close. If a pinned figure moves, change it deliberately.
+- **Verified rates are frozen.** Inputs (`lib/data/apply.js`) may move
+  estimates, observed figures and detectors, never a packet's bookable rate.
+- **Room content** (queues, meetings, narrative) is per room in the seed and
+  uses `{tokens}` filled by the model; `tests/data.test.js` fails on any
+  unresolved token.
 - **Every dollar carries a claim strength** (Estimated, Modelled, Causal,
   Bookable, Observed) with its icon, never colour alone.
 - **Design system:** tokens and kit classes in `app/globals.css` come from the

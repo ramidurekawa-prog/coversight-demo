@@ -3,14 +3,14 @@
 import * as React from 'react';
 
 import { Icon, Button, Tabs } from '../kit';
-import { useCv, cvMoney, CV_LOCS, CV_MENU, CV_CM_WEIGHTED, cvPriceMove, cvPriceMoveInterval, CV_INVOICES, CV_PRICE_LEG, CV_MIX_LEG, CV_PROOF, Claim, Money, Pill, Outcome, Callout, Interval, PageHead, CV_APPROVALS, cvScale } from './core';
+import { useCv, cvMoney, CV_D, CV_ROOM, CV_LOCS, CV_MENU, CV_CM_WEIGHTED, cvPriceMove, cvPriceMoveInterval, CV_INVOICES, CV_PRICE_LEG, CV_MIX_LEG, CV_PROOF, Claim, Money, Pill, Outcome, Callout, Interval, PageHead, cvApproval, cvScale } from './core';
 
 /* Coversight — the four levers: Menu, Labour, Throughput, Purchasing. */
 
 /* ================================================================ Menu */
 function MenuScatter({ sel, onSel }) {
   const W = 620, H = 300, P = { l: 44, r: 16, t: 14, b: 34 };
-  const maxU = 220, minCM = 2, maxCM = 28;
+  const maxU = Math.ceil(Math.max(...CV_MENU.map((m) => m.units)) / 50) * 50 + 10, minCM = 0, maxCM = Math.ceil(Math.max(...CV_MENU.map((m) => m.cm)) / 4) * 4;
   const x = cvScale(0, maxU, P.l, W - P.r), y = cvScale(minCM, maxCM, H - P.b, P.t);
   const meanU = CV_MENU.reduce((s, m) => s + m.units, 0) / CV_MENU.length;
   // Hide a default label that would sit on top of the selected dish's label.
@@ -18,8 +18,8 @@ function MenuScatter({ sel, onSel }) {
   const nearSel = (m) => selItem && m.key !== sel && Math.abs(m.units - selItem.units) < 30 && Math.abs(m.cm - selItem.cm) < 1.5;
   return (
     <svg className="cv-chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Menu items by weekly units and contribution margin">
-      {[4, 8, 12, 16, 20, 24, 28].map((v) => <g key={v}><line className="grid" x1={P.l} x2={W - P.r} y1={y(v)} y2={y(v)} /><text x={P.l - 8} y={y(v) + 3} textAnchor="end">${v}</text></g>)}
-      {[0, 50, 100, 150, 200].map((v) => <text key={v} x={x(v)} y={H - 14} textAnchor="middle">{v}</text>)}
+      {Array.from({ length: maxCM / 4 + 1 }, (_, i) => i * 4).map((v) => <g key={v}><line className="grid" x1={P.l} x2={W - P.r} y1={y(v)} y2={y(v)} /><text x={P.l - 8} y={y(v) + 3} textAnchor="end">${v}</text></g>)}
+      {Array.from({ length: Math.floor(maxU / 50) + 1 }, (_, i) => i * 50).map((v) => <text key={v} x={x(v)} y={H - 14} textAnchor="middle">{v}</text>)}
       <text className="lbl" x={W - P.r} y={H - 2} textAnchor="end">units per week →</text>
       <line x1={x(meanU)} x2={x(meanU)} y1={P.t} y2={H - P.b} className="axis" strokeDasharray="2 3" />
       <line x1={P.l} x2={W - P.r} y1={y(CV_CM_WEIGHTED)} y2={y(CV_CM_WEIGHTED)} stroke="var(--accent)" strokeWidth="1.5" />
@@ -30,8 +30,8 @@ function MenuScatter({ sel, onSel }) {
           <g key={m.key} style={{ cursor: "pointer" }} onClick={() => onSel(m.key)} tabIndex={0} role="button" aria-label={`${m.name}, ${m.units} a week, $${m.cm.toFixed(2)} margin`}
             onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSel(m.key); } }}>
             <circle cx={x(m.units)} cy={y(m.cm)} r={on ? 8 : 5.5} fill={on ? "var(--accent)" : "var(--surface)"} stroke={m.e == null ? "var(--fg-3)" : "var(--accent)"} strokeWidth="2" strokeDasharray={m.e == null ? "2 2" : undefined} />
-            {(on || (["salmon", "ribeye", "burger", "soup"].includes(m.key) && !nearSel(m))) && (
-              <text className="lbl" x={m.units > 165 ? x(m.units) - 10 : x(m.units) + 10} y={m.units > 165 ? y(m.cm) - 10 : y(m.cm) + 4} textAnchor={m.units > 165 ? "end" : "start"} style={{ fontWeight: on ? 700 : 400, fill: on ? "var(--fg-1)" : "var(--fg-2)" }}>{m.name}</text>
+            {(on || (["salmon", "ribeye", "burger", "benedict"].includes(m.key) && !nearSel(m))) && (
+              <text className="lbl" x={m.units > maxU * 0.75 ? x(m.units) - 10 : x(m.units) + 10} y={m.units > maxU * 0.75 ? y(m.cm) - 10 : y(m.cm) + 4} textAnchor={m.units > maxU * 0.75 ? "end" : "start"} style={{ fontWeight: on ? 700 : 400, fill: on ? "var(--fg-1)" : "var(--fg-2)" }}>{m.name}</text>
             )}
           </g>
         );
@@ -43,14 +43,17 @@ function MenuScatter({ sel, onSel }) {
 function CvMenu() {
   const cv = useCv();
   const [sel, setSel] = React.useState("salmon");
-  const item = CV_MENU.find((m) => m.key === sel);
+  const item = CV_MENU.find((m) => m.key === sel) || CV_MENU[0];
   const [price, setPrice] = React.useState(item.price + 2);
-  React.useEffect(() => { setPrice(item.price + (item.key === "carbonara" ? 1 : 2)); }, [sel]);
+  React.useEffect(() => { setPrice(item.price + (item.price < 24 ? 1 : 2)); }, [sel]);
+  const hist = CV_D.hist.rows;
+  const slide = hist[38].wcm - hist[51].wcm;
+  const hottest = CV_MENU.filter((m) => !m.balancing && m.cat !== "Alcohol").sort((a, b) => b.cost / b.price - a.cost / a.price)[0];
   const sim = cvPriceMoveInterval(item, price);
   const wide = item.se != null && item.se / Math.abs(item.e) > 0.4;
   return (
     <div className="cv-page wide">
-      <PageHead over="Menu · Rosewood Oakland" q="What should this dish cost, and what happens if I change it?"
+      <PageHead over={`Menu · ${CV_ROOM.name} · ${CV_MENU.length} dishes`} q="What should this dish cost, and what happens if I change it?"
         sub="One surface for margin, mix and pricing. Price response comes from your own price history, and the simulator refuses when there isn't enough of it." />
       <div className="cv-grid g-hero">
         <section className="cv-card">
@@ -82,7 +85,7 @@ function CvMenu() {
             <dt>Price response (elasticity)</dt><dd>{item.e == null ? "not measurable" : `${item.e.toFixed(2)} ± ${item.se.toFixed(2)}`}</dd>
           </dl>
           {item.e == null ? (
-            <Callout tone="warn" icon="Ban">We won't price this from data. The soup has had one price change in two years, so there's nothing to learn its price response from. Change it on judgement, and we'll measure what happens.</Callout>
+            <Callout tone="warn" icon="Ban">We won't price this from data. {item.balancing ? "This line rolls up sides and add-ons, so it has no single price to learn from." : `The ${item.name.toLowerCase()} hasn't had enough price changes to learn its price response from.`} Change it on judgement, and we'll measure what happens.</Callout>
           ) : (
             <>
               <div className="cv-col" style={{ gap: 6 }}>
@@ -96,7 +99,7 @@ function CvMenu() {
               {price !== item.price && <Interval lo={Math.round(sim.lo)} pt={Math.round(sim.delta)} hi={Math.round(sim.hi)} min={Math.min(0, Math.round(sim.lo)) - 20} max={Math.round(sim.hi) + 30} billedLabel="if it verifies" />}
               {wide && <Callout tone="warn" icon="TriangleAlert">The price response is loosely measured for this dish. Expect a wide result, and a longer test.</Callout>}
               {price / item.price - 1 > 0.08 && <Callout tone="warn" icon="Fence">That's more than your 8% fence on price moves. We'd ask you to confirm it twice.</Callout>}
-              {item.key === "ribeye" && price === 44 && <Button icon="Check" onClick={() => cv.approve("ribeye")}>Review this change</Button>}
+              {price !== item.price && price / item.price - 1 <= 0.08 && sim.delta > 0 && <Button icon="Check" onClick={() => cv.approve(`price:${item.key}:${price}`)}>Review this change</Button>}
             </>
           )}
         </section>
@@ -111,7 +114,7 @@ function CvMenu() {
                 const up = cvPriceMove(m, m.price + 1);
                 return (
                   <tr key={m.key} className={`cv-tr ${sel === m.key ? "sel" : ""}`} onClick={() => setSel(m.key)}>
-                    <td><span style={{ fontWeight: 600 }}>{m.name}</span> <span className="cv-xs cv-faint">{m.cat}</span></td>
+                    <td><span style={{ fontWeight: 600 }}>{m.name}</span> <span className="cv-xs cv-faint">{m.balancing ? "balancing line" : m.cat}</span></td>
                     <td className="r">{cvMoney(m.price, { cents: true })}</td>
                     <td className="r">{cvMoney(m.cost, { cents: true })}</td>
                     <td className={`r ${m.cost / m.price > 0.38 ? "cv-exp" : ""}`}>{Math.round((m.cost / m.price) * 100)}%</td>
@@ -126,16 +129,17 @@ function CvMenu() {
           </table>
         </div>
       </section>
-      <Callout icon="Shuffle">At Berkeley, the weighted margin slid from $12.84 to $12.11 per item while plate costs held. That's a mix problem, not a cost problem: guests are choosing cheaper-to-earn dishes. Menu placement is the lever there, not price.</Callout>
+      {slide > 0.4 ? (
+        <Callout icon="Shuffle">At {CV_ROOM.short}, the weighted margin slid from {cvMoney(hist[38].wcm, { cents: true })} to {cvMoney(hist[51].wcm, { cents: true })} per dish in 13 weeks while plate costs held. That's a mix problem, not a cost problem: guests are choosing cheaper-to-earn dishes. Menu placement is the lever here, not price.</Callout>
+      ) : (
+        <Callout icon="Flame">The hottest plate at {CV_ROOM.short} is the {hottest.name.toLowerCase()} at {Math.round((hottest.cost / hottest.price) * 100)}% food cost. Plate costs come from your recipe-cost upload; refresh them on the data inputs screen and every margin here recomputes.</Callout>
+      )}
+      <Callout icon="Calculator">The "sides and add-ons" line closes the menu to the register: it's whatever the {CV_MENU.length - 1} named dishes don't account for in this week's sales and food cost, so the totals here always match Earned.</Callout>
     </div>
   );
 }
 
 /* ================================================================ Labour */
-const CV_LABOUR = {
-  tue: { label: "Tuesday dinner", hours: ["4 pm", "5 pm", "6 pm", "7 pm", "8 pm", "9 pm"], sched: [3, 5, 5, 5, 5, 4], need: [2, 3, 4, 5, 4, 2], covers: [6, 14, 22, 26, 18, 9] },
-  sat: { label: "Saturday dinner", hours: ["4 pm", "5 pm", "6 pm", "7 pm", "8 pm", "9 pm"], sched: [4, 6, 7, 7, 7, 6], need: [3, 6, 8, 9, 8, 5], covers: [12, 30, 41, 46, 40, 24] },
-};
 function LabourChart({ d }) {
   const W = 560, H = 210, P = { l: 30, r: 10, t: 12, b: 28 };
   const n = d.hours.length, bw = (W - P.l - P.r) / n;
@@ -162,23 +166,25 @@ function LabourChart({ d }) {
 function CvLabour() {
   const cv = useCv();
   const [day, setDay] = React.useState("sat");
-  const d = CV_LABOUR[day];
+  const L = CV_D.room.labour;
+  const d = L[day];
+  const lastLab = CV_D.proofs.filter((p) => p.lever === "Labour" && (p.outcome === "verified" || p.outcome === "limited"))[0];
   const idle = d.sched.reduce((s, v, i) => s + Math.max(0, v - d.need[i]), 0);
   const short = d.sched.reduce((s, v, i) => s + Math.max(0, d.need[i] - v), 0);
   return (
     <div className="cv-page wide">
-      <PageHead over="Labour · Rosewood Oakland" q="How many people does each hour need, and did the last change work?"
+      <PageHead over={`Labour · ${CV_ROOM.name} · ${CV_D.room.staff.length} people, ${cvMoney(Math.round(CV_D.week.labour))} this week`} q="How many people does each hour need, and did the last change work?"
         sub="Staffing from your measured service rate, with short hours shown beside idle ones. A schedule that only ever cuts is not one anyone should trust." />
       <div className="cv-grid g4">
-        {[["Idle server-hours this week", "11 h", "cv-exp", "obs"], ["Short server-hours this week", "37 h", "cv-down", "obs"], ["Your measured service rate", "5.29", "", "obs"], ["Last change", "$97/wk", "cv-up", "book"]].map(([k, v, c, cl]) => (
+        {[["Idle server-hours this week", `${L.kpis.idle} h`, "cv-exp", "obs"], ["Short server-hours this week", `${L.kpis.short} h`, "cv-down", "obs"], ["Your measured service rate", L.kpis.rate.toFixed(2), "", "obs"], ["Last change", lastLab ? `${cvMoney(lastLab.bookable)}/wk` : "$0", lastLab ? "cv-up" : "", lastLab ? "book" : "none"]].map(([k, v, c, cl]) => (
           <div key={k} className="cv-card" style={{ gap: 6 }}>
             <span className="cv-xs cv-faint">{k}</span>
-            <span className={`cv-fig md ${c}`}>{k === "Last change" ? <Money id="thu-prep">{v}</Money> : v}</span>
+            <span className={`cv-fig md ${c}`}>{k === "Last change" && lastLab ? <Money id={lastLab.id}>{v}</Money> : v}</span>
             <div className="cv-row" style={{ gap: 6 }}><Claim k={cl} />{k === "Your measured service rate" && <span className="cv-xs cv-faint">covers per server-hour</span>}</div>
           </div>
         ))}
       </div>
-      <Callout icon="Info">The old engine assumed 14 covers per server-hour. This room has never done better than 5.29. Measured properly, Oakland isn't 137 hours idle. It's 11 hours idle and 37 hours short, mostly on Friday and Saturday nights.</Callout>
+      <Callout icon="Info">{L.note}</Callout>
       <div className="cv-grid g-hero">
         <section className="cv-card">
           <div className="cv-card-head">
@@ -193,13 +199,13 @@ function CvLabour() {
           <span className="cv-small cv-muted">This service: <b className="cv-num">{idle}</b> idle and <b className="cv-num">{short}</b> short server-hours.</span>
         </section>
         <section className="cv-card">
-          <div className="cv-card-head"><span className="cv-h4">Drafted for next week</span><Pill icon="Gauge">A2 · Drafts</Pill></div>
+          <div className="cv-card-head"><span className="cv-h4">Drafted for next week</span><Pill icon="Gauge">{cvApproval(L.draft.approval).level}</Pill></div>
           <div className="cv-diff">
             <div className="r h"><span>When</span><span>Now</span><span>Draft</span></div>
-            {CV_APPROVALS["draft-schedule"].diff.map(([w, a, b]) => <div className="r" key={w}><span>{w}</span><span className="was">{a}</span><span className="now">{b}</span></div>)}
+            {cvApproval(L.draft.approval).diff.map(([w, a, b]) => <div className="r" key={w}><span>{w}</span><span className="was">{a}</span><span className="now">{b}</span></div>)}
           </div>
-          <p className="cv-small cv-muted" style={{ lineHeight: 1.5 }}>This draft adds one hour net. It costs $18.50 more and puts a server back on Saturday's peak, where slow turns cost you covers.</p>
-          <Button icon="Send" onClick={() => cv.approve("draft-schedule")}>Review and publish</Button>
+          <p className="cv-small cv-muted" style={{ lineHeight: 1.5 }}>{L.draft.note}</p>
+          <Button icon="Send" onClick={() => cv.approve(L.draft.approval)}>Review and publish</Button>
         </section>
       </div>
       <section className="cv-card flush">
@@ -224,31 +230,30 @@ function CvLabour() {
 }
 
 /* ================================================================ Throughput */
-const CV_CONSTRAINED = [
-  ["Mon", 0, 0], ["Tue", 0, 0], ["Wed", 0, 0], ["Thu", 0, 0], ["Fri", 0, 6], ["Sat", 0, 25], ["Sun", 0, 0],
-];
 function CvThroughput() {
   const cv = useCv();
+  const T = CV_D.room.throughput;
+  const words = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
   return (
     <div className="cv-page">
-      <PageHead over="Throughput · Rosewood Oakland" q="Is the room constrained, and is a faster turn worth anything?"
+      <PageHead over={`Throughput · ${CV_ROOM.name}`} q="Is the room constrained, and is a faster turn worth anything?"
         sub="A faster turn only earns money when the room is full and people are waiting. So the first number is how often the room is actually full." />
       <div className="cv-grid g-hero">
         <section className="cv-card">
           <span className="cv-over">Claimable from faster turns this week</span>
           <span className="cv-fig xl">$0</span>
-          <p className="cv-sub">The room was full for five 15-minute intervals all week: four on Saturday 7–8 pm and one on Friday at 7:30. If every one of those turned faster, the ceiling is <b className="cv-num">$1,047</b> a month. We can't claim any of it: without waitlist data there's no way to know anyone was turned away.</p>
+          <p className="cv-sub">{T.fullNote} If every one of those turned faster, the ceiling is <b className="cv-num">{cvMoney(T.ceiling)}</b> a month. We can't claim any of it: without waitlist data there's no way to know anyone was turned away.</p>
           <div className="cv-row"><Button icon="Plug" onClick={() => cv.go("sources")}>Connect your waitlist</Button><span className="cv-xs cv-faint">Turns the ceiling into something we can measure.</span></div>
         </section>
         <section className="cv-card">
           <span className="cv-h4">Room use</span>
           <dl className="cv-kv">
-            <dt>Seat-hours used</dt><dd>31%</dd>
-            <dt>Best vs worst service</dt><dd>4.3×</dd>
-            <dt>Intervals at capacity</dt><dd>5 of 224</dd>
-            <dt>Seats</dt><dd>84</dd>
+            <dt>Seat-hours used</dt><dd>{T.seatUse}%</dd>
+            <dt>Best vs worst service</dt><dd>{T.bestWorst}×</dd>
+            <dt>Intervals at capacity</dt><dd>{T.intervals} of {T.total}</dd>
+            <dt>Seats</dt><dd>{CV_ROOM.seats}</dd>
           </dl>
-          <Callout icon="Info">The old Watch screen applied a turn-time gain to every interval all week and showed $26,157. That number was never claimable.</Callout>
+          <Callout icon="Info">The old Watch screen applied a turn-time gain to every interval all week and showed {cvMoney(T.oldClaim)}. That number was never claimable.</Callout>
         </section>
       </div>
       <section className="cv-card flush">
@@ -256,7 +261,7 @@ function CvThroughput() {
           <table className="cv-table">
             <thead><tr><th>Day</th><th><span className="cv-row" style={{ gap: 6 }}><Icon name="Sun" size={13} />Lunch, share of time full</span></th><th><span className="cv-row" style={{ gap: 6 }}><Icon name="Moon" size={13} />Dinner, share of time full</span></th></tr></thead>
             <tbody>
-              {CV_CONSTRAINED.map(([d, l, n]) => (
+              {T.constrained.map(([d, l, n]) => (
                 <tr key={d}>
                   <td style={{ fontWeight: 600 }}>{d}</td>
                   {[l, n].map((v, i) => (
@@ -283,6 +288,7 @@ function CvPurchasing() {
   const before = CV_INVOICES.reduce((s, r) => s + r.p0 * r.q0, 0);
   const after = CV_INVOICES.reduce((s, r) => s + r.p1 * r.q1, 0);
   const rows = [...CV_INVOICES].sort((a, b) => b.priceLeg - a.priceLeg);
+  const calls = rows.slice(0, 2);
   const W = 560, H = 190, P = { l: 12, r: 12, t: 18, b: 34 };
   const lo = 0, hi = Math.max(before + CV_PRICE_LEG, after) * 1.1;
   const y = cvScale(lo, hi, H - P.b, P.t);
@@ -295,12 +301,12 @@ function CvPurchasing() {
   const bw = (W - P.l - P.r) / steps.length;
   return (
     <div className="cv-page wide">
-      <PageHead over={<span className="cv-row" style={{ gap: 8 }}>Purchasing · Rosewood Oakland <span className="cv-new" style={{ fontSize: 10, fontWeight: 700, color: "var(--teal-700)", background: "var(--accent-subtle)", borderRadius: 99, padding: "2px 8px" }}>NEW</span></span>}
+      <PageHead over={`Purchasing · ${CV_ROOM.name} · ${CV_INVOICES.length} invoice lines from ${new Set(CV_INVOICES.map((r) => r.vendor)).size} vendors`}
         q="Did food cost rise because vendors raised prices, or because you bought differently?"
         sub="Every invoice line split into the part the vendor did and the part you did. The two add up to the total by construction, so this needs no model." />
       <div className="cv-grid g-hero">
         <section className="cv-card">
-          <div className="cv-card-head"><span className="cv-h4">Seven largest invoice lines, last 28 days vs the 28 before</span><Claim k="obs" /></div>
+          <div className="cv-card-head"><span className="cv-h4">Every invoice line, last 28 days vs the 28 before</span><Claim k="obs" /></div>
           <svg className="cv-chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Purchases bridge from previous to last 28 days">
             {steps.map((s, i) => {
               const top = Math.max(s.a, s.b), bot = Math.min(s.a, s.b);
@@ -315,12 +321,12 @@ function CvPurchasing() {
               );
             })}
           </svg>
-          <span className="cv-small cv-muted">Vendors added <Money id="price-leg"><b className="cv-num">{cvMoney(Math.round(CV_PRICE_LEG))}</b></Money>. You bought a little less, which took off {cvMoney(Math.round(-CV_MIX_LEG))}.</span>
+          <span className="cv-small cv-muted">Vendors added <Money id="price-leg"><b className="cv-num">{cvMoney(Math.round(CV_PRICE_LEG))}</b></Money>. {CV_MIX_LEG < 0 ? `You bought a little less, which took off ${cvMoney(Math.round(-CV_MIX_LEG))}.` : `You bought a little more, which added ${cvMoney(Math.round(CV_MIX_LEG))}.`}</span>
         </section>
         <section className="cv-card">
           <div className="cv-card-head"><span className="cv-h4">Two calls worth making</span><Claim k="obs" /></div>
-          {[["Bay Fish Co.", "Salmon fillet up 19.7%", CV_INVOICES[0]], ["Valley Greens", "Romaine up 29.7%", CV_INVOICES[1]]].map(([v, t, r]) => (
-            <div key={v} className="cv-row nowrap" style={{ alignItems: "flex-start", gap: 12 }}>
+          {calls.map((r) => [r.vendor, `${r.item} up ${r.pct.toFixed(1)}%`, r]).map(([v, t, r]) => (
+            <div key={r.item} className="cv-row nowrap" style={{ alignItems: "flex-start", gap: 12 }}>
               <span className="cv-q-ico warn"><Icon name="Truck" size={18} /></span>
               <div className="cv-col" style={{ gap: 2, flex: 1 }}>
                 <span style={{ fontWeight: 600 }}>{v}</span>
@@ -330,7 +336,7 @@ function CvPurchasing() {
             </div>
           ))}
           <p className="cv-small cv-muted" style={{ lineHeight: 1.5 }}>Groups like yours win back about 60% of an increase this size. Once you do, the saving is the unit-price change on the next invoices, and the same check catches the next increase.</p>
-          <Button icon="Mail" onClick={() => cv.toast("Draft emails to Bay Fish Co. and Valley Greens are in your outbox.")}>Draft both emails</Button>
+          <Button icon="Mail" onClick={() => cv.toast(`Draft emails to ${calls.map((r) => r.vendor).join(" and ")} are in your outbox.`)}>Draft both emails</Button>
         </section>
       </div>
       <section className="cv-card flush">
@@ -353,7 +359,7 @@ function CvPurchasing() {
           </table>
         </div>
       </section>
-      <Callout icon="Info">Today's product has no purchasing view at all. In the worked example this is the second-largest real lever in the building.</Callout>
+      <Callout icon="Info">Vendor prices are a group contract, so the same increases land in all three rooms. Switch rooms in the top bar to see each room's share, or add this week's invoice lines on the data inputs screen.</Callout>
     </div>
   );
 }

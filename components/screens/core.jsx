@@ -3,171 +3,67 @@
 import * as React from 'react';
 
 import { Icon, Button } from '../kit';
+import { LOCS, NOW, SEED } from '../../lib/data/seed';
+import * as M from '../../lib/data/model';
 
-/* Coversight — finished-product mockup. Core: data, money helpers, claim chips,
-   derivation drawer, approval modal, toast, shared chart bits.
-   Data is the repo's Rosewood fixture (packages/db/src/rosewood) re-read through
-   the honest models in the spec. Everything is static; nothing is fetched. */
+/* Coversight demo core: the current room's data (loaded from lib/data),
+   money helpers, claim chips, derivation drawer, approval modal and shared
+   chart bits. Nothing is fetched; the dataset is generated and deterministic. */
 
 const CvCtx = React.createContext(null);
 const useCv = () => React.useContext(CvCtx);
 
 /* ---------------------------------------------------------------- formatting */
-const cvMoney = (n, opts = {}) => {
-  const { cents = false, sign = false } = opts;
-  const abs = Math.abs(n);
-  const s = abs.toLocaleString("en-US", { minimumFractionDigits: cents ? 2 : 0, maximumFractionDigits: cents ? 2 : 0 });
-  const pre = n < 0 ? "−" : sign && n > 0 ? "+" : "";
-  return `${pre}$${s}`;
-};
+const cvMoney = M.money;
 const cvPct = (n, d = 1) => `${n > 0 ? "+" : n < 0 ? "−" : ""}${Math.abs(n).toFixed(d)}%`;
 const cvRound = (n) => Math.round(n);
 
-/* ---------------------------------------------------------------- the clock */
-const CV_NOW = { label: "Tuesday, October 27, 2026", week: "Week of Oct 19 – 25", time: "7:15 pm" };
-const CV_DAILY = 97 / 7; // the one Oakland lever accruing: Thursday prep, $97/wk bookable
-const CV_ACCRUAL_START = "Jun 22";
-const CV_DAYS_TO_DATE = 127; // Jun 22 → Oct 26 inclusive
-const CV_SUB = 349;
+/* ---------------------------------------------------------------- the data
+   Everything below the formatting helpers is loaded from the dataset by
+   cvLoad(ds, roomId): the room switcher and the data inputs call it again and
+   every screen re-renders from the new values. The exports are live bindings,
+   so importers always read the current room. */
+const CV_NOW = NOW;
+const CV_ACCRUAL_START = M.ACCRUAL_START;
+const CV_DAYS_TO_DATE = M.DAYS_TO_DATE;
+const CV_SUB = M.SUBSCRIPTION;
+const CV_LOCS = LOCS;
+const CV_PERSIST = M.PERSIST;
+const cvPriceMove = M.priceMove;
+const cvPriceMoveInterval = M.priceMoveInterval;
+const cvChoosePlan = M.choosePlan;
 
-/* ---------------------------------------------------------------- locations */
-const CV_LOCS = [
-  { id: "oakland", name: "Rosewood Oakland", short: "Oakland", seats: 84, addr: "4801 Telegraph Ave" },
-  { id: "berkeley", name: "Rosewood Berkeley", short: "Berkeley", seats: 64, addr: "2120 Shattuck Ave" },
-  { id: "walnut", name: "Rosewood Walnut Creek", short: "Walnut Creek", seats: 72, addr: "1380 N Main St" },
-  { id: "all", name: "All three rooms", short: "All rooms", seats: 220, addr: "Rosewood Restaurant Group" },
-];
+let CV_DS, CV_D, CV_GROUP, CV_ROOM;
+let CV_MENU, CV_CM_UNWEIGHTED, CV_CM_WEIGHTED, CV_INVOICES, CV_PRICE_LEG, CV_MIX_LEG;
+let CV_EXPOSURE, CV_SALMON, CV_SALMON_WK, CV_SALMON_LOST, CV_PROOF, CV_DAILY;
+let CV_DERIV = {};
+let CV_APPROVALS = {};
 
-/* ---------------------------------------------------------------- menu model
-   Oakland's 15-item menu (names from the Rosewood fixture). Plate costs are
-   set to realistic full-service food costs (22–42%); salmon runs hot at 43%
-   after Bay Fish Co.'s 19.7% increase. Units/wk are Oakland. Elasticities are
-   fitted from the room's own price history; `se` is the standard error.
-   `null` = not enough price changes to price from data. */
-const CV_MENU = [
-  { key: "salmon", name: "Grilled Salmon", cat: "Food", price: 28, cost: 11.90, units: 142, e: -0.8, se: 0.3 },
-  { key: "ribeye", name: "Ribeye Steak", cat: "Food", price: 42, cost: 17.60, units: 64, e: -0.31, se: 0.14 },
-  { key: "chicken", name: "Roast Half Chicken", cat: "Food", price: 24, cost: 7.40, units: 118, e: -0.9, se: 0.3 },
-  { key: "carbonara", name: "Pasta Carbonara", cat: "Food", price: 21, cost: 5.10, units: 142, e: -0.85, se: 0.25 },
-  { key: "pizza", name: "Margherita Pizza", cat: "Food", price: 19, cost: 4.20, units: 166, e: -1.2, se: 0.3 },
-  { key: "caesar", name: "Caesar Salad", cat: "Food", price: 15, cost: 3.90, units: 120, e: -1.1, se: 0.35 },
-  { key: "burger", name: "Rosewood Burger", cat: "Food", price: 18, cost: 5.80, units: 188, e: -1.4, se: 0.3 },
-  { key: "tacos", name: "Fish Tacos", cat: "Food", price: 17, cost: 5.95, units: 96, e: -1.3, se: 0.4 },
-  { key: "risotto", name: "Mushroom Risotto", cat: "Food", price: 22, cost: 6.20, units: 58, e: -1.0, se: 0.5 },
-  { key: "soup", name: "Heirloom Tomato Soup", cat: "Food", price: 9, cost: 2.10, units: 44, e: null, se: null },
-  { key: "red", name: "House Red (glass)", cat: "Alcohol", price: 14, cost: 3.92, units: 210, e: -0.7, se: 0.2 },
-  { key: "oldf", name: "Barrel Old Fashioned", cat: "Alcohol", price: 15, cost: 3.00, units: 132, e: -0.6, se: 0.2 },
-  { key: "ipa", name: "Fog Line IPA (draft)", cat: "Alcohol", price: 9, cost: 2.25, units: 176, e: -0.8, se: 0.25 },
-  { key: "lemonade", name: "Sparkling Lemonade", cat: "Non-alc", price: 6, cost: 1.10, units: 70, e: -1.5, se: 0.6 },
-  { key: "torte", name: "Chocolate Torte", cat: "Dessert", price: 11, cost: 3.10, units: 62, e: -1.1, se: 0.4 },
-];
-CV_MENU.forEach((m) => { m.cm = +(m.price - m.cost).toFixed(2); });
-const CV_CM_UNWEIGHTED = CV_MENU.reduce((s, m) => s + m.cm, 0) / CV_MENU.length;
-const CV_CM_WEIGHTED = CV_MENU.reduce((s, m) => s + m.cm * m.units, 0) / CV_MENU.reduce((s, m) => s + m.units, 0);
+/** Candidates for the current room this week, valued from its data. */
+function cvPlanCandidates() { return CV_D.candidates; }
 
-/** Weekly contribution change from moving one item to `newPrice`, constant-elasticity demand. */
-function cvPriceMove(item, newPrice, e = item.e) {
-  if (e == null) return null;
-  const q1 = item.units * Math.pow(newPrice / item.price, e);
-  const before = item.cm * item.units;
-  const after = (newPrice - item.cost) * q1;
-  return { q1, before, after, delta: after - before, lost: item.units - q1 };
-}
-/** Point and interval (elasticity ± 1.64 se ≈ 90%) for a price move. */
-function cvPriceMoveInterval(item, newPrice) {
-  const p = cvPriceMove(item, newPrice);
-  if (!p) return null;
-  const a = cvPriceMove(item, newPrice, item.e - 1.64 * item.se).delta;
-  const b = cvPriceMove(item, newPrice, Math.min(-0.05, item.e + 1.64 * item.se)).delta;
-  return { ...p, lo: Math.min(a, b), hi: Math.max(a, b) };
+function cvLoad(ds, roomId) {
+  CV_DS = ds;
+  CV_D = M.deriveRoom(ds, roomId);
+  CV_GROUP = M.deriveGroup(ds);
+  CV_ROOM = CV_D.profile;
+  CV_MENU = CV_D.menu.menu;
+  CV_CM_UNWEIGHTED = CV_D.menu.cmUnweighted;
+  CV_CM_WEIGHTED = CV_D.menu.cmWeighted;
+  CV_INVOICES = CV_D.inv.invoices;
+  CV_PRICE_LEG = CV_D.inv.priceLeg;
+  CV_MIX_LEG = CV_D.inv.mixLeg;
+  CV_EXPOSURE = CV_D.exposure;
+  const salmon = CV_MENU.find((m) => m.key === "salmon");
+  CV_SALMON = cvPriceMoveInterval(salmon, salmon.price + 2);
+  CV_SALMON_WK = Math.round(CV_SALMON.delta);
+  CV_SALMON_LOST = Math.round(CV_SALMON.lost);
+  CV_PROOF = CV_D.allProof;
+  CV_DAILY = CV_D.banked.daily;
+  CV_DERIV = buildDeriv(CV_D);
+  CV_APPROVALS = buildApprovals(CV_D);
 }
 
-/* ---------------------------------------------------------------- purchasing
-   Invoice decomposition, last 28 days vs the 28 before. price leg = (p1 − p0) × q1;
-   mix/quantity leg = (q1 − q0) × p0. The two sum to the total by construction. */
-const CV_INVOICES = [
-  { item: "Salmon fillet", unit: "lb", vendor: "Bay Fish Co.", p0: 11.40, p1: 13.65, q0: 410, q1: 388 },
-  { item: "Romaine hearts", unit: "case", vendor: "Valley Greens", p0: 38.00, p1: 49.29, q0: 26, q1: 24 },
-  { item: "Ribeye, choice", unit: "lb", vendor: "Hollis Meats", p0: 14.20, p1: 14.64, q0: 300, q1: 289 },
-  { item: "Butter, unsalted", unit: "lb", vendor: "Valley Greens", p0: 4.10, p1: 4.35, q0: 220, q1: 230 },
-  { item: "Arborio rice", unit: "lb", vendor: "Coast Dry Goods", p0: 2.60, p1: 2.60, q0: 90, q1: 84 },
-  { item: "Heirloom tomatoes", unit: "lb", vendor: "Valley Greens", p0: 3.80, p1: 3.55, q0: 160, q1: 170 },
-  { item: "Chicken, whole", unit: "lb", vendor: "Hollis Meats", p0: 3.15, p1: 3.15, q0: 640, q1: 660 },
-];
-CV_INVOICES.forEach((r) => {
-  r.priceLeg = (r.p1 - r.p0) * r.q1;
-  r.mixLeg = (r.q1 - r.q0) * r.p0;
-  r.total = r.p1 * r.q1 - r.p0 * r.q0;
-  r.pct = (r.p1 / r.p0 - 1) * 100;
-});
-const CV_PRICE_LEG = CV_INVOICES.reduce((s, r) => s + r.priceLeg, 0);
-const CV_MIX_LEG = CV_INVOICES.reduce((s, r) => s + r.mixLeg, 0);
-
-/* ---------------------------------------------------------------- the plan
-   Candidates for Oakland this week. value = expected weekly effect (point).
-   p = probability it verifies (from the outcome corpus). persist = how long it holds. */
-const CV_PERSIST = {
-  structural: { w: 1.0, label: "Structural" },
-  holds: { w: 0.8, label: "Holds until next change" },
-  upkeep: { w: 0.6, label: "Needs upkeep" },
-  week: { w: 0.4, label: "This week only" },
-};
-function cvPlanCandidates() {
-  const ribeye = cvPriceMoveInterval(CV_MENU[1], 44);
-  const salmon = cvPriceMoveInterval(CV_MENU[0], 30);
-  const carb = cvPriceMoveInterval(CV_MENU[3], 22);
-  const vendor = CV_INVOICES[0].priceLeg / 4 * 0.6 + CV_INVOICES[1].priceLeg / 4 * 0.6; // win back 60% of the price leg
-  return [
-    { id: "ribeye", title: "Raise the ribeye from $42 to $44", lever: "Menu", value: ribeye.delta, lo: ribeye.lo, hi: ribeye.hi, p: 0.58, persist: "structural", hours: 0.5, claim: "mod",
-      why: "Demand for the ribeye barely moves with price here (elasticity −0.31). The old engine valued this at $0." },
-    { id: "salmon", title: "Raise the salmon from $28 to $30", lever: "Menu", value: salmon.delta, lo: salmon.lo, hi: salmon.hi, p: 0.61, persist: "structural", hours: 0.5, claim: "mod", needs: "recipes",
-      why: `Food cost on the salmon is 43% since Bay Fish Co. raised prices. At $30 you'd sell about ${Math.round(cvPriceMoveInterval(CV_MENU[0], 30).lost)} fewer a week, and each one left earns $2 more. Needs current recipe costs to verify.` },
-    { id: "vendor", title: "Renegotiate salmon and romaine", lever: "Purchasing", value: vendor, lo: vendor * 0.8, hi: vendor * 1.1, p: 0.85, persist: "holds", hours: 1.0, claim: "obs",
-      why: "Bay Fish Co. raised salmon 19.7% and Valley Greens raised romaine 29.7%. Winning back 60% of that is typical." },
-    { id: "satpeak", title: "Add one server back, Saturday 6–9 pm", lever: "Labour", value: 58, lo: 21, hi: 96, p: 0.55, persist: "upkeep", hours: 0.25, claim: "mod",
-      why: "Saturday's peak is understaffed by 4 server-hours. Turns slow and covers walk." },
-    { id: "ot", title: "Move 4 hours off Ana's week before Thursday", lever: "Labour", value: 44, lo: 44, hi: 44, p: 0.95, persist: "week", hours: 0.25, claim: "obs", prevent: true,
-      why: "Ana is tracking to 44 hours. Moving 4 to Luis avoids $44 of overtime premium. This is prevented cost, so it is never counted as saved." },
-    { id: "carb", title: "Raise the carbonara from $21 to $22", lever: "Menu", value: carb.delta, lo: carb.lo, hi: carb.hi, p: 0.52, persist: "structural", hours: 0.5, claim: "mod",
-      why: "Smaller lift and a looser elasticity estimate. Worth doing once the two bigger price moves have read out." },
-    { id: "shoulder", title: "Trim Wednesday 3–5 pm by one server", lever: "Labour", value: 38, lo: 4, hi: 71, p: 0.66, persist: "upkeep", hours: 0.5, claim: "mod",
-      why: "Two idle server-hours most Wednesdays between lunch and dinner." },
-    { id: "paystage", title: "Speed up the Friday pay stage", lever: "Throughput", value: 0, lo: 0, hi: 0, p: 0, persist: "structural", hours: 1.0, claim: "obs",
-      why: "The room is full for 1 interval on Friday. A faster turn there seats nobody new, so it is worth $0." },
-  ].map((c) => ({ ...c, edv: c.value * c.p * CV_PERSIST[c.persist].w, perHour: (c.value * c.p * CV_PERSIST[c.persist].w) / c.hours }));
-}
-function cvChoosePlan(cands, hours) {
-  const sorted = [...cands].sort((a, b) => b.perHour - a.perHour);
-  let used = 0;
-  const chosen = new Set();
-  sorted.forEach((c) => { if (c.perHour > 0 && used + c.hours <= hours + 1e-9) { chosen.add(c.id); used += c.hours; } });
-  return { sorted, chosen, used };
-}
-const CV_EXPOSURE = cvPlanCandidates().filter((c) => !c.prevent).reduce((s, c) => s + c.value, 0);
-/** The salmon $28 → $30 move, computed once so every screen quotes the same figures. */
-const CV_SALMON = cvPriceMoveInterval(CV_MENU[0], 30);
-const CV_SALMON_WK = Math.round(CV_SALMON.delta);
-const CV_SALMON_LOST = Math.round(CV_SALMON.lost);
-
-/* ---------------------------------------------------------------- proof rows */
-const CV_PROOF = [
-  { id: "thu-prep", loc: "oakland", lever: "Labour", title: "Pull Thursday prep start back to 8:00", outcome: "verified", bookable: 97, point: 112, lo: 97, hi: 127,
-    since: "Jun 22", held: "18 weeks", persist: "Needs upkeep", method: "Difference-in-differences vs 9 matched Thursdays", owner: "Maria Reyes" },
-  { id: "wc-close", loc: "walnut", lever: "Labour", title: "Trim Tuesday close, back of house, by 6 hours", outcome: "limited", bookable: 382, point: 445, lo: 382, hi: 508,
-    since: "Aug 24", held: "9 weeks", persist: "Needs upkeep", method: "Matched control services, 4-week window", limitation: "Shorter window than policy (4 weeks, not 6)", owner: "Priya Shah" },
-  { id: "wc-comps", loc: "walnut", lever: "Controls", title: "Reset the bar comp policy", outcome: "verified", bookable: 88, point: 101, lo: 88, hi: 114,
-    since: "Sep 28", held: "Paused Oct 19", paused: true, reason: "Comps crossed the control limit on the Oct 17 close, so accrual is paused until they are back inside it.", persist: "Needs upkeep", method: "Control chart, 1 false alarm per quarter", owner: "Priya Shah" },
-  { id: "tue-dinner", loc: "oakland", lever: "Labour", title: "Run Tuesday dinner with five servers, not six", outcome: "testing", bookable: 0, point: 288, lo: -40, hi: 610,
-    since: "Oct 13", held: "Window closes Nov 3", persist: "—", method: "Matched control services, 3-week window", checkpoint: "Checkpoint 1 of 2 passed", owner: "Maria Reyes" },
-  { id: "salmon-plate", loc: "oakland", lever: "Menu", title: "Trim the salmon plate cost", outcome: "data", bookable: 0, point: null,
-    since: "Oct 6", held: "Quarantined", persist: "—", method: "Recipe-cost delta × units", reason: "Recipe costs are 18 days old. We can't tell what the plate costs now.", owner: "Maria Reyes" },
-  { id: "bk-friday", loc: "berkeley", lever: "Labour", title: "Cut one Friday dinner server", outcome: "reversed", bookable: 0, point: 185, removed: 555,
-    since: "Aug 3", held: "Reversed Aug 24", persist: "—", method: "Matched control services", reason: "Table turns breached the 52-minute guardrail (54 min observed). $555 removed from every figure, back to Aug 3.", owner: "Maria Reyes" },
-  { id: "bk-expo", loc: "berkeley", lever: "Throughput", title: "Coach the Thursday expo hand-off", outcome: "inconclusive", bookable: 0, point: 64,
-    since: "Sep 21", held: "Closed Oct 19", persist: "—", method: "Matched control services", reason: "Underpowered. The design needed 9 comparable services and had 4. This says nothing about whether coaching works.", owner: "Devon Clarke" },
-  { id: "wc-club", loc: "walnut", lever: "Menu", title: "Trim the club sandwich portion", outcome: "directional", bookable: 0, point: 41,
-    since: "Sep 14", held: "Closed Oct 12", persist: "—", method: "Difference-in-differences vs 6 comparable items", reason: "Moved the right way, but the interval crosses zero ($−12 to $94). No claim; it raises the prior for portion trims.", owner: "Priya Shah" },
-];
 const CV_OUTCOME = {
   verified: { label: "Verified", tone: "good", icon: "BadgeCheck" },
   limited: { label: "Verified with limitations", tone: "good", icon: "BadgeCheck" },
@@ -178,72 +74,94 @@ const CV_OUTCOME = {
   directional: { label: "Directionally positive", tone: "neutral", icon: "TrendingUp" },
 };
 
+/** Text with {tokens} filled from the current room. */
+function cvFill(str) { return M.tmpl(str, CV_D.tokens); }
+
 /* ---------------------------------------------------------------- derivations
    Every dollar on screen can open one of these. */
-const CV_DERIV = {
-  "banked-week": {
-    title: "Banked this week", value: "$97", claim: "book",
-    formula: "Σ over active verifications of (weekly lower bound ÷ 7) × persistence(t)\n= (97 ÷ 7) × 1.00 × 7 days\n= $97",
-    inputs: [["Active verifications at Oakland", "1"], ["Thursday prep, weekly lower bound", "$97.00"], ["Persistence this week", "1.00"], ["Days in window", "7"]],
-    sources: [["Verification packet · Thursday prep", "frozen Jun 22"], ["Toast · sales and covers", "2 min ago"], ["7shifts · scheduled hours", "18 hours ago"]],
-    eq: "H-02 daily accrual", note: "This is accrual of a rate already proven. Nothing new was measured this week, so no new number was born.",
-  },
-  "thu-prep": {
-    title: "Thursday prep change", value: "$97/wk", claim: "book",
-    formula: "effect = (Δ RPLH treated − Δ RPLH control) × hours × loaded rate\npoint = $112/wk   90% interval = [$97, $127]\nbookable = lower bound = $97/wk",
-    inputs: [["Treated services", "9 Thursdays"], ["Matched controls", "9 Thursdays, Berkeley + Walnut Creek"], ["Hours removed / wk", "6.0"], ["Loaded rate", "$18.50/hr"], ["Covers change", "+0.4% (held)"]],
-    sources: [["7shifts · published schedules", "18 hours ago"], ["Toast · covers by service", "2 min ago"]],
-    eq: "G-07 bookable = lower bound of the measured interval", note: "The multiplier was frozen when the window closed. A better model later cannot re-price this row.",
-  },
-  "earned-week": {
-    title: "Earned this week", value: "$18,940", claim: "obs",
-    formula: "contribution = net sales − food cost − hourly labour\n= $41,620 − $12,130 − $10,550\n= $18,940",
-    inputs: [["Net sales", "$41,620"], ["Food cost (theoretical, recipe-based)", "$12,130"], ["Hourly labour (scheduled × rate)", "$10,550"], ["Covers", "1,412"]],
-    sources: [["Toast · net sales", "2 min ago"], ["Recipe costs", "18 days old"], ["7shifts · labour", "18 hours ago"]],
-    eq: "A-01 contribution margin", note: "This is your restaurant's number, not ours. It exists whether or not Coversight does, and it keeps every other figure honest.",
-  },
-  "margin-move": {
-    title: "Margin change vs matched weeks", value: "+$410", claim: "mod",
-    formula: "Δ = contribution this week − mean(contribution, 6 matched weeks)\n= $18,940 − $18,530\n= +$410",
-    inputs: [["Matched weeks", "6 (same month last year, same weekday mix)"], ["Their mean contribution", "$18,530"], ["Of which we can account for", "$97"], ["Unexplained", "$313"]],
-    sources: [["Toast · 13 weeks of history", "2 min ago"]],
-    eq: "H-09 margin attribution", note: "We claim the $97 we measured. The other $313 is real, and we don't know its cause, so we don't claim it.",
-  },
-  "exposure": {
-    title: "Estimated open exposure", value: `$${Math.round(CV_EXPOSURE)}/wk`, claim: "est",
-    formula: "Σ expected weekly effect of open candidates after overlap resolution\n(prevented costs excluded)",
-    inputs: cvPlanCandidates().filter((c) => !c.prevent).map((c) => [c.title, cvMoney(Math.round(c.value))]),
-    sources: [["Toast · item sales and prices", "2 min ago"], ["Invoices · email inbox", "3 days ago"], ["7shifts", "18 hours ago"]],
-    eq: "E-01 exposure", note: "Estimates, not savings. Nothing here can be invoiced, and it is never added to banked dollars.",
-  },
-  "coverage": {
-    title: "September coverage", value: "1.2×", claim: "book",
-    formula: "banked in September ÷ subscription\n= (97 ÷ 7 × 30 days) ÷ $349\n= $416 ÷ $349 = 1.19×",
-    inputs: [["Days in September", "30"], ["Daily accrual", "$13.86"], ["Banked in September", "$416"], ["Subscription", "$349/mo"]],
-    sources: [["Savings ledger", "closed Sep 30"]],
-    eq: "H-05 coverage ratio", note: "A month is the sum of its days. Never weekly × 4.33.",
-  },
-  "to-date": {
-    title: "Banked to date", value: cvMoney(Math.round(CV_DAILY * CV_DAYS_TO_DATE)), claim: "book",
-    formula: `Σ daily accruals since ${CV_ACCRUAL_START}\n= (97 ÷ 7) × ${CV_DAYS_TO_DATE} days`,
-    inputs: [["First accrual", CV_ACCRUAL_START], ["Days accrued", String(CV_DAYS_TO_DATE)], ["Reversals at Oakland", "0"]],
-    sources: [["Savings ledger", "live"]], eq: "H-03 cumulative", note: "Reversals would remove dollars from the day the metric turned, not the day anyone noticed.",
-  },
-  "service-cut": {
-    title: "Cut one server at 8:00", value: "$37 tonight", claim: "obs",
-    formula: "hours removed × loaded rate\n= 2.0 h (8–10 pm) × $18.50\n= $37",
-    inputs: [["Covers pacing vs comparable Tuesday", "−22%"], ["Nowcast, covers 8–10 pm", "17 (band 15–20)"], ["Servers needed at the upper band", "4"], ["Servers on now", "5"]],
-    sources: [["Toast · live covers", "live"], ["7shifts · tonight's schedule", "write-back ready"]],
-    eq: "C-04 square-root staffing", note: "Observed cost, not a model. It goes into the Tuesday test as an execution record.",
-  },
-  "price-leg": {
-    title: "Vendor price movement", value: cvMoney(Math.round(CV_PRICE_LEG)), claim: "obs",
-    formula: "price leg = Σ (unit price now − unit price before) × quantity now\nmix leg = Σ (quantity now − quantity before) × unit price before\nprice + mix = total change, by construction",
-    inputs: CV_INVOICES.filter((r) => Math.abs(r.priceLeg) > 1).map((r) => [r.item, cvMoney(Math.round(r.priceLeg))]),
-    sources: [["Invoices · email inbox", "3 days ago"]], eq: "B-14 invoice decomposition",
-    note: "This is arithmetic, not inference. The saving, once you renegotiate, is the unit-price change on the next invoices.",
-  },
-};
+function buildDeriv(d) {
+  const room = d.profile;
+  const w = d.week;
+  const b = d.banked;
+  const lead = b.lead;
+  const out = {
+    "banked-week": {
+      title: "Banked this week", value: cvMoney(b.week), claim: "book",
+      formula: `Σ over active verifications of (weekly lower bound ÷ 7) × persistence(t)\n= ${b.live.length ? b.live.map((p) => `(${p.bookable} ÷ 7) × 1.00 × 7 days`).join(" + ") : "nothing accruing"}\n= ${cvMoney(b.week)}`,
+      inputs: [[`Active verifications at ${room.short}`, String(b.live.length)], ...b.live.map((p) => [`${p.title}, weekly lower bound`, cvMoney(p.bookable, { cents: true })]), ...(b.paused ? [["Paused this week (guardrail amber)", cvMoney(b.paused)]] : []), ["Days in window", "7"]],
+      sources: [...b.live.map((p) => [`Verification packet · ${p.title}`, `frozen ${p.since}`]), ["Toast · sales and covers", "2 min ago"]],
+      eq: "H-02 daily accrual", note: b.week ? "This is accrual of a rate already proven. Nothing new was measured this week, so no new number was born." : "Nothing is accruing. A change has to pass every gate before a dollar of it can be banked.",
+    },
+    "earned-week": {
+      title: "Earned this week", value: cvMoney(Math.round(w.earned)), claim: "obs",
+      formula: `contribution = net sales − food cost − hourly labour\n= ${cvMoney(Math.round(w.net))} − ${cvMoney(Math.round(w.food))} − ${cvMoney(Math.round(w.labour))}\n= ${cvMoney(Math.round(w.earned))}`,
+      inputs: [["Menu sales (Σ price × plates)", cvMoney(Math.round(w.gross))], ["Comps and discounts", cvMoney(-Math.round(w.gross - w.net))], ["Net sales", cvMoney(Math.round(w.net))], [`Food cost (Σ plate cost × plates, ${d.menu.menu.length} dishes)`, cvMoney(Math.round(w.food))], [`Hourly labour (Σ hours × rate, ${d.room.staff.length} people)`, cvMoney(Math.round(w.labour))], ["Covers", w.covers.toLocaleString("en-US")]],
+      sources: [["Toast · net sales", "2 min ago"], ["Recipe costs", d.feeds.find((f) => f.name === "Recipe costs").last], ["7shifts · labour", d.feeds.find((f) => f.name === "7shifts").last]],
+      eq: "A-01 contribution margin", note: "This is your restaurant's number, not ours. It exists whether or not Coversight does, and it keeps every other figure honest.",
+    },
+    "margin-move": {
+      title: "Margin change vs matched weeks", value: cvMoney(Math.round(d.hist.marginMove), { sign: true }), claim: "mod",
+      formula: `Δ = contribution this week − mean(contribution, 6 matched weeks)\n= ${cvMoney(Math.round(w.earned))} − ${cvMoney(Math.round(d.hist.matchedMean))}\n= ${cvMoney(Math.round(d.hist.marginMove), { sign: true })}`,
+      inputs: [["Matched weeks", "6 (early November last year, late September this year)"], ["Their mean contribution", cvMoney(Math.round(d.hist.matchedMean))], ["Of which we can account for", cvMoney(Math.round(d.claimable))], ["Unexplained", cvMoney(Math.round(d.unexplained))]],
+      sources: [["Toast · 52 weeks of history", "2 min ago"]],
+      eq: "H-09 margin attribution", note: `We claim the ${cvMoney(Math.round(d.claimable))} we measured. The rest is real, and we don't know its cause, so we don't claim it.`,
+    },
+    "exposure": {
+      title: "Estimated open exposure", value: `${cvMoney(Math.round(d.exposure))}/wk`, claim: "est",
+      formula: "Σ expected weekly effect of open candidates after overlap resolution\n(prevented costs excluded)",
+      inputs: d.candidates.filter((c) => !c.prevent).map((c) => [c.title, cvMoney(Math.round(c.value))]),
+      sources: [["Toast · item sales and prices", "2 min ago"], ["Invoices · email inbox", "3 days ago"], ["7shifts", d.feeds.find((f) => f.name === "7shifts").last]],
+      eq: "E-01 exposure", note: "Estimates, not savings. Nothing here can be invoiced, and it is never added to banked dollars.",
+    },
+    "coverage": {
+      title: "September coverage", value: `${b.coverage.toFixed(1)}×`, claim: "book",
+      formula: `banked in September ÷ subscription\n= ${cvMoney(Math.round(b.sept))} ÷ $${M.SUBSCRIPTION} = ${b.coverage.toFixed(2)}×`,
+      inputs: [["Days in September", "30"], ...b.accruing.filter((p) => p.septDays).map((p) => [`${p.title} (${p.septDays} days)`, cvMoney(Math.round((p.bookable / 7) * p.septDays))]), ["Banked in September", cvMoney(Math.round(b.sept))], ["Subscription", `$${M.SUBSCRIPTION}/mo`]],
+      sources: [["Savings ledger", "closed Sep 30"]],
+      eq: "H-05 coverage ratio", note: "A month is the sum of its days. Never weekly × 4.33.",
+    },
+    "to-date": {
+      title: "Banked to date", value: cvMoney(Math.round(b.toDate)), claim: "book",
+      formula: `Σ daily accruals since each change verified\n= ${b.accruing.length ? b.accruing.map((p) => `(${p.bookable} ÷ 7) × ${p.accrualDays} days`).join(" + ") : "nothing yet"}`,
+      inputs: [...b.accruing.map((p) => [`${p.title}, since ${p.since}`, cvMoney(Math.round((p.bookable / 7) * p.accrualDays))]), [`Reversals at ${room.short}`, String(b.reversed.length)]],
+      sources: [["Savings ledger", "live"]], eq: "H-03 cumulative", note: "Reversals remove dollars from the day the metric turned, not the day anyone noticed.",
+    },
+    "price-leg": {
+      title: "Vendor price movement", value: cvMoney(Math.round(d.inv.priceLeg)), claim: "obs",
+      formula: "price leg = Σ (unit price now − unit price before) × quantity now\nmix leg = Σ (quantity now − quantity before) × unit price before\nprice + mix = total change, by construction",
+      inputs: d.inv.invoices.filter((r) => Math.abs(r.priceLeg) > 1).sort((a, c) => c.priceLeg - a.priceLeg).map((r) => [r.item, cvMoney(Math.round(r.priceLeg))]),
+      sources: [["Invoices · email inbox", d.feeds.find((f) => f.name === "Invoices").last]], eq: "B-14 invoice decomposition",
+      note: "This is arithmetic, not inference. The saving, once you renegotiate, is the unit-price change on the next invoices.",
+    },
+    "usage-week": {
+      title: "Usage past tolerance", value: `${cvMoney(Math.round(d.usage.week))}/wk`, claim: "est",
+      formula: "per item: unexplained = (open + received − close) − Σ plates × recipe qty − logged waste\ncounted only when unexplained ÷ theoretical > tolerance\nweekly = Σ unexplained × unit cost ÷ 4",
+      inputs: d.usage.flagged.map((r) => [`${r.label} (${(r.pct * 100).toFixed(1)}% over)`, cvMoney(Math.round(r.dollars))]),
+      sources: [["Toast · plates sold", "2 min ago"], ["Inventory counts", d.feeds.find((f) => f.name === "Inventory counts").last], ["Waste log", d.feeds.find((f) => f.name === "Waste log").last]],
+      eq: "I-03 usage variance", note: "Manual counts carry about ±3% error, so a gap inside tolerance is never counted.",
+    },
+  };
+  if (lead) {
+    out[lead.id] = {
+      title: lead.title, value: `${cvMoney(lead.bookable)}/wk`, claim: "book",
+      formula: `effect measured against matched controls\npoint = ${cvMoney(lead.point)}/wk   90% interval = [${cvMoney(lead.lo)}, ${cvMoney(lead.hi)}]\nbookable = lower bound = ${cvMoney(lead.bookable)}/wk`,
+      inputs: [["Method", lead.method], ["Accruing since", lead.since], ["Held", lead.held], ["Owner", lead.owner]],
+      sources: [["Verification packet", `frozen ${lead.since}`]],
+      eq: "G-07 bookable = lower bound of the measured interval", note: "The multiplier was frozen when the window closed. A better model later cannot re-price this row.",
+    };
+  }
+  if (d.room.service.mode === "cut") {
+    const s = d.room.service;
+    out["service-cut"] = {
+      title: s.title, value: `${cvMoney(s.value)} tonight`, claim: "obs",
+      formula: `hours removed × loaded rate\n= 2.0 h (8–10 pm) × $18.50\n= ${cvMoney(s.value)}`,
+      inputs: [["Covers pacing vs comparable night", `${s.pace}%`], ["Servers needed at the upper band", "4"], ["Servers on now", "5"]],
+      sources: [["Toast · live covers", "live"], ["7shifts · tonight's schedule", "write-back ready"]],
+      eq: "C-04 square-root staffing", note: "Observed cost, not a model. It goes into the running test as an execution record.",
+    };
+  }
+  return out;
+}
 function cvDerivFor(id) { return CV_DERIV[id] || null; }
 
 /* ---------------------------------------------------------------- primitives */
@@ -358,35 +276,84 @@ function DerivDrawer({ id, onClose }) {
 /* ---------------------------------------------------------------- approval modal
    One approval, a preview of exactly what will change, the fence, the
    counter-metrics that would kill it, and the revert. */
-const CV_APPROVALS = {
-  "tue-cut": {
-    title: "Cut one server at 8:00 tonight", where: "Rosewood Oakland · Tuesday dinner", level: "A2 · Drafts", system: "7shifts",
-    diff: [["Jess M.", "5:00 – 10:00 pm", "5:00 – 8:00 pm"], ["Floor count 8–10 pm", "5 servers", "4 servers"]],
-    fence: "Never below 4 servers on dinner. Never cut after 8:30 pm.",
-    kill: ["Average turn time goes past 52 minutes", "Ticket time at the pass goes past 16 minutes", "Covers per server-hour goes past 7.5"],
-    window: "Logged as an execution record in the Tuesday dinner test (closes Nov 3).", revert: "Jess is notified and kept on call until 8:30. One tap restores her shift.",
-    value: "$37 tonight", claim: "obs",
-  },
-  "draft-schedule": {
-    title: "Publish next week's drafted schedule", where: "Rosewood Oakland · Nov 2 – 8", level: "A2 · Drafts", system: "7shifts",
-    diff: [["Tue 8–10 pm", "5 servers", "4 servers"], ["Wed 3–5 pm", "3 servers", "2 servers"], ["Sat 6–9 pm", "7 servers", "8 servers"], ["Net hours", "412 h", "413 h"]],
-    fence: "Never below 3 servers at any open hour. No change inside 24 hours of a shift without the GM.",
-    kill: ["Turn time past 52 minutes on any changed service", "Covers per server-hour past 7.5", "Two or more call-outs on a changed shift"],
-    window: "Opens a 3-week monitoring window against matched services at Berkeley and Walnut Creek.", revert: "The previous schedule is kept as a version. Restore it in one step until Nov 1.",
-    value: "+$18.50 net cost, protects Saturday's peak", claim: "mod",
-  },
-  "ribeye": {
-    title: "Raise the ribeye from $42 to $44", where: "Rosewood Oakland · dinner menu", level: "A1 · Recommends", system: "Toast menu",
-    diff: [["Ribeye Steak", "$42.00", "$44.00"], ["Menu reprint", "—", "Table cards only"]],
+function buildApprovals(d) {
+  const room = d.profile;
+  const out = {
+    "tue-cut": {
+      title: "Cut one server at 8:00 tonight", where: `${room.name} · Tuesday dinner`, level: "A2 · Drafts", system: "7shifts",
+      diff: [["Jess M.", "5:00 – 10:00 pm", "5:00 – 8:00 pm"], ["Floor count 8–10 pm", "5 servers", "4 servers"]],
+      fence: "Never below 4 servers on dinner. Never cut after 8:30 pm.",
+      kill: ["Average turn time goes past 52 minutes", "Ticket time at the pass goes past 16 minutes", "Covers per server-hour goes past 7.5"],
+      window: "Logged as an execution record in the Tuesday dinner test (closes Nov 3).", revert: "Jess is notified and kept on call until 8:30. One tap restores her shift.",
+      value: "$37 tonight", claim: "obs",
+    },
+    "draft-schedule": {
+      title: "Publish next week's drafted schedule", where: `${room.name} · Nov 2 – 8`, level: "A2 · Drafts", system: "7shifts",
+      diff: [["Tue 8–10 pm", "5 servers", "4 servers"], ["Wed 3–5 pm", "3 servers", "2 servers"], ["Sat 6–9 pm", "7 servers", "8 servers"], ["Net hours", "412 h", "413 h"]],
+      fence: "Never below 3 servers at any open hour. No change inside 24 hours of a shift without the GM.",
+      kill: ["Turn time past 52 minutes on any changed service", "Covers per server-hour past 7.5", "Two or more call-outs on a changed shift"],
+      window: "Opens a 3-week monitoring window against matched services at the other two rooms.", revert: "The previous schedule is kept as a version. Restore it in one step until Nov 1.",
+      value: "+$18.50 net cost, protects Saturday's peak", claim: "mod",
+    },
+    "bk-draft": {
+      title: "Publish next week's drafted schedule", where: `${room.name} · Nov 2 – 8`, level: "A1 · Recommends", system: "7shifts",
+      diff: [["Mon–Tue lunch", "3 servers", "2 servers"], ["Sat 6–9 pm", "6 servers", "8 servers"], ["Net hours", "318 h", "318 h"]],
+      fence: "Never below 2 servers at lunch, 4 on weekend dinner. No Friday cuts until the reversal review closes.",
+      kill: ["Turn time past 52 minutes on any changed service", "Lunch ticket time past 16 minutes"],
+      window: "Opens a 4-week window against matched services at Oakland and Walnut Creek.", revert: "The previous schedule is kept as a version.",
+      value: "Cost-neutral; moves 6 hours to the short peak", claim: "mod",
+    },
+    "wc-draft": {
+      title: "Start Sunday brunch staff 30 minutes earlier", where: `${room.name} · Sunday Nov 8`, level: "A3 · Executes within a fence", system: "7shifts",
+      diff: [["Line cook (Iris N.)", "10:00 am", "9:30 am"], ["Server (brunch open)", "10:00 am", "9:30 am"], ["Net hours", "301 h", "302 h"]],
+      fence: "Brunch labour under 22% of brunch sales. Never more than one hour net added without the owner.",
+      kill: ["Brunch labour past 22% of sales", "First-wave ticket time not improving after 3 Sundays"],
+      window: "Opens a 6-week window against Sundays before the change.", revert: "One tap restores the old start times.",
+      value: `about ${cvMoney(64)}/wk expected`, claim: "mod",
+    },
+    "void-reason": {
+      title: "Require a reason code on post-send voids", where: `${room.name} · Toast permissions`, level: "A1 · Recommends", system: "Toast",
+      diff: [["Void after the order is sent", "Server can void", "Manager PIN + reason code"], ["Void before send", "Server can void", "No change"]],
+      fence: "Applies to post-send voids only. Never blocks a void; it only asks who and why.",
+      kill: ["Ticket time at the pass goes past 16 minutes (managers pulled off the floor)", "Average void approval takes over 2 minutes"],
+      window: "The control chart keeps running against the 13-week baseline, at 1 false alarm per quarter.",
+      revert: "Turn the permission back off in Toast. Nothing else changes.",
+      value: "No claim until it verifies", claim: "none",
+    },
+    "delivery-markup": {
+      title: "Raise delivery prices 10%", where: `${room.name} · DoorDash and Uber Eats menus`, level: "A1 · Recommends", system: "Toast delivery menus",
+      diff: [["DoorDash prices", "Dine-in prices", "+10%, rounded to $0.50"], ["Uber Eats prices", "Dine-in prices", "+10%, rounded to $0.50"], ["Dine-in and takeout", "—", "No change"]],
+      fence: "Delivery prices at most 12% above dine-in. One delivery price change per 6 weeks.",
+      kill: ["Delivery orders fall more than 20% against takeout", "App rating drops below 4.5", "Refund rate rises"],
+      window: "Opens a 6-week test with takeout as the control channel.",
+      revert: "Restore dine-in prices on both apps from Toast. The test closes as no claim.",
+      value: `${cvMoney(Math.round(d.chan.markupLo))} to ${cvMoney(Math.round(d.chan.markupHi))}/wk estimated`, claim: "est",
+    },
+  };
+  return out;
+}
+
+/** Look up an approval. "price:<dish>:<price>" builds one from the current menu. */
+function cvApproval(id) {
+  if (CV_APPROVALS[id]) return CV_APPROVALS[id];
+  const m = /^price:([\w-]+):([\d.]+)$/.exec(id || "");
+  if (!m) return null;
+  const item = CV_MENU.find((x) => x.key === m[1]);
+  if (!item) return null;
+  const to = +m[2];
+  const sim = cvPriceMoveInterval(item, to);
+  return {
+    title: `Change the ${item.name.toLowerCase()} from ${cvMoney(item.price, { cents: true })} to ${cvMoney(to, { cents: true })}`, where: `${CV_ROOM.name} · menu`, level: "A1 · Recommends", system: "Toast menu",
+    diff: [[item.name, cvMoney(item.price, { cents: true }), cvMoney(to, { cents: true })], ["Menu reprint", "—", "Table cards only"]],
     fence: "Price moves under 8%. One price change per item per 6 weeks.",
-    kill: ["Ribeye units drop more than 9% vs matched weeks", "Check average drops on tables that order it", "Comps on the ribeye rise"],
-    window: "Opens a 6-week difference-in-differences window against items whose price did not move.", revert: "Restore $42 in Toast. The test closes as no claim.",
-    value: "about $115/wk expected", claim: "mod",
-  },
-};
+    kill: [`${item.name} units drop more than ${Math.max(5, Math.round(Math.abs(item.e || 0.5) * 15))}% vs matched weeks`, "Check average drops on tables that order it", "Comps on the dish rise"],
+    window: "Opens a 6-week difference-in-differences window against items whose price did not move.", revert: `Restore ${cvMoney(item.price)} in Toast. The test closes as no claim.`,
+    value: sim ? `about ${cvMoney(Math.round(sim.delta))}/wk expected` : "not priceable from data", claim: "mod",
+  };
+}
 
 function ApprovalModal({ id, onClose, onConfirm }) {
-  const a = CV_APPROVALS[id];
+  const a = cvApproval(id);
   const [step, setStep] = React.useState("review");
   React.useEffect(() => {
     const k = (e) => { if (e.key === "Escape") onClose(); };
@@ -460,4 +427,6 @@ function MiniBars({ values, color = "var(--accent)", h = 48, neg = "var(--money-
   );
 }
 
-export { CvCtx, useCv, cvMoney, cvPct, cvRound, CV_NOW, CV_DAILY, CV_ACCRUAL_START, CV_DAYS_TO_DATE, CV_SUB, CV_LOCS, CV_MENU, CV_CM_UNWEIGHTED, CV_CM_WEIGHTED, cvPriceMove, cvPriceMoveInterval, CV_INVOICES, CV_PRICE_LEG, CV_MIX_LEG, CV_PERSIST, cvPlanCandidates, cvChoosePlan, CV_EXPOSURE, CV_SALMON, CV_SALMON_WK, CV_SALMON_LOST, CV_PROOF, CV_OUTCOME, CV_DERIV, CV_CLAIM, Claim, Money, Pill, Outcome, Callout, Interval, PageHead, DerivDrawer, ApprovalModal, CV_APPROVALS, cvScale, MiniBars };
+cvLoad(SEED, "oakland");
+
+export { CvCtx, useCv, cvMoney, cvPct, cvRound, cvLoad, cvFill, cvApproval, CV_DS, CV_D, CV_GROUP, CV_ROOM, CV_NOW, CV_DAILY, CV_ACCRUAL_START, CV_DAYS_TO_DATE, CV_SUB, CV_LOCS, CV_MENU, CV_CM_UNWEIGHTED, CV_CM_WEIGHTED, cvPriceMove, cvPriceMoveInterval, CV_INVOICES, CV_PRICE_LEG, CV_MIX_LEG, CV_PERSIST, cvPlanCandidates, cvChoosePlan, CV_EXPOSURE, CV_SALMON, CV_SALMON_WK, CV_SALMON_LOST, CV_PROOF, CV_OUTCOME, CV_DERIV, CV_CLAIM, Claim, Money, Pill, Outcome, Callout, Interval, PageHead, DerivDrawer, ApprovalModal, CV_APPROVALS, cvScale, MiniBars };

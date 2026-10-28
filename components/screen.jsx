@@ -8,6 +8,8 @@ import { CvLabour, CvMenu, CvPurchasing, CvThroughput } from './screens/levers';
 import { CvAccountant, CvComparison, CvLedger, CvPacket, CvProof, CvSources, CvSystem } from './screens/proof';
 import { CvBilling, CvBuild, CvFences, CvFinding, CvMeeting, CvPortfolio, CvStart } from './screens/extra';
 import { CvChannels, CvControls, CvCoverage, CvInventory, CvKitchen } from './screens/areas';
+import { CvInputs } from './screens/inputs';
+import { CvTrends } from './screens/trends';
 import { pathFor } from '../lib/pages';
 
 /** Page id → screen component. Every key in CV_PAGES has one (tests check). */
@@ -15,6 +17,8 @@ export const SCREENS = {
   today: CvToday,
   service: CvService,
   week: CvThisWeek,
+  trends: CvTrends,
+  inputs: CvInputs,
   portfolio: CvPortfolio,
   meeting: CvMeeting,
   plan: CvPlan,

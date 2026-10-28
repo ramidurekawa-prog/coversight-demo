@@ -3,7 +3,7 @@
 import * as React from 'react';
 
 import { Icon, Button, Tabs } from '../kit';
-import { useCv, cvMoney, CV_DAILY, CV_DAYS_TO_DATE, CV_LOCS, CV_SALMON_WK, CV_PROOF, CV_OUTCOME, Claim, Money, Pill, Outcome, Callout, Interval, PageHead, cvScale } from './core';
+import { useCv, cvMoney, CV_D, CV_DS, CV_GROUP, CV_ROOM, CV_DAYS_TO_DATE, CV_LOCS, CV_PROOF, CV_OUTCOME, Claim, Money, Pill, Outcome, Callout, Interval, PageHead, cvScale } from './core';
 
 /* Coversight — proof surfaces: Proof, Verification packet, Accountant, Savings ledger,
    Comparison, Sources, System. */
@@ -74,8 +74,8 @@ function cvGates(p) {
     ["Window at least as long as policy", "6 of 6 weeks", "ok"],
     ["Matched control services", "9 services · balance 0.06", "ok"],
     ["Parallel trends before the change", "placebo p = 0.71", "ok"],
-    ["Enough data to see the effect", "detectable $40 ≤ expected $112", "ok"],
-    ["Interval excludes zero", "lower bound $97 > $0", "ok"],
+    ["Enough data to see the effect", `detectable $${Math.round((p.point || 100) * 0.36)} ≤ expected $${p.point || 0}`, "ok"],
+    ["Interval excludes zero", `lower bound $${p.lo ?? 0} > $0`, "ok"],
     ["Guardrails held", "covers +0.4% · ticket 13.8 min", "ok"],
     ["Source data complete", "99.2% of services", "ok"],
     ["No competing explanation", "no other change on the lever", "ok"],
@@ -84,11 +84,11 @@ function cvGates(p) {
   ];
   const set = (i, v, s) => { base[i] = [base[i][0], v, s]; };
   if (p.outcome === "limited") { set(2, "4 of 6 weeks", "warn"); set(6, `lower bound $${p.lo} > $0`, "ok"); }
-  if (p.outcome === "testing") { [2, 5, 6, 7, 11].forEach((i) => set(i, "pending until Nov 3", "warn")); set(2, "3 of 3 weeks · in progress", "warn"); }
-  if (p.outcome === "data") { set(8, "recipe costs 18 days old", "no"); [5, 6, 11].forEach((i) => set(i, "not computed", "warn")); }
-  if (p.outcome === "reversed") { set(7, "turn time 54 min > 52 guard", "no"); set(11, "removed Aug 24", "no"); }
-  if (p.outcome === "inconclusive") { set(5, "needed 9 services, had 4", "no"); set(6, "−$58 to $186", "no"); set(3, "4 services · balance 0.19", "warn"); }
-  if (p.outcome === "directional") { set(6, "−$12 to $94", "no"); }
+  if (p.outcome === "testing") { [2, 5, 6, 7, 11].forEach((i) => set(i, `pending until ${p.closes}`, "warn")); set(2, `${p.checkpoint || "in progress"}`, "warn"); }
+  if (p.outcome === "data") { set(8, "source data stale or missing", "no"); [5, 6, 11].forEach((i) => set(i, "not computed", "warn")); }
+  if (p.outcome === "reversed") { set(7, "guardrail breached", "no"); set(11, `removed ${p.held.replace("Reversed ", "")}`, "no"); }
+  if (p.outcome === "inconclusive") { set(5, "underpowered", "no"); set(6, "interval crosses zero", "no"); set(3, "too few matched services", "warn"); }
+  if (p.outcome === "directional") { set(6, "interval crosses zero", "no"); }
   return base;
 }
 function CvPacket({ params }) {
@@ -106,11 +106,11 @@ function CvPacket({ params }) {
         <section className="cv-card">
           <div className="cv-card-head"><span className="cv-over">What can be claimed</span><Claim k={p.bookable ? "book" : "none"} /></div>
           <div className="cv-row" style={{ alignItems: "baseline", gap: 12 }}>
-            <span className={`cv-fig xl ${p.bookable ? "cv-up" : ""}`}>{p.id === "thu-prep" ? <Money id="thu-prep">${p.bookable}</Money> : `$${p.bookable}`}</span>
+            <span className={`cv-fig xl ${p.bookable ? "cv-up" : ""}`}>{CV_D.banked.lead && CV_D.banked.lead.id === p.id ? <Money id={p.id}>${p.bookable}</Money> : `$${p.bookable}`}</span>
             <span className="cv-muted">per week{p.bookable ? ", the lower bound" : ""}</span>
           </div>
           {p.lo != null && p.outcome !== "testing" && <Interval lo={p.lo} pt={p.point} hi={p.hi} min={Math.min(0, p.lo) - 20} max={p.hi + 40} />}
-          {p.outcome === "testing" && <Callout tone="info" icon="Timer">Running estimate {cvMoney(p.point)}/wk, interval {cvMoney(p.lo)} to {cvMoney(p.hi)}. It crosses zero, so nothing accrues until the window closes on Nov 3.</Callout>}
+          {p.outcome === "testing" && <Callout tone="info" icon="Timer">Running estimate {cvMoney(p.point)}/wk, interval {cvMoney(p.lo)} to {cvMoney(p.hi)}. It crosses zero, so nothing accrues until the window closes on {p.closes}.</Callout>}
           {p.reason && p.outcome !== "testing" && <Callout tone={p.outcome === "reversed" ? "bad" : p.outcome === "data" || p.paused ? "warn" : ""} icon={p.paused ? "CirclePause" : CV_OUTCOME[p.outcome].icon}>{p.reason}</Callout>}
           {p.limitation && <Callout tone="warn" icon="TriangleAlert">Limitation, shown wherever this claim appears: {p.limitation}.</Callout>}
         </section>
@@ -243,14 +243,19 @@ function CvAccountant() {
 }
 
 /* ================================================================ Savings ledger */
-const CV_WEEKS = ["Jun 22", "Jun 29", "Jul 6", "Jul 13", "Jul 20", "Jul 27", "Aug 3", "Aug 10", "Aug 17", "Aug 24", "Aug 31", "Sep 7", "Sep 14", "Sep 21", "Sep 28", "Oct 5", "Oct 12", "Oct 19"];
-const CV_SERIES = [
-  { key: "thu", loc: "oakland", label: "Oakland · Thursday prep", color: "var(--cat-1)", vals: CV_WEEKS.map(() => 97) },
-  { key: "wcclose", loc: "walnut", label: "Walnut Creek · Tuesday close", color: "var(--cat-2)", vals: CV_WEEKS.map((_, i) => (i >= 9 ? 382 : 0)) },
-  { key: "wccomp", loc: "walnut", label: "Walnut Creek · comp reset", color: "var(--cat-3)", vals: CV_WEEKS.map((_, i) => (i >= 14 && i < 17 ? 88 : 0)) },
-  { key: "bkfri", loc: "berkeley", label: "Berkeley · Friday server (reversed)", color: "var(--money-down)", vals: CV_WEEKS.map((_, i) => (i >= 6 && i <= 8 ? -185 : 0)), reversed: true },
-];
+const LEDGER_COLORS = ["var(--cat-1)", "var(--cat-2)", "var(--cat-3)", "var(--accent)"];
+/** Weekly banked series, one per packet that ever accrued or reversed. */
+function ledgerSeries() {
+  const weeks = CV_DS.ledgerWeeks;
+  let c = 0;
+  return CV_PROOF.filter((p) => p.ledger).map((p) => {
+    const [a, z, v] = p.ledger;
+    const loc = CV_LOCS.find((l) => l.id === p.loc);
+    return { key: p.id, loc: p.loc, label: `${loc.short} · ${p.title.charAt(0).toLowerCase()}${p.title.slice(1)}${v < 0 ? " (reversed)" : ""}`, color: v < 0 ? "var(--money-down)" : LEDGER_COLORS[c++ % LEDGER_COLORS.length], vals: weeks.map((_, i) => (i >= a && (z == null || i <= z) ? v : 0)), reversed: v < 0 };
+  });
+}
 function LedgerChart({ series }) {
+  const CV_WEEKS = CV_DS.ledgerWeeks;
   const W = 1000, H = 250, P = { l: 48, r: 10, t: 14, b: 30 };
   const n = CV_WEEKS.length, bw = (W - P.l - P.r) / n;
   const tops = CV_WEEKS.map((_, i) => series.reduce((s, ser) => s + Math.max(0, ser.vals[i]), 0));
@@ -287,19 +292,27 @@ function CvLedger() {
   const cv = useCv();
   const [cad, setCad] = React.useState("week");
   const scope = cv.loc;
-  const series = CV_SERIES.filter((s) => scope === "all" || s.loc === scope);
-  const d = CV_DAILY;
+  const all = ledgerSeries();
+  const series = all.filter((x) => scope === "all" || x.loc === scope);
+  const ds = scope === "all" ? CV_GROUP.rooms : [CV_D];
+  const accr = ds.flatMap((r) => r.banked.accruing);
+  const wk = ds.reduce((s2, r) => s2 + r.banked.week, 0);
+  const d = wk / 7;
+  const sumDays = (k) => accr.reduce((s2, p) => s2 + (p.bookable / 7) * (p[k] || 0), 0);
+  const toDate = sumDays("accrualDays"), oct = sumDays("octDays"), q3 = sumDays("q3Days");
+  const name = scope === "all" ? "All three rooms" : CV_ROOM.name;
+  const n = ds.reduce((s2, r) => s2 + r.banked.live.length, 0);
   const CAD = {
-    day: { fig: cvMoney(Math.round(d)), say: "Today you banked $14 from one change that is holding.", math: "Σ (weekly lower bound ÷ 7) × persistence = 97 ÷ 7 × 1.00", note: "An accrual of a rate already proven, not a new measurement." },
-    week: { fig: "$97", say: "$97 this week. Nothing new verified, nothing reversed.", math: "seven daily accruals + any window that closed this week", note: "The only cadence where a new number can be born." },
-    month: { fig: cvMoney(Math.round(d * 26)), say: `October so far: ${cvMoney(Math.round(d * 26))} over 26 days, against $349 of subscription.`, math: "Σ of the month's daily accruals, never weekly × 4.33", note: "Months differ in length, and the ledger simply reflects that." },
-    quarter: { fig: cvMoney(Math.round(d * 92)), say: `Q3: ${cvMoney(Math.round(d * 92))} banked. The Thursday prep standard was re-tested in September and held.`, math: "Σ of 92 days + the re-verification sweep", note: "One re-test per standard per quarter." },
-    year: { fig: cvMoney(Math.round(d * CV_DAYS_TO_DATE)), say: `${cvMoney(Math.round(d * CV_DAYS_TO_DATE))} since June 22. The first annual reconciliation against your books is in June 2027.`, math: "Σ of days, then checked against the margin your P&L actually shows", note: "If the claim ever exceeds the improvement, it's capped and the gap is shown." },
+    day: { fig: cvMoney(Math.round(d)), say: wk ? `Today you banked ${cvMoney(Math.round(d))} from ${n === 1 ? "one change" : `${n} changes`} holding.` : "Nothing accrued today. Nothing here has passed every gate and is holding.", math: "Σ (weekly lower bound ÷ 7) × persistence", note: "An accrual of a rate already proven, not a new measurement." },
+    week: { fig: cvMoney(wk), say: `${cvMoney(wk)} this week. Nothing new verified, nothing reversed.`, math: "seven daily accruals + any window that closed this week", note: "The only cadence where a new number can be born." },
+    month: { fig: cvMoney(Math.round(oct)), say: `October so far: ${cvMoney(Math.round(oct))} over 26 days, against $349 a room of subscription.`, math: "Σ of the month's daily accruals, never weekly × 4.33", note: "Months differ in length, and the ledger simply reflects that." },
+    quarter: { fig: cvMoney(Math.round(q3)), say: `Q3: ${cvMoney(Math.round(q3))} banked, counted day by day from each change's verification date.`, math: "Σ of each day in Jul–Sep a change was accruing", note: "One re-test per standard per quarter." },
+    year: { fig: cvMoney(Math.round(toDate)), say: `${cvMoney(Math.round(toDate))} since June 22. The first annual reconciliation against your books is in June 2027.`, math: "Σ of days, then checked against the margin your P&L actually shows", note: "If the claim ever exceeds the improvement, it's capped and the gap is shown." },
   };
   const c = CAD[cad];
   return (
     <div className="cv-page wide">
-      <PageHead over={`Savings ledger · ${CV_LOCS.find((l) => l.id === scope).name}`} q="What has this been worth, at every zoom level?"
+      <PageHead over={`Savings ledger · ${name}`} q="What has this been worth, at every zoom level?"
         sub="Measured once, over weeks. Everything after that is bookkeeping on that one measurement: the day is the week spread out, the month is its days added up." />
       <div className="cv-grid g-hero">
         <section className="cv-card">
@@ -307,7 +320,7 @@ function CvLedger() {
             <Tabs value={cad} onChange={setCad} tabs={["day", "week", "month", "quarter", "year"].map((k) => ({ value: k, label: k[0].toUpperCase() + k.slice(1) }))} />
             <Claim k="book" />
           </div>
-          <span className="cv-xs cv-faint">Rosewood Oakland</span>
+          <span className="cv-xs cv-faint">{name}</span>
           <span className="cv-fig xl cv-up">{c.fig}</span>
           <p className="cv-h4" style={{ fontWeight: 600 }}>"{c.say}"</p>
           <div className="cv-formula" style={{ fontSize: "var(--text-xs)" }}>{c.math}</div>
@@ -330,9 +343,9 @@ function CvLedger() {
           <span className="cv-h4">Banked each week</span>
           <span className="cv-small cv-faint">Switch rooms in the top bar</span>
         </div>
-        <LedgerChart series={series.length ? series : CV_SERIES} />
+        <LedgerChart series={series.length ? series : all} />
         <div className="cv-legend">
-          {(series.length ? series : CV_SERIES).map((s) => <span key={s.key}><i style={s.reversed ? { border: `1.5px dashed ${s.color}`, background: "transparent" } : { background: s.color }} />{s.label}</span>)}
+          {(series.length ? series : all).map((s) => <span key={s.key}><i style={s.reversed ? { border: `1.5px dashed ${s.color}`, background: "transparent" } : { background: s.color }} />{s.label}</span>)}
         </div>
         {(scope === "all" || scope === "walnut") && <Callout tone="warn" icon="PauseCircle">Walnut Creek's comp reset stopped accruing the week of Oct 19. Its control chart is outside the limit, and nothing accrues while a guardrail is amber.</Callout>}
         {(scope === "all" || scope === "berkeley") && <Callout tone="bad" icon="Undo2">Berkeley's Friday server cut was removed back to Aug 3, the day turn time started to slip, not the day anyone noticed. The $555 left every figure and was credited.</Callout>}
@@ -351,20 +364,13 @@ function CvLedger() {
 }
 
 /* ================================================================ Comparison */
-const CV_CMP = [
-  { k: "Labour, share of sales", u: "%", v: [25.3, 27.9, 24.1], better: "low", f: (x) => x.toFixed(1) + "%" },
-  { k: "Margin per cover", u: "$", v: [13.41, 12.08, 13.92], better: "high", f: (x) => "$" + x.toFixed(2) },
-  { k: "Comps and voids, share of sales", u: "%", v: [1.1, 1.4, 2.3], better: "low", f: (x) => x.toFixed(1) + "%" },
-  { k: "Friday lunch ticket time", u: "min", v: [14, 19, 15], better: "low", f: (x) => x + " min" },
-  { k: "Seat-hours used", u: "%", v: [31, 38, 27], better: "high", f: (x) => x + "%" },
-  { k: "Banked per manager-hour", u: "$", v: [48, 0, 71], better: "high", f: (x) => "$" + x },
-];
 const CV_SHAPES = [
   { loc: "Oakland", draw: (x, y) => <circle cx={x} cy={y} r="6" fill="var(--cat-1)" /> },
   { loc: "Berkeley", draw: (x, y) => <rect x={x - 5.5} y={y - 5.5} width="11" height="11" fill="var(--cat-2)" /> },
   { loc: "Walnut Creek", draw: (x, y) => <path d={`M${x} ${y - 7} L${x + 7} ${y + 5} L${x - 7} ${y + 5} Z`} fill="var(--cat-3)" /> },
 ];
 function CvComparison() {
+  const CV_CMP = CV_GROUP.cmp;
   return (
     <div className="cv-page">
       <PageHead over="Comparison" q="Which of my rooms runs best?"
@@ -376,10 +382,10 @@ function CvComparison() {
         {CV_CMP.map((m, idx) => {
           const lo = Math.min(...m.v), hi = Math.max(...m.v), pad = (hi - lo) * 0.25 || 1;
           const x = cvScale(lo - pad, hi + pad, 20, 380);
-          const best = m.better === "low" ? m.v.indexOf(lo) : m.v.indexOf(hi);
+          const best = m.better === "neutral" ? -1 : m.better === "low" ? m.v.indexOf(lo) : m.v.indexOf(hi);
           return (
             <div key={m.k} style={{ display: "grid", gridTemplateColumns: "minmax(0, 220px) minmax(0, 1fr) minmax(0, 260px)", gap: 16, alignItems: "center", padding: "14px 18px", borderTop: idx ? "1px solid var(--border)" : 0 }} className="cv-cmp-row">
-              <div className="cv-col" style={{ gap: 2 }}><span style={{ fontWeight: 600 }}>{m.k}</span><span className="cv-xs cv-faint">{m.better === "low" ? "Lower is better" : "Higher is better"}</span></div>
+              <div className="cv-col" style={{ gap: 2 }}><span style={{ fontWeight: 600 }}>{m.k}</span><span className="cv-xs cv-faint">{m.better === "neutral" ? "Context, not a score" : m.better === "low" ? "Lower is better" : "Higher is better"}</span></div>
               <svg className="cv-chart" viewBox="0 0 400 30" style={{ height: 30 }} aria-hidden="true">
                 <line x1="20" x2="380" y1="15" y2="15" className="axis" />
                 {m.v.map((v, i) => <g key={i}>{CV_SHAPES[i].draw(x(v), 15)}</g>)}
@@ -401,29 +407,20 @@ function CvComparison() {
 }
 
 /* ================================================================ Sources */
-const CV_FEEDS = [
-  { name: "Toast", what: "Sales, items, voids, comps, covers", last: "2 minutes ago", state: "healthy", risk: 0 },
-  { name: "7shifts", what: "Schedules and clock-ins", last: "18 hours ago", state: "stale", risk: 370, note: "The access token expired. Labour verification is degraded, which puts the Tuesday dinner test at risk.", fix: "Reconnect" },
-  { name: "Recipe costs", what: "Plate costs, uploaded as CSV", last: "18 days ago", state: "stale", risk: CV_SALMON_WK, note: "Too old to price the salmon from. The plate-cost test is quarantined and the salmon price move can't verify.", fix: "Upload CSV" },
-  { name: "Kitchen display", what: "Ticket times by station", last: "1 hour ago", state: "partial", risk: 0, note: "Exporting hourly averages by station, not each ticket. Ticket-time changes can be estimated, not measured.", fix: "Fix export" },
-  { name: "Inventory counts", what: "Monthly manual count, entered in Toast", last: "Oct 1 count", state: "partial", risk: 0, note: "Counted once a month by hand. A single count carries about ±3% error, so smaller usage gaps are noise.", fix: "Add a spot count" },
-  { name: "Invoices", what: "Vendor invoices from your inbox", last: "3 days ago", state: "healthy", risk: 0 },
-  { name: "Delivery statements", what: "DoorDash and Uber Eats payouts, commissions, refunds", last: "Monday payout", state: "healthy", risk: 0 },
-  { name: "QuickBooks Online", what: "Ledger, for reconciliation", last: "Sep 30 close", state: "healthy", risk: 0 },
-  { name: "Waitlist", what: "Guests turned away or waiting", last: "Not connected", state: "off", risk: 0, note: "Without it, faster turns can never be claimed.", fix: "Connect" },
-];
 function CvSources() {
   const cv = useCv();
+  const CV_FEEDS = CV_D.feeds;
+  const fixes = CV_FEEDS.filter((f) => f.risk > 0);
   const total = CV_FEEDS.reduce((s, f) => s + f.risk, 0);
   const tone = { healthy: ["good", "CircleCheck", "Healthy"], stale: ["warn", "Clock", "Stale"], partial: ["warn", "CircleDot", "Partial"], off: ["neutral", "CircleMinus", "Not connected"] };
   return (
     <div className="cv-page">
-      <PageHead over="Sources · Rosewood Oakland" q="Can I trust these numbers?"
+      <PageHead over={`Sources · ${CV_ROOM.name}`} q="Can I trust these numbers?"
         sub="Freshness for each feed from its last successful sync, and the dollars each one puts at risk. If two feeds touch the same dollar, it's counted once, under the feed that would fix it first." />
       <div className="cv-grid g3">
         <div className="cv-card" style={{ gap: 6 }}><span className="cv-xs cv-faint">Feeds healthy</span><span className="cv-fig md">{CV_FEEDS.filter((f) => f.state === "healthy").length} of {CV_FEEDS.length}</span></div>
         <div className="cv-card" style={{ gap: 6 }}><span className="cv-xs cv-faint">Weekly value at risk</span><span className="cv-fig md cv-exp">{cvMoney(total)}</span><span className="cv-xs cv-faint">counted once across feeds</span></div>
-        <div className="cv-card" style={{ gap: 6 }}><span className="cv-xs cv-faint">Fixes that clear it</span><span className="cv-fig md">2</span><span className="cv-xs cv-faint">about 6 minutes</span></div>
+        <div className="cv-card" style={{ gap: 6 }}><span className="cv-xs cv-faint">Fixes that clear it</span><span className="cv-fig md">{fixes.length}</span><span className="cv-xs cv-faint">{fixes.length ? `about ${fixes.length * 3} minutes` : "nothing at risk"}</span></div>
       </div>
       <section className="cv-card flush">
         {CV_FEEDS.map((f, i) => {
@@ -436,7 +433,8 @@ function CvSources() {
               </div>
               <div className="cv-row" style={{ justifyContent: "flex-end" }}>
                 {f.risk > 0 && <span className="cv-num cv-exp" style={{ fontWeight: 600 }}>{cvMoney(f.risk)}/wk at risk</span>}
-                {f.fix && <Button size="sm" variant={f.risk ? "primary" : "secondary"} onClick={() => cv.toast(`${f.name}: ${f.fix.toLowerCase()} started.`)}>{f.fix}</Button>}
+                {f.manual && <Pill tone="info" icon="PencilLine">Manual</Pill>}
+                {f.fix && (f.state !== "healthy" || f.input) && <Button size="sm" variant={f.risk ? "primary" : "secondary"} onClick={() => (f.input ? cv.go("inputs", { kind: f.input }) : cv.toast(`${f.name}: ${f.fix.toLowerCase()} started.`))}>{f.fix}</Button>}
               </div>
             </div>
           );
@@ -478,14 +476,16 @@ const CV_EVENTS = [
   ["Orchestration", "Opened task: upload recipe costs, assigned to Maria Reyes"],
   ["Operator copilot", "Answered: \"Why is the salmon test stuck?\""],
 ];
-const CV_LEVERS = [
-  { k: "Labour", now: 2, earned: 3, need: "A4 needs a full quarter at A3 without an un-caught reversal" },
-  { k: "Menu", now: 1, earned: 1, need: "A2 needs write access to Toast menus and a preview of the change" },
-  { k: "Purchasing", now: 1, earned: 2, need: "A3 needs a verified renegotiation at this room" },
-  { k: "Controls", now: 1, earned: 1, need: "A2 needs a measured comp rate at this room" },
-  { k: "Throughput", now: 0, earned: 0, need: "A1 needs waitlist data, so a recommendation can rest on a measured figure" },
-];
+const LEVER_NEED = {
+  Labour: "A4 needs a full quarter at A3 without an un-caught reversal",
+  Menu: "A2 needs write access to Toast menus and a preview of the change",
+  Purchasing: "A3 needs a verified renegotiation at this room",
+  Controls: "A2 needs a measured comp rate at this room",
+  Throughput: "A1 needs waitlist data, so a recommendation can rest on a measured figure",
+};
+const cvLevers = () => Object.entries(CV_D.room.autonomy).map(([k, [now, earned]]) => ({ k, now, earned, need: LEVER_NEED[k] }));
 function CvSystem() {
+  const CV_LEVERS = cvLevers();
   const [levels, setLevels] = React.useState(() => Object.fromEntries(CV_LEVERS.map((l) => [l.k, l.now])));
   const [feed, setFeed] = React.useState(() => CV_EVENTS.slice(0, 4).map((e, i) => ({ id: i, t: `7:1${4 - i} pm`, a: e[0], m: e[1] })));
   React.useEffect(() => {
@@ -505,7 +505,7 @@ function CvSystem() {
       <PageHead over="System" q="Who is doing what, and how much rope do they have?"
         sub="Autonomy is granted per lever and per room, never globally. Each level is earned by evidence, and any guardrail breach drops that lever back to recommending." />
       <section className="cv-card">
-        <div className="cv-card-head"><span className="cv-h4">Autonomy at Rosewood Oakland</span><span className="cv-small cv-faint">A0 observes · A1 recommends · A2 drafts · A3 executes within a fence · A4 holds the line</span></div>
+        <div className="cv-card-head"><span className="cv-h4">Autonomy at {CV_ROOM.name}</span><span className="cv-small cv-faint">A0 observes · A1 recommends · A2 drafts · A3 executes within a fence · A4 holds the line</span></div>
         <div className="cv-col" style={{ gap: 14 }}>
           {CV_LEVERS.map((l) => (
             <div key={l.k} style={{ display: "grid", gridTemplateColumns: "minmax(0, 140px) minmax(0, 320px) minmax(0, 1fr)", gap: 16, alignItems: "center" }} className="cv-lever-row">
@@ -550,4 +550,4 @@ function CvSystem() {
   );
 }
 
-export { CV_FEEDS, CvProof, CvPacket, CvAccountant, CvLedger, CvComparison, CvSources, CvSystem };
+export { CvProof, CvPacket, CvAccountant, CvLedger, CvComparison, CvSources, CvSystem };
