@@ -1187,7 +1187,7 @@ body { background: var(--background); color: var(--fg-1); }
 
 /* ---- Brand ---------------------------------------------------------------- */
 .cv-brand { display: flex; align-items: center; gap: 8px; padding: 6px; }
-.cv-brand .glyph { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; }
+.cv-brand .glyph { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; }
 .cv-brand .glyph img { height: 100%; width: auto; }
 .cv-brand .wm { font-family: var(--font-wordmark); font-weight: 600; font-size: 19px; letter-spacing: -0.018em; }
 .cv-navgroup { padding: 0 10px 4px; margin-top: 12px; font-size: var(--text-xs); color: var(--fg-3); display: flex; justify-content: space-between; }

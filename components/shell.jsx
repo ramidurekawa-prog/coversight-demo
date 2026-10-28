@@ -26,7 +26,7 @@ function Sidebar({ page, role, onNavigate }) {
       <div className="sb-head">
         <div className="cv-brand">
           <span className="glyph">
-            <img src="/brand-mark.png" alt="" width="20" height="28" />
+            <img src="/brand-mark.png" alt="" width="30" height="30" />
           </span>
           <span className="wm">Coversight</span>
         </div>
