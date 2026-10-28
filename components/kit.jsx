@@ -5,6 +5,19 @@
  * (lucide-react), imported by name so only the icons used ship. */
 
 import {
+  ChartLine,
+  FilePen,
+  MessageSquare,
+  Trash2,
+  Plus,
+  Upload,
+  RotateCcw,
+  PencilLine,
+  Flame,
+  Calculator,
+  LayoutList,
+  PackageX,
+  Sunrise,
   LayoutGrid,
   Package,
   ChefHat,
@@ -115,6 +128,19 @@ import {
 } from 'lucide-react';
 
 const ICONS = {
+  ChartLine,
+  FilePen,
+  MessageSquare,
+  Trash2,
+  Plus,
+  Upload,
+  RotateCcw,
+  PencilLine,
+  Flame,
+  Calculator,
+  LayoutList,
+  PackageX,
+  Sunrise,
   LayoutGrid,
   Package,
   ChefHat,

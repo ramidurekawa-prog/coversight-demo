@@ -1606,3 +1606,20 @@ a.cv-health { color: var(--fg-2); }
   .cv-diag-row { grid-template-columns: minmax(0, 1fr); gap: 6px; }
 }
 @media (max-width: 520px) { .cv-loop li { padding: 8px 10px; } .cv-loop li .cv-xs { display: none; } }
+
+/* ---- V4: data inputs ------------------------------------------------------ */
+.cv-kinds { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.cv-kind { display: flex; gap: 12px; align-items: center; padding: 12px 14px; border-radius: var(--radius-md); border: 1px solid var(--border); background: var(--surface); color: var(--fg-1); font: inherit; cursor: pointer; text-align: left; }
+.cv-kind:hover { border-color: var(--border-strong); }
+.cv-kind.on { border-color: var(--accent); background: var(--accent-subtle); }
+.cv-kind:focus-visible { outline: none; box-shadow: var(--ring); }
+.cv-grid-edit td { padding: 4px 6px; }
+.cv-issues { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: var(--text-sm); }
+.cv-issues li { display: flex; gap: 8px; align-items: flex-start; padding: 6px 10px; border-radius: var(--radius-sm); }
+.cv-issues li svg { flex-shrink: 0; margin-top: 2px; }
+.cv-issues li.error { background: var(--error-50); }
+.cv-issues li.error svg { color: var(--error-600); }
+.cv-issues li.warn { background: var(--warning-50); }
+.cv-issues li.warn svg { color: var(--warning-600); }
+@media (max-width: 900px) { .cv-kinds { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .cv-kinds { grid-template-columns: minmax(0, 1fr); } }
