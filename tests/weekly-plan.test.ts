@@ -4,7 +4,7 @@ import {
   assessPlanCandidate,
   buildWeeklyPlan,
   type WeeklyPlanCandidate,
-} from './weekly-plan';
+} from '../lib/planning/weekly-plan';
 
 function candidate(override: Partial<WeeklyPlanCandidate> = {}): WeeklyPlanCandidate {
   return {
