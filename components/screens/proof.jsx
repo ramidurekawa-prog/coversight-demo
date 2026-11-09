@@ -3,6 +3,7 @@
 import * as React from 'react';
 
 import { Icon, Button, Tabs } from '../kit';
+import { PlatformHealth, ToastConnectionLine } from './live';
 import { useCv, cvMoney, CV_D, CV_DS, CV_GROUP, CV_ROOM, CV_DAYS_TO_DATE, CV_LOCS, CV_PROOF, CV_OUTCOME, Claim, Money, Pill, Outcome, Callout, Interval, PageHead, cvScale, SampleNote } from './core';
 
 /* Coversight — proof surfaces: Proof, Verification packet, Accountant, Savings ledger,
@@ -418,6 +419,7 @@ function CvSources() {
     <div className="cv-page">
       <PageHead over={`Sources · ${CV_ROOM.name}`} q="Can I trust these numbers?"
         sub="Freshness for each feed from its last successful sync, and the dollars each one puts at risk. If two feeds touch the same dollar, it's counted once, under the feed that would fix it first." />
+      <ToastConnectionLine />
       <div className="cv-grid g3">
         <div className="cv-card" style={{ gap: 6 }}><span className="cv-xs cv-faint">Feeds healthy</span><span className="cv-fig md">{CV_FEEDS.filter((f) => f.state === "healthy").length} of {CV_FEEDS.length}</span></div>
         <div className="cv-card" style={{ gap: 6 }}><span className="cv-xs cv-faint">Weekly value at risk</span><span className="cv-fig md cv-exp">{cvMoney(total)}</span><span className="cv-xs cv-faint">counted once across feeds</span></div>
@@ -505,6 +507,7 @@ function CvSystem() {
     <div className="cv-page wide">
       <PageHead over="System" q="Who is doing what, and how much rope do they have?"
         sub="Autonomy is granted per lever and per room, never globally. Each level is earned by evidence, and any guardrail breach drops that lever back to recommending." />
+      <PlatformHealth />
       <section className="cv-card">
         <div className="cv-card-head"><span className="cv-h4">Autonomy at {CV_ROOM.name}</span><span className="cv-small cv-faint">A0 observes · A1 recommends · A2 drafts · A3 executes within a fence · A4 holds the line</span></div>
         <div className="cv-col" style={{ gap: 14 }}>

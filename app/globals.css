@@ -1361,6 +1361,10 @@ body { background: var(--background); color: var(--fg-1); }
 .cv-gates .cv-gate:nth-child(odd) { border-right: 1px solid var(--border); }
 .cv-gate svg.ok { color: var(--success-600); }
 .cv-gate svg.no { color: var(--error-600); }
+/* Status icons outside the gate list (live platform screens). */
+svg.ok { color: var(--success-600); }
+svg.no { color: var(--error-600); }
+svg.warn { color: var(--warning-500); }
 .cv-gate svg.warn { color: var(--warning-600); }
 .cv-gate .v { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--fg-2); text-align: right; white-space: nowrap; }
 

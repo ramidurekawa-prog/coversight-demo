@@ -9,6 +9,7 @@ import { CvAccountant, CvComparison, CvLedger, CvPacket, CvProof, CvSources, CvS
 import { CvBilling, CvBuild, CvFences, CvFinding, CvMeeting, CvPortfolio, CvStart } from './screens/extra';
 import { CvChannels, CvControls, CvCoverage, CvInventory, CvKitchen } from './screens/areas';
 import { CvInputs } from './screens/inputs';
+import { CvConnect, CvData, CvWindows } from './screens/live';
 import { CvTrends } from './screens/trends';
 import { pathFor } from '../lib/pages';
 
@@ -33,6 +34,7 @@ export const SCREENS = {
   controls: CvControls,
   channels: CvChannels,
   proof: CvProof,
+  windows: CvWindows,
   packet: CvPacket,
   ledger: CvLedger,
   accountant: CvAccountant,
@@ -40,6 +42,8 @@ export const SCREENS = {
   start: CvStart,
   comparison: CvComparison,
   sources: CvSources,
+  connect: CvConnect,
+  data: CvData,
   fences: CvFences,
   system: CvSystem,
 };
