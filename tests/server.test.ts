@@ -9,6 +9,7 @@ import type { Db } from '../server/db/client';
 import { auditLog, memberships, orgs } from '../server/db/schema';
 import { commitInput, createSampleOrg, InputError, loadBase, loadInputs, resetInputs, undoInput } from '../server/org';
 import { viewerFor } from '../server/session';
+import { loadActions, saveAction } from '../server/actions';
 import { freshDb } from './helpers/db';
 
 let db: Db;
@@ -117,5 +118,67 @@ describe('logins', () => {
 
   it('no session → 401', async () => {
     await expect(viewerFor(new Headers(), db)).rejects.toMatchObject({ status: 401 });
+  });
+});
+
+describe('operator decisions', () => {
+  async function owner() {
+    const { users } = await import('../server/db/schema');
+    await db.insert(users).values({ id: 'u1', name: 'U', email: 'u@x.co' });
+    const org = await createSampleOrg(db, { ownerId: 'u1' });
+    return { orgId: org.id, userId: 'u1', role: 'owner' as const, rooms: null };
+  }
+
+  it('saves per room, the newest value wins, and every save is audited', async () => {
+    const v = await owner();
+    await saveAction(db, v, { roomId: 'oakland', key: 'plan', value: { hours: 2 } });
+    await saveAction(db, v, { roomId: 'oakland', key: 'plan', value: { hours: 3.5 }, summary: 'more hours' });
+    await saveAction(db, v, { roomId: 'berkeley', key: 'service', value: 'no' });
+    await saveAction(db, v, { roomId: 'ignored', key: 'billing', value: { status: 'approved', at: '2026-10-27T00:00:00.000Z' } });
+    const acts = await loadActions(db, v.orgId);
+    expect(acts).toEqual({
+      oakland: { plan: { hours: 3.5 } },
+      berkeley: { service: 'no' },
+      '': { billing: { status: 'approved', at: '2026-10-27T00:00:00.000Z' } },
+    });
+    const audit = await db.select().from(auditLog).where(eq(auditLog.orgId, v.orgId));
+    expect(audit.filter((a) => a.action.startsWith('action.')).map((a) => a.action)).toEqual(['action.plan', 'action.plan', 'action.service', 'action.billing']);
+  });
+
+  it('a nullable decision can be cleared', async () => {
+    const v = await owner();
+    await saveAction(db, v, { roomId: 'oakland', key: 'meeting', value: { log: ['Plan: committed'], at: '2026-11-03T17:15:00.000Z' } });
+    await saveAction(db, v, { roomId: 'oakland', key: 'meeting', value: null });
+    expect((await loadActions(db, v.orgId)).oakland).toEqual({ meeting: null });
+  });
+
+  it('refuses unknown keys, bad values, unknown rooms, and oversize values', async () => {
+    const v = await owner();
+    await expect(saveAction(db, v, { roomId: 'oakland', key: 'nope', value: 1 })).rejects.toThrow(InputError);
+    await expect(saveAction(db, v, { roomId: 'oakland', key: 'plan', value: { hours: 40 } })).rejects.toThrow(/invalid plan/);
+    await expect(saveAction(db, v, { roomId: 'oakland', key: 'service', value: 'maybe' })).rejects.toThrow(/invalid service/);
+    await expect(saveAction(db, v, { roomId: 'paris', key: 'plan', value: { hours: 2 } })).rejects.toThrow(/no room/);
+    const big = Object.fromEntries(Array.from({ length: 2000 }, (_, i) => [`card-${i}`, '2026-11-03T17:15:00.000Z']));
+    await expect(saveAction(db, v, { roomId: 'oakland', key: 'findings', value: big })).rejects.toThrow(/too large/);
+    expect(await loadActions(db, v.orgId)).toEqual({});
+  });
+
+  it('a GM writes only their rooms and never group decisions, and reads only their rooms', async () => {
+    const v = await owner();
+    await saveAction(db, v, { roomId: 'oakland', key: 'service', value: 'yes' });
+    const gm = { ...v, userId: 'u1', role: 'gm' as const, rooms: ['berkeley'] };
+    await expect(saveAction(db, gm, { roomId: 'oakland', key: 'service', value: 'no' })).rejects.toThrow(/not one of yours/);
+    await expect(saveAction(db, gm, { roomId: 'berkeley', key: 'billing', value: { status: 'approved' } })).rejects.toThrow(/owner or admin/);
+    await saveAction(db, gm, { roomId: 'berkeley', key: 'service', value: 'no' });
+    expect(await loadActions(db, v.orgId, gm.rooms)).toEqual({ berkeley: { service: 'no' } });
+  });
+
+  it('/api/state carries the signed-in org’s decisions', async () => {
+    const headers = await signUp();
+    const v = await viewerFor(headers, db);
+    await saveAction(db, v, { roomId: 'walnut', key: 'queue', value: { done: { q1: '2026-11-03T17:15:00.000Z' }, refused: {} } });
+    const { GET } = await import('../app/api/state/route');
+    const body = await (await GET(new Request('http://localhost/api/state', { headers }))).json();
+    expect(body.actions).toEqual({ walnut: { queue: { done: { q1: '2026-11-03T17:15:00.000Z' }, refused: {} } } });
   });
 });

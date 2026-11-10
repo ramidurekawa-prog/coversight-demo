@@ -42,6 +42,10 @@ here ships to customers.
   sample group. Schema changes: edit `server/db/schema.ts`, then
   `pnpm db:generate` and commit the migration. `tests/server.test.ts` runs
   against PGlite (no Postgres needed).
+- **Operator decisions** (cleared cards, approvals, meetings, fences, plan
+  hours, the period package) use `useSaved(key, initial)` from
+  `components/engine.js`; each key needs a zod schema and scope in
+  `server/actions.ts` `ACTION_KEYS`, or the server refuses it.
 - **Secrets:** `DATABASE_URL`, `BETTER_AUTH_SECRET`, `CREDENTIALS_KEY`,
   `CRON_SECRET` live in Vercel env only. Never log, return or export them, or
   a Toast client secret.

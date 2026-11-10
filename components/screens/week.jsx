@@ -3,6 +3,7 @@
 import * as React from 'react';
 
 import { Icon, Button } from '../kit';
+import { useSaved } from '../engine';
 import { useCv, cvMoney, cvFill, CV_D, CV_ROOM, CV_NOW, CV_PERSIST, cvPlanCandidates, cvChoosePlan, Claim, Money, Pill, Callout, Interval, PageHead, cvScale, SampleNote } from './core';
 
 /* Coversight — weekly and daily surfaces: This week, Today, Service, The plan.
@@ -166,11 +167,12 @@ function CvThisWeek() {
 function CvToday() {
   const cv = useCv();
   const queue = CV_D.queue.map((q) => ({ ...q, title: cvFill(q.title), value: cvFill(q.value), body: cvFill(q.body) }));
-  const [done, setDone] = React.useState({});
-  const [refused, setRefused] = React.useState({});
+  const [saved, setSaved] = useSaved('queue', { done: {}, refused: {} });
+  const { done, refused } = saved;
+  const mark = (q, which, summary) => setSaved((s) => ({ ...s, [which]: { ...s[which], [q.id]: new Date().toISOString() } }), summary);
   const left = queue.filter((q) => !done[q.id] && !refused[q.id]);
   const minsLeft = left.reduce((s, q) => s + q.mins, 0);
-  const finish = (q, label) => { setDone((d) => ({ ...d, [q.id]: true })); cv.toast(label || `${q.title} — done`); };
+  const finish = (q, label) => { mark(q, 'done', label || `${q.title} — done`); cv.toast(label || `${q.title} — done`); };
   return (
     <div className="cv-page" style={{ maxWidth: 860 }}>
       <PageHead over={`${CV_ROOM.name} · ${CV_NOW.label}`} q="Clear this in fifteen minutes"
@@ -187,7 +189,7 @@ function CvToday() {
           <span className="ico"><Icon name="Check" size={22} /></span>
           <span className="cv-h3">Queue clear</span>
           <span className="cv-small cv-muted" style={{ maxWidth: 380 }}>Nothing else needs you today. The next check is Thursday at 9 am, when overtime for the weekend is still preventable.</span>
-          <Button variant="secondary" size="sm" onClick={() => { setDone({}); setRefused({}); }}>Reset the demo</Button>
+          <Button variant="secondary" size="sm" onClick={() => setSaved({ done: {}, refused: {} }, 'Queue reset')}>Reset the demo</Button>
         </div>
       ) : (
         <div className="cv-col" style={{ gap: 10 }}>
@@ -205,10 +207,10 @@ function CvToday() {
                   </div>
                 </div>
                 <div className="cv-q-acts">
-                  {q.refuse && <Button variant="ghost" size="sm" onClick={() => { setRefused((r) => ({ ...r, [q.id]: true })); cv.toast('Noted. We won’t suggest this again for 90 days.'); }}>Not for us</Button>}
+                  {q.refuse && <Button variant="ghost" size="sm" onClick={() => { mark(q, 'refused', `${q.title}: not for us`); cv.toast('Noted. We won’t suggest this again for 90 days.'); }}>Not for us</Button>}
                   {!q.refuse && <Button variant="ghost" size="sm" onClick={() => finish(q, 'Snoozed until tomorrow')}>Snooze</Button>}
                   <Button size="sm" onClick={() => {
-                    if (q.approval) cv.approve(q.approval, () => setDone((d) => ({ ...d, [q.id]: true })));
+                    if (q.approval) cv.approve(q.approval, () => mark(q, 'done', `${q.title}: approved`));
                     else if (q.go) cv.go(q.go, q.input ? { kind: q.input } : undefined);
                     else finish(q);
                   }}>{q.primary}</Button>
@@ -254,7 +256,7 @@ function ServiceChart({ s }) {
 function CvService() {
   const cv = useCv();
   const s = CV_D.room.service;
-  const [state, setState] = React.useState('ask');
+  const [state, setState] = useSaved('service', 'ask');
   const so = s.actual.reduce((a, b) => a + b, 0);
   const cmp = s.comp.slice(0, s.now).reduce((a, b) => a + b, 0);
   return (
@@ -291,8 +293,8 @@ function CvService() {
               <span style={{ fontWeight: 700, fontSize: 'var(--text-lg)' }}>{s.title}</span>
               <span className="cv-small cv-muted" style={{ lineHeight: 1.5 }}>{s.body} Saves <Money id="service-cut">{cvMoney(s.value)}</Money> tonight.</span>
               <div className="cv-row" style={{ gap: 8 }}>
-                <Button className="btn-lg" style={{ flex: 1 }} onClick={() => cv.approve(s.approval, () => setState('yes'))}>{CV_D.ownData ? 'Yes, cut one server at 8' : s.yes}</Button>
-                <Button variant="secondary" className="btn-lg" onClick={() => { setState('no'); cv.toast('Kept everyone on. Logged as declined.'); }}>Not tonight</Button>
+                <Button className="btn-lg" style={{ flex: 1 }} onClick={() => cv.approve(s.approval, () => setState('yes', s.title))}>{CV_D.ownData ? 'Yes, cut one server at 8' : s.yes}</Button>
+                <Button variant="secondary" className="btn-lg" onClick={() => { setState('no', `${s.title}: declined`); cv.toast('Kept everyone on. Logged as declined.'); }}>Not tonight</Button>
               </div>
             </section>
           )}
@@ -305,6 +307,7 @@ function CvService() {
           )}
           {state === 'yes' && <Callout tone="good" icon="CircleCheck">Schedule written back to 7shifts. The server is notified and on call until 8:30. The monitoring window is open.</Callout>}
           {state === 'no' && <Callout icon="CircleMinus">Kept everyone on. We'll count tonight as declined, which teaches the ranker too.</Callout>}
+          {s.mode === 'cut' && state !== 'ask' && <Button size="sm" variant="ghost" icon="Undo2" onClick={() => setState('ask', `${s.title}: answer reopened`)}>Change my answer</Button>}
           <div className="cv-grid g3" style={{ gap: 8 }}>
             {s.tiles.map(([k, v, t]) => (
               <div key={k} className="cv-card" style={{ padding: 10, gap: 2 }}><span className="cv-xs cv-faint">{k}</span><span className="cv-num" style={{ fontWeight: 600 }}>{v}</span><span className="cv-xs cv-faint">{t}</span></div>
@@ -334,8 +337,11 @@ function CvService() {
 /* ================================================================ The plan */
 function CvPlan() {
   const cv = useCv();
-  const [hours, setHours] = React.useState(CV_D.room.managerHours);
-  const cands = cvPlanCandidates();
+  const [plan, setPlan] = useSaved('plan', { hours: CV_D.room.managerHours });
+  const hours = plan.hours;
+  const setHours = (h) => setPlan({ hours: h }, `Manager hours set to ${h} h`);
+  const [dismissed] = useSaved('findings', {});
+  const cands = cvPlanCandidates().filter((c) => !(dismissed[c.id] && dismissed[c.id] > new Date().toISOString()));
   const [open, setOpen] = React.useState(cands[0]?.id);
   const { sorted, chosen, used } = cvChoosePlan(cands, hours);
   const edv = sorted.filter((c) => chosen.has(c.id) && !c.prevent).reduce((s, c) => s + c.edv, 0);

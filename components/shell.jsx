@@ -344,6 +344,7 @@ function AppShell({ children }) {
           id={approval.id}
           onClose={() => setApproval(null)}
           onConfirm={(id) => {
+            engine.act('approvals', { ...(engine.saved('approvals') || {}), [id]: { at: new Date().toISOString() } }, { summary: `${cvApproval(id).title}: approved` });
             approval.onOk && approval.onOk();
             showToast(`${cvApproval(id).title}: approved and written back.`);
           }}

@@ -15,20 +15,22 @@ import { cvLoad } from './screens/core';
  * Two modes:
  *  - server: signed in. The org's dataset, inputs and log come from /api/state;
  *    every commit, undo and reset is saved on the server first, then applied.
+ *    Operator decisions (engine.act / useSaved) save to /api/actions.
  *  - local: no backend reachable (a static preview, or local dev without a
- *    database). Inputs live in this browser only, as before.
+ *    database). Inputs and decisions live in this browser only, as before.
  * The room picker is a per-viewer convenience kept in browser storage either way. */
 
 const KEY = 'coversight-demo:v2';
 const OLD_KEYS = ['coversight-demo:v1'];
-const INITIAL = { mode: 'pending', base: SEED, org: null, viewer: null, room: 'oakland', inputs: {}, log: [], version: 0, notice: null, saving: false };
+const INITIAL = { mode: 'pending', base: SEED, org: null, viewer: null, room: 'oakland', inputs: {}, log: [], actions: {}, version: 0, notice: null, saving: false };
 let state = INITIAL;
 const subs = new Set();
+const pending = new Map();
 
 function emit() { subs.forEach((f) => f()); }
 function persist() {
   try {
-    const saved = state.mode === 'server' ? { room: state.room } : { room: state.room, inputs: state.inputs, log: state.log };
+    const saved = state.mode === 'server' ? { room: state.room } : { room: state.room, inputs: state.inputs, log: state.log, actions: state.actions };
     window.localStorage.setItem(KEY, JSON.stringify(saved));
   } catch { /* storage blocked: keep going in memory */ }
 }
@@ -38,6 +40,9 @@ function clearSaved() {
     OLD_KEYS.forEach((k) => window.localStorage.removeItem(k));
   } catch { /* ignore */ }
 }
+
+/** The room key for decisions that belong to the whole group. */
+export const GROUP = '';
 
 const isObj = (v) => v != null && typeof v === 'object' && !Array.isArray(v);
 
@@ -58,7 +63,13 @@ export function sanitizeSaved(saved, base = SEED) {
     });
   }
   const log = Array.isArray(saved.log) ? saved.log.filter((e) => isObj(e) && typeof e.id === 'string' && KINDS.includes(e.kind) && base.rooms[e.room]).slice(0, 50) : [];
-  return { room, inputs, log };
+  const actions = {};
+  if (isObj(saved.actions)) {
+    Object.entries(saved.actions).forEach(([roomId, keys]) => {
+      if ((roomId === GROUP || base.rooms[roomId]) && isObj(keys)) actions[roomId] = keys;
+    });
+  }
+  return { room, inputs, log, actions };
 }
 
 /** Re-derive; if the data can't be derived, fall back to the org's base data and say so. */
@@ -128,6 +139,7 @@ export const engine = {
       room: saved.room || Object.keys(body.base.rooms)[0],
       inputs: body.inputs || {},
       log: body.log || [],
+      actions: body.actions || {},
     };
     reload();
   },
@@ -197,6 +209,35 @@ export const engine = {
     reload();
   },
 
+  /** The saved value of one decision for a room ('' = the whole group), or undefined. */
+  saved(key, room = state.room) { return state.actions[room]?.[key]; },
+
+  /** Save one operator decision. Shown at once; on the server the write is
+   * debounced per room and key (a dragged slider sends one request), and a
+   * refused write rolls back to the last saved value with a notice. Doesn't
+   * re-derive figures, so screens keep their local state. */
+  act(key, value, { room = state.room, summary = '' } = {}) {
+    const slot = `${room}/${key}`;
+    if (!pending.has(slot)) pending.set(slot, { confirmed: state.actions[room]?.[key], timer: null });
+    const p = pending.get(slot);
+    state = { ...state, actions: { ...state.actions, [room]: { ...(state.actions[room] || {}), [key]: value } } };
+    emit();
+    if (state.mode !== 'server') { persist(); pending.delete(slot); return; }
+    clearTimeout(p.timer);
+    p.timer = setTimeout(() => {
+      pending.delete(slot);
+      state = { ...state, saving: true }; emit();
+      api('/api/actions', { method: 'POST', body: JSON.stringify({ roomId: room, key, value, summary }) })
+        .then(() => { state = { ...state, saving: false }; emit(); })
+        .catch((err) => {
+          const roomActs = { ...(state.actions[room] || {}) };
+          if (p.confirmed === undefined) delete roomActs[key]; else roomActs[key] = p.confirmed;
+          state = { ...state, saving: false, actions: { ...state.actions, [room]: roomActs }, notice: `Not saved: ${err.message}` };
+          emit();
+        });
+    }, 350);
+  },
+
   /** Hard reset from the error screen: clears browser storage and reloads the org. */
   hardReset() {
     clearSaved();
@@ -215,4 +256,19 @@ export const engine = {
 
 export function useEngine() {
   return React.useSyncExternalStore(engine.subscribe, engine.get, engine.server);
+}
+
+/** Like useState, but saved: per room (or for the whole group with { group: true }),
+ * on the server when signed in, else in this browser. set(next, summary) takes a
+ * value or an updater. */
+export function useSaved(key, initial, { group = false } = {}) {
+  const eng = useEngine();
+  const room = group ? GROUP : eng.room;
+  const v = eng.actions[room]?.[key];
+  const value = v === undefined ? initial : v;
+  const set = (next, summary) => {
+    const cur = engine.saved(key, room);
+    engine.act(key, typeof next === 'function' ? next(cur === undefined ? initial : cur) : next, { room, summary });
+  };
+  return [value, set];
 }
