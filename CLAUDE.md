@@ -1,8 +1,9 @@
 # coversight-demo
 
 A clickable demo of the finished Coversight product on a sample restaurant
-group (Rosewood: Oakland, Berkeley, Walnut Creek). Static Next.js export, no
-backend, no login. It is a sales and investor tool, separate from the platform
+group (Rosewood: Oakland, Berkeley, Walnut Creek). Next.js on Vercel with a
+Postgres (Neon) backend and real logins; with no database it falls back to the
+browser-only demo. It is a sales and investor tool, separate from the platform
 monorepo (`ramidurekawa-prog/streamlinekitchenco-platform-monorepo`); nothing
 here ships to customers.
 
@@ -33,5 +34,16 @@ here ships to customers.
 - **Branching:** never iterate on `main`; work on a branch and open a PR. Agent
   PRs open with `## Quick Understanding` (plain language) and end with
   `## Unattended-run uncertainties`. Never merge your own PR.
+- **Backend:** `server/` (Drizzle schema + migrations, Better Auth, org and
+  input services), `app/api/*` routes. The dataset is stored seed-shaped per
+  room and kind (`room_data`) so `lib/data/model.js` still computes every
+  figure; never compute figures on the server differently from the browser.
+  Every account and every "try the sample" visitor gets a private copy of the
+  sample group. Schema changes: edit `server/db/schema.ts`, then
+  `pnpm db:generate` and commit the migration. `tests/server.test.ts` runs
+  against PGlite (no Postgres needed).
+- **Secrets:** `DATABASE_URL`, `BETTER_AUTH_SECRET`, `CREDENTIALS_KEY`,
+  `CRON_SECRET` live in Vercel env only. Never log, return or export them, or
+  a Toast client secret.
 
 `pnpm check` = typecheck + tests + build. Run it before pushing.

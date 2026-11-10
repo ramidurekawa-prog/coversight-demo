@@ -2,6 +2,8 @@
 # releases at least 14 days old.
 minimumReleaseAge: 20160
 allowBuilds:
+  # drizzle-kit's bundler (dev only).
+  esbuild: true
   sharp: true
 
 # Conscious exception: next 16.0.0–16.4.0 carry published advisories

@@ -59,7 +59,7 @@ function cvLoad(ds, roomId) {
   CV_SALMON = salmon ? cvPriceMoveInterval(salmon, salmon.price + 2) : { delta: 0, lost: 0, lo: 0, hi: 0 };
   CV_SALMON_WK = Math.round(CV_SALMON.delta);
   CV_SALMON_LOST = Math.round(CV_SALMON.lost);
-  CV_LOCS = LOCS.map((l) => ds.rooms[l.id]?.profile || l);
+  CV_LOCS = (ds.locs || LOCS).map((l) => ds.rooms[l.id]?.profile || l);
   CV_PROOF = CV_D.allProof;
   CV_DAILY = CV_D.banked.daily;
   CV_DERIV = buildDeriv(CV_D);

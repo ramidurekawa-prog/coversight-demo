@@ -186,6 +186,25 @@ function TopBar({ page, loc, onLoc, role, onRole, go, onMenu, onAsk }) {
   );
 }
 
+/** Signed in: which org, whether it's the sample, and sign out. No backend: the old demo label. */
+function AccountPill() {
+  const eng = useEngine();
+  if (eng.mode !== 'server') {
+    return (
+      <span className="cv-strip-pill">
+        <Pill icon="FlaskConical">Demo · sample restaurant group</Pill>
+      </span>
+    );
+  }
+  return (
+    <span className="cv-strip-pill cv-row" style={{ gap: 8 }}>
+      <Pill icon={eng.org?.sample ? 'FlaskConical' : 'Building2'}>{eng.org?.sample ? 'Sample group' : eng.org?.name}{eng.viewer?.anonymous ? ' · guest' : ''}</Pill>
+      {eng.saving && <span className="cv-xs cv-faint">Saving…</span>}
+      <Button size="sm" variant="ghost" icon="LogOut" onClick={() => engine.signOut()}>Sign out</Button>
+    </span>
+  );
+}
+
 function ModeStrip({ build }) {
   return (
     <nav className="cv-strip" aria-label="Demo view">
@@ -209,14 +228,19 @@ function ModeStrip({ build }) {
         )}
       </span>
       <span className="spacer" />
-      <span className="cv-strip-pill">
-        <Pill icon="FlaskConical">Demo · sample restaurant group</Pill>
-      </span>
+      <AccountPill />
     </nav>
   );
 }
 
+/** The sign-in screen renders on its own; everything else inside the app shell. */
 export function Shell({ children }) {
+  const pathname = usePathname();
+  if (pathname?.startsWith('/login')) return children;
+  return <AppShell>{children}</AppShell>;
+}
+
+function AppShell({ children }) {
   const router = useRouter();
   const pathname = usePathname();
   const { page } = pageFromPath(pathname);
@@ -235,8 +259,7 @@ export function Shell({ children }) {
   // Restore a viewer's room and inputs before first paint; the inline head
   // script hides the sample room until this has run, so nothing flashes.
   React.useLayoutEffect(() => {
-    engine.hydrate();
-    document.documentElement.classList.remove('cv-pending');
+    engine.hydrate().finally(() => document.documentElement.classList.remove('cv-pending'));
   }, []);
 
   // Each screen opens at the top, like a new page.

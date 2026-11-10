@@ -12,7 +12,10 @@ strong the claim is, and clickable to see how it was calculated.
   the screen previews exactly which figures move, and commits can be undone.
   Verified figures never move.
 
-No backend, no login, no real customer data. It is a static site.
+Signed-in accounts and "Try the sample restaurant group" visitors each get a
+private copy of the sample group in Postgres; inputs are saved on the server
+with an audit log and undo. No real customer data. With no database
+configured it runs as the old browser-only demo.
 
 ## Run it
 
@@ -22,18 +25,29 @@ pnpm install
 pnpm dev            # http://localhost:3000
 ```
 
+With a database (any Postgres 16+):
+
 ```bash
-pnpm check          # typecheck + tests + static build to out/
-pnpm start          # serve out/ locally
+export DATABASE_URL=postgres://…  BETTER_AUTH_SECRET=$(openssl rand -hex 32)
+pnpm db:migrate
+pnpm dev
 ```
 
-## Deploy
+```bash
+pnpm check          # typecheck + tests (incl. server tests on PGlite) + build
+```
 
-`pnpm build` writes a plain static site to `out/`. Any static host serves it:
+## Deploy (Vercel)
 
-- **Vercel / Netlify:** import the repo; defaults work (build `pnpm build`,
-  output `out`).
-- **Render:** `render.yaml` is included (Blueprint → static site).
+1. Vercel → project → **Storage** → create a **Neon Postgres** database. This
+   sets `DATABASE_URL`.
+2. Settings → Environment Variables: `BETTER_AUTH_SECRET`, `CREDENTIALS_KEY`,
+   `CRON_SECRET`, each a random 32+ character string
+   (`openssl rand -hex 32`).
+3. Output directory must be the Next.js default (not `out`).
+
+Vercel runs `pnpm vercel-build`, which applies migrations and then builds.
+`/api/health` returns 200 once the database is reachable.
 
 ## What's in it
 
@@ -74,19 +88,23 @@ lib/data/seed.js    the sample group: deterministic, Oakland's original figures 
 lib/data/model.js   pure functions: room data → every figure on every screen
 lib/data/apply.js   hand-entered inputs → a new dataset (never mutates the seed)
 lib/data/ingest.js  CSV parsing, column mapping, validation, templates, preview
-components/engine.js current room + inputs + audit log; re-derives on change
+components/engine.js current room + inputs + audit log; loads /api/state, re-derives on change
+server/db/            Drizzle schema, migrations, client
+server/org.ts         sample-org copy, dataset load (GM-scoped), inputs, audit log
+server/auth.ts        Better Auth: email + password, anonymous "try the sample"
+app/api/              state, inputs, undo, reset, health, auth
 ```
 
 Each room's week closes from its rows: menu sales (Σ price × plates) minus
 comps and discounts is net sales; Σ plate cost × plates is food cost; Σ hours
 × rate is labour; earned is what's left. A balancing "sides and add-ons" line
-per room closes the menu to the week. Inputs are saved in the viewer's browser
-only, so the demo always starts clean for someone new.
+per room closes the menu to the week. Inputs are saved per org on the server
+(append-only, latest per room and kind applies, undo marks an entry undone).
 
 ## Layout
 
 ```
-app/                 routes (static export) + globals.css (design tokens + kit)
+app/                 routes, API routes, login + globals.css (design tokens + kit)
 components/shell.jsx sidebar, top bar, drawers, toasts
 components/screen.jsx page id → screen component
 components/screens/  the screens and the sample data (core.jsx; areas.jsx = V3 operating areas)
