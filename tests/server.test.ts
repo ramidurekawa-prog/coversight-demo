@@ -182,3 +182,28 @@ describe('operator decisions', () => {
     expect(body.actions).toEqual({ walnut: { queue: { done: { q1: '2026-11-03T17:15:00.000Z' }, refused: {} } } });
   });
 });
+
+describe('Toast export import', () => {
+  it('saves a valid summary, rejects a tampered one, and the figures read it back', async () => {
+    const { readToastExports } = await import('../lib/data/toast.js');
+    const { toastFixture } = await import('./helpers/toast-fixture.js');
+    const files = toastFixture();
+    const { unknown, ...summary } = readToastExports(Object.entries(files).map(([name, text]) => ({ name, text })));
+    const { users } = await import('../server/db/schema');
+    await db.insert(users).values({ id: 'u1', name: 'U', email: 'u@x.co' });
+    const org = await createSampleOrg(db, { ownerId: 'u1' });
+    const v = { orgId: org.id, userId: 'u1' };
+    // Round-trip through JSON, as the browser sends it.
+    const sent = JSON.parse(JSON.stringify(summary));
+    await commitInput(db, { ...v, roomId: 'berkeley', kind: 'toast', rows: [sent] });
+    const tampered = { ...sent, toast: { ...sent.toast, wage: 1e9 } };
+    await expect(commitInput(db, { ...v, roomId: 'berkeley', kind: 'toast', rows: [tampered] })).rejects.toThrow(/invalid Toast summary: toast.wage/);
+    await expect(commitInput(db, { ...v, roomId: 'berkeley', kind: 'toast', rows: [sent, sent] })).rejects.toThrow(/exactly one/);
+    const { inputs } = await loadInputs(db, org.id);
+    const base = (await loadBase(db, org.id))!.base;
+    const room = applyInputs(base, inputs).rooms.berkeley;
+    expect(room.fromToast.weeks).toBe(13);
+    expect(room.staff.map((p: { name: string }) => p.name)).toContain('Ana P.');
+    expect(deriveRoom(applyInputs(base, inputs), 'berkeley').week.net).toBeGreaterThan(0);
+  });
+});

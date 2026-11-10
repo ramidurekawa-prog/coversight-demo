@@ -5,7 +5,8 @@ import { and, asc, desc, eq } from 'drizzle-orm';
 
 import { SEED } from '../lib/data/seed.js';
 import { KIND_LABEL } from '../lib/data/apply.js';
-import { KINDS } from '../lib/data/ingest.js';
+import { INPUT_KINDS as KINDS } from '../lib/data/apply.js';
+import { toastSummary } from './toast-schema';
 import type { Db } from './db/client';
 import { auditLog, inputs, memberships, orgs, roomData, rooms } from './db/schema';
 
@@ -76,6 +77,11 @@ export async function commitInput(
 ) {
   if (!(KINDS as string[]).includes(kind)) throw new InputError(`unknown kind '${kind}'`);
   if (!Array.isArray(rows) || rows.length > 5_000 || !rows.every((r) => r && typeof r === 'object' && !Array.isArray(r))) throw new InputError('rows must be a list of records (at most 5,000)');
+  if (kind === 'toast') {
+    const parsed = toastSummary.safeParse(rows[0]);
+    if (rows.length !== 1 || !parsed.success) throw new InputError(`invalid Toast summary: ${parsed.success ? 'send exactly one' : `${parsed.error.issues[0]?.path.join('.')}: ${parsed.error.issues[0]?.message}`}`);
+    rows = [parsed.data];
+  }
   const [room] = await db.select({ id: rooms.id }).from(rooms).where(and(eq(rooms.orgId, orgId), eq(rooms.id, roomId)));
   if (!room) throw new InputError(`no room '${roomId}' in this org`);
   const cleanOpts = opts && typeof opts === 'object' && !Array.isArray(opts) ? opts : null;
@@ -83,7 +89,7 @@ export async function commitInput(
     .insert(inputs)
     .values({ orgId, roomId, kind, rows, opts: cleanOpts, summary: String(summary ?? '').slice(0, 400), userId })
     .returning({ id: inputs.id });
-  await db.insert(auditLog).values({ orgId, userId, action: 'input.committed', detail: { roomId, kind, rows: rows.length } });
+  await db.insert(auditLog).values({ orgId, userId, action: 'input.committed', detail: { roomId, kind, rows: (rows as unknown[]).length } });
   return row!.id;
 }
 

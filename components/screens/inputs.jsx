@@ -7,6 +7,10 @@ import { CV_D, CV_DS, CV_ROOM, Callout, Claim, Pill, PageHead, useCv } from './c
 import { engine, useEngine } from '../engine';
 import { KINDS, SCHEMAS, mapColumns, parseCSV, preview, templateCSV, templateRows, validate } from '../../lib/data/ingest';
 import { SEED } from '../../lib/data/seed';
+import { KIND_LABEL } from '../../lib/data/apply';
+import { ToastImport } from './toast-import';
+
+const META = (k) => SCHEMAS[k] || { title: KIND_LABEL[k] || k, icon: k === 'toast' ? 'PlugZap' : 'FilePen' };
 
 /* Data inputs: the manual ingestion layer. Six kinds of data a restaurant
  * often keeps by hand. Each one: type it in (pre-filled with what's there
@@ -240,9 +244,9 @@ function Log() {
         <div className="cv-col" style={{ gap: 0 }}>
           {eng.log.map((e, i) => (
             <div key={e.id} className="cv-row nowrap" style={{ gap: 12, padding: '10px 0', borderTop: i ? '1px solid var(--border)' : 0, alignItems: 'flex-start', opacity: e.undone ? 0.55 : 1 }}>
-              <span className="cv-q-ico" style={{ width: 30, height: 30 }}><Icon name={SCHEMAS[e.kind].icon} size={15} /></span>
+              <span className="cv-q-ico" style={{ width: 30, height: 30 }}><Icon name={META(e.kind).icon} size={15} /></span>
               <div className="cv-col" style={{ gap: 2, flex: 1 }}>
-                <span className="cv-small" style={{ fontWeight: 600 }}>{SCHEMAS[e.kind].title} · {name(e.room)} · {e.rows} row{e.rows === 1 ? '' : 's'}{e.undone ? ' · undone' : ''}</span>
+                <span className="cv-small" style={{ fontWeight: 600 }}>{META(e.kind).title} · {name(e.room)} · {e.rows} row{e.rows === 1 ? '' : 's'}{e.undone ? ' · undone' : ''}</span>
                 <span className="cv-xs cv-faint">{e.at} · by you · {e.summary}</span>
               </div>
               {!e.undone && <Button size="sm" variant="secondary" icon="Undo2" onClick={() => { engine.undo(e.id); cv.toast('Undone. The figures are back to what they were.'); }}>Undo</Button>}
@@ -288,6 +292,7 @@ function OwnStart() {
 }
 
 function CvInputs() {
+  const eng = useEngine();
   const [kind, setKind] = React.useState('profile');
   React.useEffect(() => {
     const read = () => { const h = window.location.hash.slice(1); if (KINDS.includes(h)) setKind(h); };
@@ -301,10 +306,11 @@ function CvInputs() {
     <div className="cv-page wide">
       <PageHead over={`Data inputs · ${CV_ROOM.name}`} q="Bring in what isn't connected yet"
         sub="Your restaurant's profile, recipe costs, counts, waste, invoices, channel sales and register exceptions, typed in or uploaded. Every row is checked before it lands, you see exactly which figures move, and every commit can be undone." />
+      <ToastImport />
       <OwnStart />
       <div className="cv-row" style={{ gap: 8 }}>
         <Pill tone={entered ? 'info' : 'neutral'} icon="PencilLine">{entered ? `${entered} of ${KINDS.length} kinds entered by hand at ${CV_ROOM.short}` : `${CV_ROOM.short} is on sample data`}</Pill>
-        <span className="cv-xs cv-faint">Saved in this browser only. Switch rooms in the top bar to enter another room's data.</span>
+        <span className="cv-xs cv-faint">{eng.mode === 'server' ? 'Saved to your account.' : 'Saved in this browser only.'} Switch rooms in the top bar to enter another room's data.</span>
       </div>
       <div className="cv-kinds">
         {KINDS.map((k) => <KindCard key={k} kind={k} on={k === kind} onPick={pick} />)}

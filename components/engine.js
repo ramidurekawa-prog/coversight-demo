@@ -4,7 +4,7 @@ import * as React from 'react';
 
 import { applyInputs, KIND_LABEL } from '../lib/data/apply';
 import { SEED } from '../lib/data/seed';
-import { KINDS } from '../lib/data/ingest';
+import { INPUT_KINDS as KINDS } from '../lib/data/apply';
 import { authClient } from '../lib/client/auth';
 import { cvLoad } from './screens/core';
 
