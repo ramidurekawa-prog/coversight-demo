@@ -144,6 +144,25 @@ export const inputs = pgTable(
   (t) => [index('inputs_org_room_kind_idx').on(t.orgId, t.roomId, t.kind)],
 );
 
+/** Operator decisions: queue cards cleared, approvals, meetings, fences, the
+ * plan's hours, the period package. Append-only: the latest entry per room and
+ * key is the current value, so every earlier value stays on record. roomId ''
+ * is the whole group. */
+export const actions = pgTable(
+  'actions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+    roomId: text('room_id').notNull().default(''),
+    key: text('key').notNull(),
+    value: jsonb('value'),
+    summary: text('summary').notNull().default(''),
+    userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
+    at: at('at').notNull().defaultNow(),
+  },
+  (t) => [index('actions_org_room_key_idx').on(t.orgId, t.roomId, t.key, t.at)],
+);
+
 /** Every change anyone makes, for the activity log and the accountant. */
 export const auditLog = pgTable(
   'audit_log',
@@ -160,5 +179,5 @@ export const auditLog = pgTable(
 
 export const orgRelations = relations(orgs, ({ many }) => ({ rooms: many(rooms), memberships: many(memberships) }));
 
-export const schema = { users, sessions, accounts, verifications, orgs, memberships, rooms, roomData, inputs, auditLog, memberRole };
+export const schema = { users, sessions, accounts, verifications, orgs, memberships, rooms, roomData, inputs, actions, auditLog, memberRole };
 

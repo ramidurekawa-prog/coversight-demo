@@ -4,6 +4,7 @@ import * as React from 'react';
 
 import { Icon, Button, Tabs } from '../kit';
 import { PlatformHealth, ToastConnectionLine } from './live';
+import { useSaved } from '../engine';
 import { useCv, cvMoney, CV_D, CV_DS, CV_GROUP, CV_ROOM, CV_DAYS_TO_DATE, CV_LOCS, CV_PROOF, CV_OUTCOME, Claim, Money, Pill, Outcome, Callout, Interval, PageHead, cvScale, SampleNote } from './core';
 
 /* Coversight — proof surfaces: Proof, Verification packet, Accountant, Savings ledger,
@@ -177,7 +178,10 @@ const CV_RECON = [
 ];
 function CvAccountant() {
   const cv = useCv();
-  const [state, setState] = React.useState("open");
+  const [pkg, setPkg] = useSaved("billing", { status: "open" }, { group: true });
+  const [disputing, setDisputing] = React.useState(false);
+  const [note, setNote] = React.useState("6020 for Walnut Creek shows $1,402 after the Sep 30 accrual, not $1,447.");
+  const state = disputing ? "dispute" : pkg.status;
   const [mapping, setMapping] = React.useState(null);
   const boxes = [
     { k: "Operational point estimate", v: 1907, rule: "context only" },
@@ -191,12 +195,12 @@ function CvAccountant() {
     <div className="cv-page wide">
       <PageHead over="For the group controller · Rosewood Restaurant Group" q="September period package"
         sub="A package, not a dashboard login. Every claim with its source lineage, the evidence that the change happened, the method and interval, the bridge to your ledger, and every reversal in the period."
-        right={state === "open" ? <><Button variant="secondary" onClick={() => setState("dispute")}>Dispute a line</Button><Button icon="Check" onClick={() => { setState("approved"); cv.toast("September package approved. Fee basis locked at $1,863."); }}>Approve package</Button></> : <Pill tone={state === "approved" ? "good" : "warn"} icon={state === "approved" ? "BadgeCheck" : "MessageSquareWarning"}>{state === "approved" ? "Approved Oct 27" : "Dispute open"}</Pill>} />
+        right={state === "open" ? <><Button variant="secondary" onClick={() => setDisputing(true)}>Dispute a line</Button><Button icon="Check" onClick={() => { setPkg({ status: "approved", at: new Date().toISOString() }, "September package approved"); cv.toast("September package approved. Fee basis locked at $1,863."); }}>Approve package</Button></> : state === "dispute" ? null : <><Pill tone={state === "approved" ? "good" : "warn"} icon={state === "approved" ? "BadgeCheck" : "MessageSquareWarning"}>{state === "approved" ? `Approved ${pkg.at ? new Date(pkg.at).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : ""}` : "Dispute open"}</Pill><Button size="sm" variant="ghost" icon="Undo2" onClick={() => setPkg({ status: "open" }, "September package reopened")}>Reopen</Button></>} />
       {state === "dispute" && (
         <section className="cv-card">
           <label htmlFor="cv-dispute" className="cv-small" style={{ fontWeight: 600 }}>What doesn't match your books?</label>
-          <textarea id="cv-dispute" rows={3} className="input" style={{ width: "100%", padding: 10, borderRadius: "var(--radius-md)", border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--fg-1)", font: "inherit" }} defaultValue="6020 for Walnut Creek shows $1,402 after the Sep 30 accrual, not $1,447." />
-          <div className="cv-row"><Button size="sm" onClick={() => { setState("open"); cv.toast("Dispute sent. The line is frozen until it's resolved."); }}>Send dispute</Button><Button size="sm" variant="ghost" onClick={() => setState("open")}>Cancel</Button></div>
+          <textarea id="cv-dispute" rows={3} className="input" style={{ width: "100%", padding: 10, borderRadius: "var(--radius-md)", border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--fg-1)", font: "inherit" }} value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000} />
+          <div className="cv-row"><Button size="sm" disabled={!note.trim()} onClick={() => { setPkg({ status: "disputed", note, at: new Date().toISOString() }, "Dispute sent on the September package"); setDisputing(false); cv.toast("Dispute sent. The line is frozen until it's resolved."); }}>Send dispute</Button><Button size="sm" variant="ghost" onClick={() => setDisputing(false)}>Cancel</Button></div>
         </section>
       )}
       <section className="cv-card">
