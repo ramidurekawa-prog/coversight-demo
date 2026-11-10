@@ -4,6 +4,7 @@ import * as React from 'react';
 
 import { Icon, Button, Tabs } from '../kit';
 import { useCv, cvMoney, CV_D, CV_DS, CV_LOCS, CV_PROOF, CV_ROOM, Claim, Pill, Callout, Interval, PageHead, cvScale } from './core';
+import { leverReport } from '../../lib/data/levers.js';
 import { windowState, METHOD_LABEL, MAGNITUDE_FLOOR_PCT, WORKER_JOBS, statusz, TOAST_ERRORS } from '../../lib/data/pilot.js';
 
 /* Coversight — the live platform, as it runs in a pilot today: connecting a
@@ -520,3 +521,88 @@ function ToastConnectionLine() {
 }
 
 export { CvConnect, CvWindows, CvData, PlatformHealth, ToastConnectionLine };
+
+/* ================================================================ Levers */
+
+const BAR_LABELS = [
+  ['data', 'Data', 'Reads the room’s own observations'],
+  ['measured', 'Measured', 'No made-up number in its dollars'],
+  ['measurable', 'Provable', 'A 28-day test could prove the expected effect'],
+  ['controls', 'Controls', 'An untouched comparison to subtract'],
+  ['books', 'Books $', 'A verified test converts to dollars a week'],
+];
+const gradeTone = (g) => (g === 'A' ? 'good' : g === 'A−' || g === 'Clear' ? 'info' : g === 'B' ? 'warn' : 'bad');
+const gradeIcon = (g) => ({ A: 'BadgeCheck', 'A−': 'CircleCheck', Clear: 'CircleMinus', B: 'CircleDot' })[g] ?? 'CircleX';
+
+function CvLevers() {
+  const cv = useCv();
+  const roomId = cv.loc === 'all' ? 'oakland' : cv.loc;
+  const room = CV_DS.rooms[roomId];
+  const levers = React.useMemo(() => leverReport(room), [room]);
+  const [open, setOpen] = React.useState(null);
+  return (
+    <div className="cv-page wide">
+      <PageHead over={`Levers · ${locOf(roomId).name}`} q="Is every lever running on measurement?"
+        sub="Each of the six Toast-fed levers, graded on five bars: it reads the room's own data, no number in its dollars is made up, a 28-day test could prove it, there's an untouched comparison to subtract, and a verified test books dollars. Every figure is computed in your browser from this room's sample observations."
+        right={cv.loc === 'all' && <Pill icon="Building2">Showing Oakland; pick a room in the top bar</Pill>} />
+      <section className="cv-card flush">
+        <div className="cv-tablewrap" tabIndex={0} role="group" aria-label="Scrollable table">
+          <table className="cv-table">
+            <thead><tr><th>Lever</th><th>Where</th><th className="r">$ a week</th><th className="r">Confidence</th>{BAR_LABELS.map(([k, l, t]) => <th key={k} className="c" title={t}>{l}</th>)}<th>Grade</th></tr></thead>
+            <tbody>
+              {levers.map((l) => (
+                <React.Fragment key={l.key}>
+                  <tr onClick={() => setOpen(open === l.key ? null : l.key)} style={{ cursor: 'pointer' }} aria-expanded={open === l.key}>
+                    <td style={{ fontWeight: 600 }}>{l.name}</td>
+                    <td className="cv-small">{l.scope}</td>
+                    <td className="r">{l.weekly > 0 ? cvMoney(Math.round(l.weekly)) : '—'}</td>
+                    <td className="r">{l.conf ? l.conf.confidence : '—'}</td>
+                    {BAR_LABELS.map(([k]) => (
+                      <td key={k} className="c">
+                        {l.bars[k] === null ? <span className="cv-faint">—</span> : <Icon name={l.bars[k] ? 'CircleCheck' : 'CircleX'} size={16} className={l.bars[k] ? 'ok' : 'no'} aria-label={l.bars[k] ? 'yes' : 'no'} />}
+                      </td>
+                    ))}
+                    <td><Pill tone={gradeTone(l.grade)} icon={gradeIcon(l.grade)}>{l.grade}</Pill></td>
+                  </tr>
+                  {open === l.key && (
+                    <tr>
+                      <td colSpan={10} className="cv-small cv-muted" style={{ lineHeight: 1.6, whiteSpace: 'normal' }}>
+                        <b>How:</b> {l.method}.{' '}
+                        <b>Test power:</b> {l.mde === null ? 'not enough spread to say' : `a 28-day test proves effects of ${l.mde.toFixed(2)} ${l.unit} or more; this one expects ${Math.abs(l.expectedUnits ?? 0).toFixed(2)}`}.{' '}
+                        <b>Controls:</b> {l.controlNote}.
+                        {l.conf && <> <b>Confidence:</b> {Math.round(l.conf.stability * 100)}% of weeks held × sample {Math.round(l.conf.sample * 100)}%{l.conf.estimatedShare ? `, ${Math.round(l.conf.estimatedShare * 100)}% inferred` : ''}.</>}
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+      <div className="cv-grid g2">
+        <section className="cv-card">
+          <span className="cv-h4">What changed from the typed numbers</span>
+          <ul className="cv-ul">
+            <li><Icon name="Users" size={15} />Labour: each room's own pace in its busiest hours replaces “14 covers a server”.</li>
+            <li><Icon name="Receipt" size={15} />Voids & comps: the norm is the room's 8 weeks before, on a control chart; a whole-room rise is its own finding.</li>
+            <li><Icon name="UtensilsCrossed" size={15} />Menu: each dish's price sensitivity is fitted from its own price changes, so a rise is valued after the plates it loses.</li>
+            <li><Icon name="Armchair" size={15} />Turns: “guests were waiting” is measured from how fast tables are reseated, not assumed at 50% × 0.52, and valued after food cost.</li>
+            <li><Icon name="BadgeCheck" size={15} />Every finding's confidence comes from one rule: weeks it held, data behind it, how much was inferred.</li>
+          </ul>
+        </section>
+        <section className="cv-card">
+          <span className="cv-h4">Still not 100%</span>
+          <ul className="cv-ul">
+            <li><Icon name="ChefHat" size={15} />Ticket times: Toast's Standard API has no kitchen timings. Blocked until partner access.</li>
+            <li><Icon name="Shuffle" size={15} />Mix: the whole menu moves together, so there's no untouched comparison; a test is a before/after.</li>
+            <li><Icon name="FlaskConical" size={15} />All of this runs on sample observations. It becomes real when a restaurant's own Toast data is behind it.</li>
+          </ul>
+        </section>
+      </div>
+      <Callout icon="Timer"><span>See one lever run through a 28-day test, with and without matched controls: <button className="cv-link" onClick={() => cv.go('windows')}>Test windows</button></span></Callout>
+    </div>
+  );
+}
+
+export { CvLevers };
