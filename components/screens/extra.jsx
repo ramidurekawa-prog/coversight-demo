@@ -5,7 +5,7 @@ import * as React from 'react';
 import { Icon, Button, Tabs } from '../kit';
 import { CV_PAGES } from '../../lib/pages';
 import { useCv, cvMoney, cvFill, CV_D, CV_GROUP, CV_ROOM, CV_NOW, CV_PERSIST, cvChoosePlan, Claim, Pill, Callout, Interval, PageHead } from './core';
-import { engine } from '../engine';
+import { engine, useSaved } from '../engine';
 import { LoopStrip } from './areas';
 import { tmpl } from '../../lib/data/model';
 
@@ -171,6 +171,7 @@ function CvMeeting() {
   const [left, setLeft] = React.useState(0);
   const [decision, setDecision] = React.useState(null);
   const [log, setLog] = React.useState([]);
+  const [last, setLast] = useSaved('meeting', null);
   React.useEffect(() => {
     if (i < 0 || i >= CV_AGENDA.length) return;
     setLeft(CV_AGENDA[i].mins * 60);
@@ -178,7 +179,9 @@ function CvMeeting() {
     return () => clearInterval(t);
   }, [i]);
   const next = () => {
-    setLog((l) => [...l, CV_AGENDA[i].k + (CV_AGENDA[i].decision ? `: ${decision || "deferred"}` : "")]);
+    const nextLog = [...log, CV_AGENDA[i].k + (CV_AGENDA[i].decision ? `: ${decision || "deferred"}` : "")];
+    setLog(nextLog);
+    if (i === CV_AGENDA.length - 1) setLast({ log: nextLog, at: new Date().toISOString() }, `Weekly meeting finished: ${nextLog.length} items logged`);
     setI(i + 1);
   };
   const done = i >= CV_AGENDA.length;
@@ -219,6 +222,13 @@ function CvMeeting() {
           <ul className="cv-ul">{log.map((l) => <li key={l}><Icon name="Check" size={15} />{l}</li>)}</ul>
           <span className="cv-small cv-muted">Sent to Maria Reyes and {CV_ROOM.gm}. The plan is committed, and the decision is on Thursday's queue.</span>
           <Button size="sm" variant="secondary" onClick={() => { setI(-1); setLog([]); setDecision(null); }}>Reset the demo</Button>
+        </section>
+      )}
+      {i < 0 && last && (
+        <section className="cv-card">
+          <span className="cv-h4">Last meeting · {new Date(last.at).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</span>
+          <ul className="cv-ul">{last.log.map((l) => <li key={l}><Icon name="Check" size={15} />{l}</li>)}</ul>
+          <div className="cv-row"><Button size="sm" variant="ghost" icon="Undo2" onClick={() => setLast(null, "Meeting record cleared")}>Clear the record</Button></div>
         </section>
       )}
       <div className="cv-grid g3">
@@ -270,6 +280,8 @@ function CvFinding({ params }) {
   const cands = d.candidates;
   const c = cands.find((x) => x.id === want) || cands[0];
   const ev = cvEvidence(c, d);
+  const [dismissed, setDismissed] = useSaved("findings", {});
+  const until = dismissed[c.id] && dismissed[c.id] > new Date().toISOString() ? dismissed[c.id] : null;
   const { chosen } = cvChoosePlan(cands, d.room.managerHours);
   return (
     <div className="cv-page">
@@ -310,7 +322,14 @@ function CvFinding({ params }) {
       <div className="cv-row">
         {c.kind === "price" && <Button onClick={() => cv.approve(`price:${c.item}:${c.to}`)}>Review the price change</Button>}
         {c.kind === "markup" && <Button onClick={() => cv.approve("delivery-markup")}>Review the markup</Button>}
-        <Button variant="secondary" onClick={() => cv.toast("Dismissed for 90 days. The ranker will learn from it.")}>Not for us</Button>
+        {until ? (
+          <>
+            <Pill icon="EyeOff">Dismissed until {new Date(until).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</Pill>
+            <Button variant="ghost" icon="Undo2" onClick={() => { setDismissed((m) => { const n = { ...m }; delete n[c.id]; return n; }, `${c.title || c.id}: back on the plan`); cv.toast("Back on the plan."); }}>Bring it back</Button>
+          </>
+        ) : (
+          <Button variant="secondary" onClick={() => { setDismissed((m) => ({ ...m, [c.id]: new Date(Date.now() + 90 * 864e5).toISOString() }), `${c.title || c.id}: not for us`); cv.toast("Dismissed for 90 days. It's off the plan, and the ranker will learn from it."); }}>Not for us</Button>
+        )}
       </div>
     </div>
   );
@@ -319,8 +338,10 @@ function CvFinding({ params }) {
 /* ================================================================ Fences & alerts */
 function CvFences() {
   const cv = useCv();
-  const [f, setF] = React.useState({ minDinner: 4, minAny: 3, cutBy: "8:30 pm", lockHours: 24, maxPrice: 8, priceGap: 6, maxPar: 15 });
-  const [al, setAl] = React.useState({ push: true, sms: true, email: false, onePerService: true, quiet: true });
+  const [saved, setSaved] = useSaved("fences", { version: 3, f: { minDinner: 4, minAny: 3, cutBy: "8:30 pm", lockHours: 24, maxPrice: 8, priceGap: 6, maxPar: 15 }, al: { push: true, sms: true, email: false, onePerService: true, quiet: true } });
+  const [f, setF] = React.useState(saved.f);
+  const [al, setAl] = React.useState(saved.al);
+  const dirty = JSON.stringify(f) !== JSON.stringify(saved.f) || JSON.stringify(al) !== JSON.stringify(saved.al);
   const num = (k, label, unit, min, max) => (
     <div className="cv-row nowrap" style={{ justifyContent: "space-between", gap: 12 }}>
       <label htmlFor={`f-${k}`} className="cv-small">{label}</label>
@@ -374,7 +395,7 @@ function CvFences() {
           <Callout icon="Users">The GM gets service and labour messages. The owner gets alarms and the weekly summary. The controller gets period packages only.</Callout>
         </section>
       </div>
-      <div className="cv-row"><Button icon="Check" onClick={() => cv.toast("Fences saved as version 4, effective now. Drafts re-check them every time.")}>Save fences</Button><span className="cv-xs cv-faint">Every change is versioned and shown on the verification packets it affects.</span></div>
+      <div className="cv-row"><Button icon="Check" disabled={!dirty} onClick={() => { const version = saved.version + 1; setSaved({ version, f, al }, `Fences saved as version ${version}`); cv.toast(`Fences saved as version ${version}, effective now. Drafts re-check them every time.`); }}>Save fences</Button><span className="cv-xs cv-faint cv-num">v{saved.version}</span><span className="cv-xs cv-faint">Every change is versioned and shown on the verification packets it affects.</span></div>
     </div>
   );
 }

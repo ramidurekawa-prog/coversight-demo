@@ -5,28 +5,33 @@ import * as React from 'react';
 import { applyInputs, KIND_LABEL } from '../lib/data/apply';
 import { SEED } from '../lib/data/seed';
 import { KINDS } from '../lib/data/ingest';
+import { authClient } from '../lib/client/auth';
 import { cvLoad } from './screens/core';
 
-/* The demo's data engine: which room is loaded, what's been entered by hand,
- * and the audit log. Every change re-derives the room (cvLoad) and bumps
- * `version`, which the shell uses to re-render every screen.
+/* The data engine: which org's data is loaded, which room is showing, what's
+ * been entered by hand, and the activity log. Every change re-derives the room
+ * (cvLoad) and bumps `version`, which the shell uses to re-render every screen.
  *
- * Browser storage keeps a viewer's inputs and room across visits. It's a
- * convenience only: every read is validated, a failed load resets to the
- * sample group instead of breaking the page, and the demo works the same with
- * storage blocked. Bump KEY when the input shape changes so old saves are
- * dropped rather than misread. */
+ * Two modes:
+ *  - server: signed in. The org's dataset, inputs and log come from /api/state;
+ *    every commit, undo and reset is saved on the server first, then applied.
+ *    Operator decisions (engine.act / useSaved) save to /api/actions.
+ *  - local: no backend reachable (a static preview, or local dev without a
+ *    database). Inputs and decisions live in this browser only, as before.
+ * The room picker is a per-viewer convenience kept in browser storage either way. */
 
 const KEY = 'coversight-demo:v2';
 const OLD_KEYS = ['coversight-demo:v1'];
-const INITIAL = { room: 'oakland', inputs: {}, log: [], version: 0, notice: null };
+const INITIAL = { mode: 'pending', base: SEED, org: null, viewer: null, room: 'oakland', inputs: {}, log: [], actions: {}, version: 0, notice: null, saving: false };
 let state = INITIAL;
 const subs = new Set();
+const pending = new Map();
 
 function emit() { subs.forEach((f) => f()); }
 function persist() {
   try {
-    window.localStorage.setItem(KEY, JSON.stringify({ room: state.room, inputs: state.inputs, log: state.log }));
+    const saved = state.mode === 'server' ? { room: state.room } : { room: state.room, inputs: state.inputs, log: state.log, actions: state.actions };
+    window.localStorage.setItem(KEY, JSON.stringify(saved));
   } catch { /* storage blocked: keep going in memory */ }
 }
 function clearSaved() {
@@ -36,16 +41,20 @@ function clearSaved() {
   } catch { /* ignore */ }
 }
 
+/** The room key for decisions that belong to the whole group. */
+export const GROUP = '';
+
 const isObj = (v) => v != null && typeof v === 'object' && !Array.isArray(v);
 
 /** Keep only what the current dataset understands; drop everything else. */
-export function sanitizeSaved(saved) {
+export function sanitizeSaved(saved, base = SEED) {
   if (!isObj(saved)) return null;
-  const room = typeof saved.room === 'string' && SEED.rooms[saved.room] ? saved.room : 'oakland';
+  const firstRoom = Object.keys(base.rooms)[0] || 'oakland';
+  const room = typeof saved.room === 'string' && base.rooms[saved.room] ? saved.room : firstRoom;
   const inputs = {};
   if (isObj(saved.inputs)) {
     Object.entries(saved.inputs).forEach(([roomId, kinds]) => {
-      if (!SEED.rooms[roomId] || !isObj(kinds)) return;
+      if (!base.rooms[roomId] || !isObj(kinds)) return;
       Object.entries(kinds).forEach(([kind, entry]) => {
         if (!KINDS.includes(kind) || !isObj(entry) || !Array.isArray(entry.rows) || !entry.rows.every(isObj)) return;
         inputs[roomId] ??= {};
@@ -53,19 +62,25 @@ export function sanitizeSaved(saved) {
       });
     });
   }
-  const log = Array.isArray(saved.log) ? saved.log.filter((e) => isObj(e) && typeof e.id === 'string' && KINDS.includes(e.kind) && SEED.rooms[e.room]).slice(0, 50) : [];
-  return { room, inputs, log };
+  const log = Array.isArray(saved.log) ? saved.log.filter((e) => isObj(e) && typeof e.id === 'string' && KINDS.includes(e.kind) && base.rooms[e.room]).slice(0, 50) : [];
+  const actions = {};
+  if (isObj(saved.actions)) {
+    Object.entries(saved.actions).forEach(([roomId, keys]) => {
+      if ((roomId === GROUP || base.rooms[roomId]) && isObj(keys)) actions[roomId] = keys;
+    });
+  }
+  return { room, inputs, log, actions };
 }
 
-/** Re-derive; if the data can't be derived, fall back to the sample group and say so. */
+/** Re-derive; if the data can't be derived, fall back to the org's base data and say so. */
 function reload() {
   try {
-    cvLoad(applyInputs(SEED, state.inputs), state.room);
+    cvLoad(applyInputs(state.base, state.inputs), state.room);
   } catch (err) {
-    console.error('Coversight demo: could not load saved data, resetting', err);
-    state = { ...state, room: SEED.rooms[state.room] ? state.room : 'oakland', inputs: {}, log: [], notice: 'Saved demo data couldn’t be loaded, so the demo is back on the sample group.' };
-    clearSaved();
-    cvLoad(SEED, state.room);
+    console.error('Coversight: could not apply inputs, showing the data without them', err);
+    state = { ...state, inputs: {}, notice: 'Some entered data couldn’t be applied, so it’s hidden for now.' };
+    if (state.mode === 'local') clearSaved();
+    cvLoad(state.base, state.base.rooms[state.room] ? state.room : Object.keys(state.base.rooms)[0]);
   }
   state = { ...state, version: state.version + 1 };
   emit();
@@ -73,60 +88,104 @@ function reload() {
 const today = () => new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 const stamp = () => new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
+async function api(path, init) {
+  const res = await fetch(path, { credentials: 'same-origin', headers: { 'content-type': 'application/json' }, ...init });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error(body.error || `Request failed (${res.status})`), { status: res.status });
+  return body;
+}
+
+function savedRoom() {
+  try {
+    const raw = window.localStorage.getItem(KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+function hydrateLocal() {
+  let saved = savedRoom();
+  try { OLD_KEYS.forEach((k) => window.localStorage.removeItem(k)); } catch { /* ignore */ }
+  saved = saved ? sanitizeSaved(saved, SEED) : null;
+  state = { ...state, mode: 'local', base: SEED, ...(saved || {}) };
+  reload();
+}
+
 export const engine = {
   get: () => state,
   server: () => INITIAL,
   subscribe(f) { subs.add(f); return () => subs.delete(f); },
 
-  /** True when a viewer has a non-default saved state (the shell holds paint until it's applied). */
-  hasSaved() {
+  /** Load the signed-in org from the server; with no backend, fall back to this browser. */
+  async hydrate() {
+    let body;
     try {
-      const raw = window.localStorage.getItem(KEY);
-      return !!raw && raw !== JSON.stringify({ room: 'oakland', inputs: {}, log: [] });
-    } catch { return false; }
-  },
-
-  /** Restore a viewer's room and inputs (called from a layout effect, before first paint). */
-  hydrate() {
-    let raw = null;
-    try { raw = window.localStorage.getItem(KEY); } catch { raw = null; }
-    try { OLD_KEYS.forEach((k) => window.localStorage.removeItem(k)); } catch { /* ignore */ }
-    if (!raw) return;
-    let saved = null;
-    try { saved = sanitizeSaved(JSON.parse(raw)); } catch { saved = null; }
-    if (!saved) { clearSaved(); return; }
-    state = { ...state, ...saved };
-    if (state.room !== 'oakland' || Object.keys(state.inputs).length) reload();
+      body = await api('/api/state');
+    } catch (err) {
+      if (err.status === 401) {
+        window.location.assign(`/login/?next=${encodeURIComponent(window.location.pathname)}`);
+        return;
+      }
+      // No backend (404 on a static host, 503 with no database, or offline).
+      hydrateLocal();
+      return;
+    }
+    const saved = sanitizeSaved(savedRoom() || {}, body.base) || {};
+    state = {
+      ...state,
+      mode: 'server',
+      base: body.base,
+      org: body.org,
+      viewer: body.viewer,
+      room: saved.room || Object.keys(body.base.rooms)[0],
+      inputs: body.inputs || {},
+      log: body.log || [],
+      actions: body.actions || {},
+    };
+    reload();
   },
 
   dismissNotice() { state = { ...state, notice: null }; emit(); },
 
   setRoom(id) {
-    if (!id || id === state.room || !SEED.rooms[id]) return;
+    if (!id || id === state.room || !state.base.rooms[id]) return;
     state = { ...state, room: id };
     persist();
     reload();
   },
 
-  /** Commit validated rows for one kind in one room. Replaces that kind's previous entry. */
+  /** Save validated rows for one kind in one room. Replaces that kind's previous entry. */
   commit(kind, roomId, rows, summary, opts) {
     const prev = state.inputs[roomId]?.[kind] || null;
     const entry = { rows, date: today(), label: KIND_LABEL[kind], n: rows.length, ...(opts ? { opts } : {}) };
     const id = `${Date.now().toString(36)}-${kind}`;
+    const before = { inputs: state.inputs, log: state.log };
+    // Applied at once; on the server the saved copy replaces it, or it's rolled back.
     state = {
       ...state,
       inputs: { ...state.inputs, [roomId]: { ...(state.inputs[roomId] || {}), [kind]: entry } },
       log: [{ id, kind, room: roomId, at: stamp(), rows: rows.length, summary, prev }, ...state.log].slice(0, 50),
     };
+    if (state.mode === 'server') {
+      state = { ...state, saving: true };
+      api('/api/inputs', { method: 'POST', body: JSON.stringify({ roomId, kind, rows, opts, summary }) })
+        .then((b) => { state = { ...state, inputs: b.inputs, log: b.log, saving: false }; reload(); })
+        .catch((err) => { state = { ...state, ...before, saving: false, notice: `Not saved: ${err.message}` }; reload(); });
+    }
     persist();
     reload();
     return id;
   },
 
-  /** Undo one commit: restores whatever that kind held before it. */
+  /** Undo one entry: restores whatever that kind held before it. */
   undo(logId) {
     const e = state.log.find((x) => x.id === logId);
     if (!e || e.undone) return;
+    if (state.mode === 'server') {
+      api(`/api/inputs/${encodeURIComponent(logId)}/undo`, { method: 'POST' })
+        .then((b) => { state = { ...state, inputs: b.inputs, log: b.log }; reload(); })
+        .catch((err) => { state = { ...state, notice: `Couldn’t undo: ${err.message}` }; emit(); });
+      return;
+    }
     const roomInputs = { ...(state.inputs[e.room] || {}) };
     if (e.prev) roomInputs[e.kind] = e.prev;
     else delete roomInputs[e.kind];
@@ -137,22 +196,79 @@ export const engine = {
     reload();
   },
 
-  /** Back to the sample restaurant group. */
+  /** Clear every hand-entered input (back to the org's own data). */
   reset() {
+    if (state.mode === 'server') {
+      api('/api/inputs/reset', { method: 'POST' })
+        .then((b) => { state = { ...state, inputs: b.inputs, log: b.log, notice: null }; reload(); })
+        .catch((err) => { state = { ...state, notice: `Couldn’t reset: ${err.message}` }; emit(); });
+      return;
+    }
     state = { ...state, inputs: {}, log: [], notice: null };
     persist();
     reload();
   },
 
-  /** Hard reset from the error screen: clears storage even if the engine never loaded. */
+  /** The saved value of one decision for a room ('' = the whole group), or undefined. */
+  saved(key, room = state.room) { return state.actions[room]?.[key]; },
+
+  /** Save one operator decision. Shown at once; on the server the write is
+   * debounced per room and key (a dragged slider sends one request), and a
+   * refused write rolls back to the last saved value with a notice. Doesn't
+   * re-derive figures, so screens keep their local state. */
+  act(key, value, { room = state.room, summary = '' } = {}) {
+    const slot = `${room}/${key}`;
+    if (!pending.has(slot)) pending.set(slot, { confirmed: state.actions[room]?.[key], timer: null });
+    const p = pending.get(slot);
+    state = { ...state, actions: { ...state.actions, [room]: { ...(state.actions[room] || {}), [key]: value } } };
+    emit();
+    if (state.mode !== 'server') { persist(); pending.delete(slot); return; }
+    clearTimeout(p.timer);
+    p.timer = setTimeout(() => {
+      pending.delete(slot);
+      state = { ...state, saving: true }; emit();
+      api('/api/actions', { method: 'POST', body: JSON.stringify({ roomId: room, key, value, summary }) })
+        .then(() => { state = { ...state, saving: false }; emit(); })
+        .catch((err) => {
+          const roomActs = { ...(state.actions[room] || {}) };
+          if (p.confirmed === undefined) delete roomActs[key]; else roomActs[key] = p.confirmed;
+          state = { ...state, saving: false, actions: { ...state.actions, [room]: roomActs }, notice: `Not saved: ${err.message}` };
+          emit();
+        });
+    }, 350);
+  },
+
+  /** Hard reset from the error screen: clears browser storage and reloads the org. */
   hardReset() {
     clearSaved();
     state = { ...INITIAL, version: state.version + 1 };
     try { cvLoad(SEED, 'oakland'); } catch { /* the seed always loads */ }
     emit();
+    void engine.hydrate();
+  },
+
+  async signOut() {
+    try { await authClient.signOut(); } catch { /* ignore */ }
+    clearSaved();
+    window.location.assign('/login/');
   },
 };
 
 export function useEngine() {
   return React.useSyncExternalStore(engine.subscribe, engine.get, engine.server);
+}
+
+/** Like useState, but saved: per room (or for the whole group with { group: true }),
+ * on the server when signed in, else in this browser. set(next, summary) takes a
+ * value or an updater. */
+export function useSaved(key, initial, { group = false } = {}) {
+  const eng = useEngine();
+  const room = group ? GROUP : eng.room;
+  const v = eng.actions[room]?.[key];
+  const value = v === undefined ? initial : v;
+  const set = (next, summary) => {
+    const cur = engine.saved(key, room);
+    engine.act(key, typeof next === 'function' ? next(cur === undefined ? initial : cur) : next, { room, summary });
+  };
+  return [value, set];
 }

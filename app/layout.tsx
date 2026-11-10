@@ -26,10 +26,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        {/* Hide the sample room until a viewer's saved room is applied (no flash). Fails open after 1.5 s. */}
+        {/* Hide the screens until the org's data has loaded (no flash of the sample). Fails open after 4 s. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `try{var r=localStorage.getItem('coversight-demo:v2');if(r&&r!=='{"room":"oakland","inputs":{},"log":[]}'){document.documentElement.classList.add('cv-pending');setTimeout(function(){document.documentElement.classList.remove('cv-pending')},1500)}}catch(e){}`,
+            __html: `if(location.pathname.indexOf('/login')!==0){document.documentElement.classList.add('cv-pending');setTimeout(function(){document.documentElement.classList.remove('cv-pending')},4000)}`,
           }}
         />
       </head>

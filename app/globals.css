@@ -1634,3 +1634,9 @@ a.cv-health { color: var(--fg-2); }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 html.cv-pending main.scroll > *, html.cv-pending .cv-host > main > * { visibility: hidden; }
 .cv-tablewrap:focus-visible { outline: none; box-shadow: var(--ring); }
+
+/* Sign-in screen (outside the app shell). */
+.cv-login { min-height: 100dvh; display: grid; place-items: center; padding: 24px 16px; background: var(--bg-2, var(--surface-2, #f4f4f2)); }
+.cv-login-card { width: 100%; max-width: 400px; display: flex; flex-direction: column; gap: 18px; padding: 28px; }
+.cv-login-sep { display: flex; align-items: center; gap: 10px; color: var(--fg-3); font-size: var(--text-xs); }
+.cv-login-sep::before, .cv-login-sep::after { content: ''; flex: 1; border-top: 1px solid var(--border); }
