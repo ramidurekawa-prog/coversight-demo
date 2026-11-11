@@ -41,6 +41,8 @@ export const ACTION_KEYS = {
   plan: { scope: 'room', schema: z.object({ hours: z.number().min(0.5).max(5) }) },
   /** The accountant's period package. */
   billing: { scope: 'group', schema: z.object({ status: z.enum(['open', 'approved', 'disputed']), note: z.string().max(2000).optional(), at: isoDate.optional(), period: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).optional() }) },
+  /** Where each lever's savings land in the group's chart of accounts, confirmed by a named person. */
+  glmap: { scope: 'group', schema: z.record(z.string().min(1).max(40), z.object({ account: z.string().trim().min(1).max(80), by: z.string().max(80), at: isoDate })) },
   /** Autonomy level per lever (0 observes … 4 holds the line), set on System. */
   autonomy: { scope: 'room', schema: z.record(z.string().min(1).max(40), z.number().int().min(0).max(4)) },
   /** Pricing on the invoice: per room per month, and the fee on reconciled savings. */

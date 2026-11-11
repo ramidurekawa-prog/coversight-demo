@@ -176,7 +176,106 @@ const CV_RECON = [
   { claim: "Purchasing lever mapping", room: "Oakland", acct: "5010 or 5020?", op: 0, rec: 0, status: "Mapping exception", tone: "warn", icon: "TriangleAlert" },
   { claim: "Cut one Friday dinner server (August)", room: "Berkeley", acct: "6010 Hourly labour, FOH", op: -555, rec: -555, status: "Restated, credit issued", tone: "bad", icon: "Undo2" },
 ];
+const LEVER_NAMES = { overtime: 'Overtime', labour: 'Labour overstaff', void_comp: 'Voids & comps', menu_margin: 'Menu margin', mix: 'Mix shift', turns: 'Table turns' };
+const DEFAULT_GL = { overtime: '6020 Wages, overtime', labour: '6010 Wages, hourly', void_comp: '4100 Sales, comps and voids', menu_margin: '4000 Food sales', mix: '4000 Food sales', turns: '4000 Food sales' };
+const c$ = (c) => cvMoney(c / 100, { cents: true });
+const mName = (p) => new Date(`${p}-01T00:00:00Z`).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+
+/* A real group's period package: what each verified test contributes, where it lands in the books, approve or dispute. */
+function AccountantReal() {
+  const cv = useCv();
+  const eng = useEngine();
+  const [b, setB] = React.useState(null);
+  const [period, setPeriod] = React.useState(null);
+  const [err, setErr] = React.useState(null);
+  const [pkg, setPkg] = useSaved('billing', { status: 'open' }, { group: true });
+  const [gl, setGl] = useSaved('glmap', {}, { group: true });
+  const [draftGl, setDraftGl] = React.useState({});
+  const [disputing, setDisputing] = React.useState(false);
+  const [note, setNote] = React.useState('');
+  React.useEffect(() => {
+    fetch('/api/billing', { credentials: 'same-origin' }).then(async (r) => { const j = await r.json(); if (!r.ok) throw new Error(j.error); setB(j); const prev = j.invoices.find((i) => i.period !== j.current); setPeriod(prev?.period ?? j.current); }).catch((e) => setErr(e.message));
+  }, []);
+  if (err) return <Callout tone="warn" icon="CircleX">{err}</Callout>;
+  if (!b || !period) return <span className="cv-small cv-muted">Loading the package…</span>;
+  const inv = b.invoices.find((i) => i.period === period);
+  const forThis = !pkg.period || pkg.period === period;
+  const state = disputing ? 'dispute' : forThis ? pkg.status : 'open';
+  const levers = [...new Set((eng.windows || []).filter((w) => w.status === 'verified' || w.status === 'reversed').map((w) => w.lever))];
+  const winOf = (id) => (eng.windows || []).find((w) => w.id === id);
+  const csv = () => {
+    const rows = [['Period', 'Test', 'Room', 'Account', 'Days', 'Reconciled'], ...(inv?.accruals || []).map((a) => [period, a.title, a.roomId, gl[winOf(a.windowId)?.lever]?.account ?? '', a.days, (a.cents / 100).toFixed(2)]), ...(inv?.lines || []).map((l) => [period, l.label, '', '', '', (l.cents / 100).toFixed(2)])];
+    const text = rows.map((r) => r.map((c) => (/[",\n]/.test(String(c)) ? `"${String(c).replace(/"/g, '""')}"` : c)).join(',')).join('\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([text], { type: 'text/csv' }));
+    a.download = `coversight-package-${period}.csv`;
+    a.click();
+  };
+  return (
+    <>
+      <div className="cv-row" style={{ gap: 8 }}>
+        <span className="cv-small" style={{ fontWeight: 600 }}>Period</span>
+        <select className="input" style={{ width: 'auto' }} value={period} onChange={(e) => { setPeriod(e.target.value); setDisputing(false); }} aria-label="Period">
+          {b.invoices.map((i) => <option key={i.period} value={i.period}>{mName(i.period)}{i.status === 'final' ? ' · invoiced' : ''}</option>)}
+        </select>
+        <span style={{ flex: 1 }} />
+        {state === 'open' && inv?.status !== 'final' && <><Button variant="secondary" onClick={() => { setNote(''); setDisputing(true); }}>Dispute a line</Button><Button icon="Check" onClick={() => { setPkg({ status: 'approved', period, at: new Date().toISOString() }, `${mName(period)} package approved`); cv.toast(`${mName(period)} approved. The owner can now finalize the invoice.`); }}>Approve package</Button></>}
+        {state === 'approved' && <Pill tone="good" icon="BadgeCheck">Approved {pkg.at ? new Date(pkg.at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''}</Pill>}
+        {state === 'disputed' && <Pill tone="warn" icon="MessageSquareWarning">Dispute open</Pill>}
+        {(state === 'approved' || state === 'disputed') && inv?.status !== 'final' && <Button size="sm" variant="ghost" icon="Undo2" onClick={() => setPkg({ status: 'open', period }, `${mName(period)} package reopened`)}>Reopen</Button>}
+        <Button size="sm" variant="secondary" icon="Download" onClick={csv}>CSV</Button>
+      </div>
+      {state === 'disputed' && pkg.note && <Callout tone="warn" icon="MessageSquareWarning">Your dispute: {pkg.note}</Callout>}
+      {state === 'dispute' && (
+        <section className="cv-card">
+          <label htmlFor="cv-dispute" className="cv-small" style={{ fontWeight: 600 }}>What doesn&apos;t match your books?</label>
+          <textarea id="cv-dispute" rows={3} className="input" style={{ width: '100%', padding: 10 }} value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000} />
+          <div className="cv-row"><Button size="sm" disabled={!note.trim()} onClick={() => { setPkg({ status: 'disputed', note, period, at: new Date().toISOString() }, `Dispute on the ${mName(period)} package`); setDisputing(false); cv.toast('Dispute recorded. The invoice can’t be finalized until it’s resolved.'); }}>Send dispute</Button><Button size="sm" variant="ghost" onClick={() => setDisputing(false)}>Cancel</Button></div>
+        </section>
+      )}
+      <section className="cv-card flush">
+        <div className="cv-tablewrap" tabIndex={0} role="group" aria-label="Package lines">
+          <table className="cv-table">
+            <thead><tr><th>Verified saving</th><th>Room</th><th>Account</th><th className="r">Days</th><th className="r">Reconciled</th></tr></thead>
+            <tbody>
+              {!inv?.accruals?.length && <tr><td colSpan={5} className="cv-small cv-muted">No verified savings accrued in {mName(period)}. Only tests that passed their 28 days count, at their cautious lower bound.</td></tr>}
+              {(inv?.accruals || []).map((a) => (
+                <tr key={a.windowId}><td style={{ fontWeight: 600 }}>{a.title}</td><td>{CV_LOCS.find((l) => l.id === a.roomId)?.short ?? a.roomId}</td><td className="cv-small">{gl[winOf(a.windowId)?.lever]?.account ?? <span className="cv-faint">not mapped</span>}</td><td className="r">{a.days}</td><td className="r">{c$(a.cents)}</td></tr>
+              ))}
+              {inv && <tr><td colSpan={4} style={{ fontWeight: 700 }}>Reconciled for {mName(period)}</td><td className="r" style={{ fontWeight: 700 }}>{c$(inv.reconciledCents)}</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </section>
+      <section className="cv-card">
+        <div className="cv-card-head"><span className="cv-h4">Where savings land in your books</span><span className="cv-xs cv-faint">Only a named person confirms a mapping</span></div>
+        {levers.length === 0 ? <span className="cv-small cv-muted">Nothing to map until a test verifies.</span> : levers.map((k) => (
+          <div key={k} className="cv-row nowrap" style={{ gap: 8 }}>
+            <span className="cv-small" style={{ width: 150, fontWeight: 600 }}>{LEVER_NAMES[k] || k}</span>
+            <input className="input" style={{ flex: 1 }} value={draftGl[k] ?? gl[k]?.account ?? DEFAULT_GL[k] ?? ''} onChange={(e) => setDraftGl({ ...draftGl, [k]: e.target.value })} aria-label={`${LEVER_NAMES[k] || k} account`} />
+            {gl[k] && !draftGl[k] ? <Pill tone="good" icon="CircleCheck">Confirmed {new Date(gl[k].at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</Pill> : <Button size="sm" icon="Check" onClick={() => { const account = (draftGl[k] ?? DEFAULT_GL[k] ?? '').trim(); if (!account) return; setGl((m) => ({ ...m, [k]: { account, by: eng.viewer?.anonymous ? 'Guest' : 'you', at: new Date().toISOString() } }), `${LEVER_NAMES[k]} mapped to ${account}`); setDraftGl((d) => { const n = { ...d }; delete n[k]; return n; }); cv.toast('Mapping confirmed.'); }}>Confirm</Button>}
+          </div>
+        ))}
+      </section>
+    </>
+  );
+}
+
 function CvAccountant() {
+  const eng = useEngine();
+  if (eng.mode === 'server' && eng.org && !eng.org.sample && eng.viewer?.role !== 'gm') {
+    return (
+      <div className="cv-page wide">
+        <PageHead over={`For the group controller · ${eng.org.name}`} q="The period package"
+          sub="Every verified saving in the month, at its cautious lower bound, where it lands in your books, and the approval the invoice waits on. Download it as CSV for your close." />
+        <AccountantReal />
+      </div>
+    );
+  }
+  return <CvAccountantSample />;
+}
+
+function CvAccountantSample() {
   const cv = useCv();
   const [pkg, setPkg] = useSaved("billing", { status: "open" }, { group: true });
   const [disputing, setDisputing] = React.useState(false);
