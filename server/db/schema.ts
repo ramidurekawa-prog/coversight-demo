@@ -334,7 +334,28 @@ export const outbox = pgTable(
   (t) => [index('outbox_status_idx').on(t.status, t.createdAt), index('outbox_org_idx').on(t.orgId, t.createdAt)],
 );
 
+/** An invite link to join an org as owner, GM (with rooms) or admin. Only a
+ * hash of the token is stored; the link is shown once. */
+export const invites = pgTable(
+  'invites',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+    role: memberRole('role').notNull(),
+    rooms: jsonb('rooms').$type<string[] | null>(),
+    email: text('email'),
+    tokenHash: text('token_hash').notNull().unique(),
+    createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: at('created_at').notNull().defaultNow(),
+    expiresAt: at('expires_at').notNull(),
+    acceptedBy: text('accepted_by').references(() => users.id, { onDelete: 'set null' }),
+    acceptedAt: at('accepted_at'),
+    revokedAt: at('revoked_at'),
+  },
+  (t) => [index('invites_org_idx').on(t.orgId)],
+);
+
 export const orgRelations = relations(orgs, ({ many }) => ({ rooms: many(rooms), memberships: many(memberships) }));
 
-export const schema = { users, sessions, accounts, verifications, orgs, memberships, rooms, roomData, inputs, actions, auditLog, memberRole, windowStatus, testWindows, checkpoints, jobRuns, snapshots, taskStatus, tasks, notifications, notificationReads, outbox };
+export const schema = { users, sessions, accounts, verifications, orgs, memberships, rooms, roomData, inputs, actions, auditLog, memberRole, windowStatus, testWindows, checkpoints, jobRuns, snapshots, taskStatus, tasks, notifications, notificationReads, outbox, invites };
 

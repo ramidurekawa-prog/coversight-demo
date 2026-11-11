@@ -218,6 +218,7 @@ function Bell() {
 
 function AccountPill() {
   const eng = useEngine();
+  if (eng.mode === 'pending') return null;
   if (eng.mode !== 'server') {
     return (
       <span className="cv-strip-pill">
@@ -266,7 +267,7 @@ function ModeStrip({ build }) {
 /** The sign-in screen renders on its own; everything else inside the app shell. */
 export function Shell({ children }) {
   const pathname = usePathname();
-  if (pathname?.startsWith('/login')) return children;
+  if (/^\/(login|reset-password|join)(\/|$)/.test(pathname || '')) return children;
   return <AppShell>{children}</AppShell>;
 }
 

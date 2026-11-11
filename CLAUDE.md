@@ -53,6 +53,10 @@ here ships to customers.
   never book anything outside `windowState`.
 - **Toast exports:** `lib/data/toast.js` reads Toast's data-export CSVs in the
   browser into the `toast` input kind; `server/toast-schema.ts` bounds it.
+- **Groups and people:** `server/team.ts`. A person can belong to several
+  groups; the `cv-org` cookie picks the one in view (`viewerFor` only honours
+  it for their own memberships). Invite tokens are stored hashed. Never
+  hardcode the sample's room ids in model or screens: derive from `ds.rooms`.
 - **Notifications:** `server/notify.ts` `notify()` for anything an operator
   should hear about (dedupe key per event); email goes through the outbox and
   Resend only when `RESEND_API_KEY` + `MAIL_FROM` are set, else it's kept as
