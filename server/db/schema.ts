@@ -205,6 +205,7 @@ export const testWindows = pgTable(
     userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
     createdAt: at('created_at').notNull().defaultNow(),
     closedAt: at('closed_at'),
+    reversedAt: at('reversed_at'),
     updatedAt: at('updated_at').notNull().defaultNow(),
   },
   (t) => [index('test_windows_org_idx').on(t.orgId, t.status)],
@@ -355,7 +356,31 @@ export const invites = pgTable(
   (t) => [index('invites_org_idx').on(t.orgId)],
 );
 
+/** A month's invoice: subscription + fee on reconciled (verified, lower-bound)
+ * savings − credits. Drafts recalculate; a final invoice is frozen. */
+export const invoices = pgTable(
+  'invoices',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+    period: text('period').notNull(),
+    status: text('status').notNull().default('draft'),
+    lines: jsonb('lines').notNull(),
+    accruals: jsonb('accruals').notNull(),
+    pricing: jsonb('pricing').notNull(),
+    reconciledCents: integer('reconciled_cents').notNull(),
+    totalCents: integer('total_cents').notNull(),
+    stripeInvoiceId: text('stripe_invoice_id'),
+    stripeUrl: text('stripe_url'),
+    createdAt: at('created_at').notNull().defaultNow(),
+    updatedAt: at('updated_at').notNull().defaultNow(),
+    finalizedAt: at('finalized_at'),
+    finalizedBy: text('finalized_by').references(() => users.id, { onDelete: 'set null' }),
+  },
+  (t) => [unique('invoices_org_period').on(t.orgId, t.period)],
+);
+
 export const orgRelations = relations(orgs, ({ many }) => ({ rooms: many(rooms), memberships: many(memberships) }));
 
-export const schema = { users, sessions, accounts, verifications, orgs, memberships, rooms, roomData, inputs, actions, auditLog, memberRole, windowStatus, testWindows, checkpoints, jobRuns, snapshots, taskStatus, tasks, notifications, notificationReads, outbox, invites };
+export const schema = { users, sessions, accounts, verifications, orgs, memberships, rooms, roomData, inputs, actions, auditLog, memberRole, windowStatus, testWindows, checkpoints, jobRuns, snapshots, taskStatus, tasks, notifications, notificationReads, outbox, invites, invoices };
 

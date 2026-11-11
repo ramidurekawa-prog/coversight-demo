@@ -175,7 +175,7 @@ export async function runReverify(db: Db, orgId: string) {
     const res = guardrailCheck(pilot, 0, false);
     if (!res.ok) {
       reversed.push(w.id);
-      await db.update(testWindows).set({ status: 'reversed', bookedCents: 0, updatedAt: new Date() }).where(eq(testWindows.id, w.id));
+      await db.update(testWindows).set({ status: 'reversed', bookedCents: 0, reversedAt: new Date(), updatedAt: new Date() }).where(eq(testWindows.id, w.id));
       await notify(db, {
         orgId, roomId: w.roomId, kind: 'window.reversed', severity: 'warn', link: '/windows/', dedupe: `window.reversed:${w.id}`,
         title: `Reversed: ${w.title}`,
