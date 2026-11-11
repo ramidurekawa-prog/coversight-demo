@@ -5,6 +5,8 @@ import * as React from 'react';
 import { Button, Icon, Tabs } from '../kit';
 import { CV_CLAIM, CV_D, CV_ROOM, Callout, Claim, Money, Pill, PageHead, cvMoney, cvScale, useCv, SampleNote } from './core';
 import { EXCEPTION_TYPES, controlLimits } from '../../lib/data/model';
+import { weeklySeries } from '../../lib/data/readers';
+import { engine, useEngine } from '../engine';
 
 /* Operating areas (V3, from the "map of restaurant inefficiencies" sheets).
  * Every area runs the same closed loop (detect → understand → act → verify),
@@ -75,6 +77,23 @@ function Diagnose({ data, manager, fix, verify }) {
 const EXC_LABELS = ['Jul 27', 'Aug 3', 'Aug 10', 'Aug 17', 'Aug 24', 'Aug 31', 'Sep 7', 'Sep 14', 'Sep 21', 'Sep 28', 'Oct 5', 'Oct 12', 'Oct 19'];
 /** Room exceptions as a share of sales, last 13 weeks of the room's history (this week from the register). */
 const exceptionSeries = () => CV_D.hist.rows.slice(-13).map((r) => r.excPct);
+/** On a room's own Toast data: voids, comps and discounts as a share of sales, from the export's 12 weeks. */
+function ownExceptionSeries() {
+  const v = CV_D.room.levers?.voidWeeks;
+  if (!CV_D.room.fromToast || !v?.length) return null;
+  const dollars = weeklySeries(CV_D.room, 'exceptionDollars');
+  const weeks = [...new Set(v.map((x) => x.week))].sort((a, b) => a - b);
+  const series = weeks.map((w) => { const rows = v.filter((x) => x.week === w); const sales = rows.reduce((t, x) => t + x.sales, 0); return sales ? (rows.reduce((t, x) => t + x.exceptions, 0) / sales) * 100 : 0; });
+  const labels = dollars.map((p) => new Date(`${p.weekEnd}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }));
+  return { series, labels };
+}
+
+function talkingPoints(k, meta, T) {
+  return {
+    subject: `${CV_ROOM.short}: ${meta.short} with ${k.name}`,
+    body: `Talking points for a conversation with ${k.name} (a reason to talk, not an accusation):\n\n• The policy: ${meta.label.toLowerCase()} need a reason and a manager OK.\n• The numbers: over the last 28 days, ${k.name}'s ${meta.note} ran at ${(k[`${meta.k}Rate`] * 100).toFixed(2)}% of their sales, against the room's ${(T.base * 100).toFixed(2)}%.\n• The limit for their volume: ${(k[`${meta.k}Ucl`] * 100).toFixed(2)}%.\n• Ask what's driving it (a regular, a menu issue, training) before anything else.\n\nFrom Coversight.`,
+  };
+}
 
 function ControlChart({ series, mean, ucl, lcl, unit = '%', labels }) {
   const W = 560, H = 190, P = { l: 34, r: 16, t: 14, b: 26 };
@@ -106,7 +125,10 @@ function CvControls() {
   const meta = EXCEPTION_TYPES.find((t) => t.k === type);
   const k = T.signals[0];
   const times = k ? k[`${type}Rate`] / T.base : 0;
-  const series = exceptionSeries();
+  const own = ownExceptionSeries();
+  const eng = useEngine();
+  const series = own ? own.series : exceptionSeries();
+  const labels = own ? own.labels : EXC_LABELS;
   const lim = controlLimits(series);
   const last = series[series.length - 1];
   const people = [...S.people].sort((a, b) => b[`${type}Rate`] / b[`${type}Ucl`] - a[`${type}Rate`] / a[`${type}Ucl`]);
@@ -118,8 +140,8 @@ function CvControls() {
       <LoopStrip stage={S.signalCount ? 'act' : 'understand'} notes={{ detect: 'Per-person limits on every exception', understand: S.signalCount ? `${S.signalCount} signal${S.signalCount === 1 ? '' : 's'} above a limit` : 'Everyone inside their limits', act: k ? (type === 'comps' ? 'Coach the comp policy' : 'Reason code on post-send voids') : 'Nothing to act on', verify: 'Control chart, 1 false alarm a quarter' }} />
       <div className="cv-grid g-hero">
         <section className="cv-card">
-          <div className="cv-card-head"><span className="cv-h4">Room exceptions as a share of sales, 13 weeks</span><Claim k="obs" /></div>
-          <ControlChart series={series} mean={lim.mean} ucl={lim.ucl} lcl={lim.lcl} labels={EXC_LABELS} />
+          <div className="cv-card-head"><span className="cv-h4">Room exceptions as a share of sales, {series.length} weeks{own ? ' (your Toast data)' : ''}</span><Claim k="obs" /></div>
+          <ControlChart series={series} mean={lim.mean} ucl={lim.ucl} lcl={lim.lcl} labels={labels} />
           <span className="cv-small cv-muted">{last > lim.ucl ? <>The room is <b>above</b> its upper limit at <b className="cv-num">{last.toFixed(1)}%</b> last week.</> : <>The room is inside its limits: <b className="cv-num">{last.toFixed(1)}%</b> last week, {cvMoney(Math.round(S.weekTotal))} of {cvMoney(Math.round(CV_D.week.net))}.</>} {S.signalCount ? 'The signal is in individual people, below.' : 'Nothing to chase at the room level.'}</span>
         </section>
         <section className="cv-card">
@@ -132,7 +154,7 @@ function CvControls() {
           )}
           <Callout icon="Info">We don&apos;t count this as a saving. It&apos;s observed leakage; only a change that holds, measured against the baseline, becomes bookable.</Callout>
           {k && type === 'postVoid' && <div className="cv-row"><Button icon="ShieldCheck" onClick={() => cv.approve('void-reason')}>Review the void rule</Button></div>}
-          {k && type === 'comps' && <div className="cv-row"><Button icon="MessageSquare" onClick={() => cv.toast(`Talking points for ${k.name} sent to ${CV_ROOM.gm}: the policy, the numbers, and the limit.`)}>Send talking points to the GM</Button></div>}
+          {k && type !== 'postVoid' && (() => { const tp = talkingPoints(k, meta, T); return <div className="cv-row"><a className="btn btn-primary btn-sm" href={`mailto:?subject=${encodeURIComponent(tp.subject)}&body=${encodeURIComponent(tp.body)}`} onClick={() => { if (eng.mode === 'server') engine.draftEmail({ kind: 'gm-note', subject: tp.subject, body: tp.body }).catch(() => null); }}><Icon name="MessageSquare" size={14} /> Email talking points to the GM</a></div>; })()}
         </section>
       </div>
       <section className="cv-card flush">
