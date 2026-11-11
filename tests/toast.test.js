@@ -136,6 +136,12 @@ describe('applied to a room', () => {
     levers.forEach((l) => expect(l.grade, l.key).toBeTruthy());
   });
 
+  it('findings on own data skip moves that only exist in the sample (spot counts on sample stock)', () => {
+    const ids = deriveRoom(ds, 'oakland').candidates.map((c) => c.id);
+    expect(ids).not.toContain('spotcount');
+    expect(deriveRoom(SEED, 'oakland').candidates.map((c) => c.id)).toContain('spotcount');
+  });
+
   it('a hand-entered recipe cost still wins over the estimate', () => {
     const ds2 = applyInputs(SEED, { oakland: { toast: { rows: [s] }, recipes: { rows: [{ dish: 'House Burger', price: 19, cost: 5.1 }] } } });
     expect(ds2.rooms.oakland.menu.find((m) => m.name === 'House Burger').cost).toBe(5.1);

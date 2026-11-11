@@ -352,8 +352,24 @@ function CvService() {
 }
 
 /* ================================================================ The plan */
+const TASK_LABEL = { open: 'Approved · to make', done: 'Made · waiting for data', verified: 'Confirmed in Toast', mismatch: 'Not in Toast yet' };
+
+/** Where a finding stands: an approval task, a running test, or an estimated cost underneath it. */
+function planStatus(c, eng) {
+  const out = [];
+  const approval = c.kind === 'price' ? `price:${c.item}:${c.to}` : c.kind === 'markup' ? 'delivery-markup' : null;
+  const t = approval && (eng.tasks || []).find((x) => x.roomId === CV_D.id && x.approvalId === approval && x.status !== 'cancelled');
+  if (t) out.push({ tone: t.status === 'verified' ? 'good' : t.status === 'mismatch' ? 'warn' : 'info', icon: 'ListChecks', label: TASK_LABEL[t.status] || t.status });
+  const w = c.kind === 'price' && (eng.windows || []).find((x) => x.roomId === CV_D.id && x.lever === 'menu_margin' && x.dish === c.item && x.status !== 'stopped');
+  if (w) out.push({ tone: w.status === 'verified' ? 'good' : 'info', icon: 'Timer', label: w.status === 'running' ? `Testing · day ${w.day} of 28` : w.status === 'verified' ? 'Verified' : w.status });
+  const dish = c.kind === 'price' && CV_D.room.menu.find((m) => m.key === c.item);
+  if (dish?.costEstimated) out.push({ tone: 'warn', icon: 'Calculator', label: 'Plate cost estimated' });
+  return out;
+}
+
 function CvPlan() {
   const cv = useCv();
+  const eng = useEngine();
   const [plan, setPlan] = useSaved('plan', { hours: CV_D.room.managerHours });
   const hours = plan.hours;
   const setHours = (h) => setPlan({ hours: h }, `Manager hours set to ${h} h`);
@@ -368,7 +384,7 @@ function CvPlan() {
   return (
     <div className="cv-page wide">
       <PageHead over={`${CV_ROOM.name} · this week`} q="What do I do this week?"
-        sub="Not a ranked list of everything. A chosen set that fits the hours you have, ordered by expected value that lasts, per hour of effort." />
+        sub={`Not a ranked list of everything. A chosen set that fits the hours you have, ordered by expected value that lasts, per hour of effort.${CV_D.room.fromToast ? ` Valued from your Toast data through ${roomDataEnd(CV_D.room)}.` : ''}`} />
 
       <section className="cv-card">
         <div className="cv-grid g3" style={{ alignItems: 'end' }}>
@@ -409,7 +425,7 @@ function CvPlan() {
                 <span className="cv-rank">{isIn ? <Icon name="Check" size={14} /> : i + 1}</span>
                 <div className="cv-col" style={{ gap: 3 }}>
                   <span className="t" style={{ fontWeight: 600 }}>{c.title}</span>
-                  <div className="cv-row" style={{ gap: 6 }}><span className="cv-xs cv-faint">{c.lever} · {CV_PERSIST[c.persist].label}</span>{c.prevent && <Pill icon="ShieldCheck">Prevented, not saved</Pill>}</div>
+                  <div className="cv-row" style={{ gap: 6 }}><span className="cv-xs cv-faint">{c.lever} · {CV_PERSIST[c.persist].label}</span>{c.prevent && <Pill icon="ShieldCheck">Prevented, not saved</Pill>}{planStatus(c, eng).map((p) => <Pill key={p.label} tone={p.tone} icon={p.icon}>{p.label}</Pill>)}</div>
                 </div>
                 <div className="cv-col" style={{ alignItems: 'flex-end', gap: 3 }}>
                   <span className="cv-num" style={{ fontWeight: 600 }}>{cvMoney(Math.round(c.value))}</span>
