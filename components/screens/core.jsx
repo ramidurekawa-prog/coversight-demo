@@ -388,7 +388,7 @@ function ApprovalModal({ id, onClose, onConfirm }) {
           <>
             <div className="bd">
               <div className="cv-col" style={{ gap: 8 }}>
-                <span className="cv-over">Exactly what changes in {a.system}</span>
+                <span className="cv-over">Exactly what to change in {a.system}</span>
                 <div className="cv-diff">
                   <div className="r h"><span>What</span><span>Now</span><span>After</span></div>
                   {a.diff.map(([w, was, now]) => <div className="r" key={w}><span>{w}</span><span className="was">{was}</span><span className="now">{now}</span></div>)}
@@ -410,13 +410,13 @@ function ApprovalModal({ id, onClose, onConfirm }) {
             <div className="ft">
               <Button variant="ghost" onClick={onClose}>Not now</Button>
               <Button variant="secondary" onClick={onClose}>Edit first</Button>
-              <Button icon="Check" onClick={() => { setStep("done"); onConfirm && onConfirm(id); }}>Approve and write back</Button>
+              <Button icon="Check" onClick={() => { setStep("done"); onConfirm && onConfirm(id); }}>Approve</Button>
             </div>
           </>
         ) : (
           <>
             <div className="bd">
-              <Callout tone="good" icon="CircleCheck">Written back to {a.system}. The guardrails are watching, and you'll hear from us only if one trips.</Callout>
+              <Callout tone="good" icon="CircleCheck">Approved. Coversight can&apos;t write to {a.system} yet, so this is now a task with the exact steps: make the change there, then tap Done. {/^price:/.test(id) ? "The next Toast upload confirms guests are paying the new price, and the test window opens on its own." : "It's logged with your name and the time."}</Callout>
             </div>
             <div className="ft"><Button onClick={onClose}>Done</Button></div>
           </>

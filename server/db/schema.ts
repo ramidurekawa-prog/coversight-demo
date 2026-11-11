@@ -255,7 +255,32 @@ export const snapshots = pgTable(
   (t) => [primaryKey({ columns: [t.orgId, t.roomId, t.kind] })],
 );
 
+/** A guided write-back: an approved change the manager makes in another
+ * system, ticks off here, and the next data upload confirms where it can. */
+export const taskStatus = pgEnum('task_status', ['open', 'done', 'verified', 'mismatch', 'cancelled']);
+export const tasks = pgTable(
+  'tasks',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+    roomId: text('room_id').notNull(),
+    approvalId: text('approval_id').notNull(),
+    title: text('title').notNull(),
+    system: text('system').notNull(),
+    steps: jsonb('steps').$type<string[]>().notNull(),
+    expect: jsonb('expect').notNull(),
+    status: taskStatus('status').notNull().default('open'),
+    note: text('note'),
+    createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+    doneBy: text('done_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: at('created_at').notNull().defaultNow(),
+    doneAt: at('done_at'),
+    checkedAt: at('checked_at'),
+  },
+  (t) => [index('tasks_org_status_idx').on(t.orgId, t.status)],
+);
+
 export const orgRelations = relations(orgs, ({ many }) => ({ rooms: many(rooms), memberships: many(memberships) }));
 
-export const schema = { users, sessions, accounts, verifications, orgs, memberships, rooms, roomData, inputs, actions, auditLog, memberRole, windowStatus, testWindows, checkpoints, jobRuns, snapshots };
+export const schema = { users, sessions, accounts, verifications, orgs, memberships, rooms, roomData, inputs, actions, auditLog, memberRole, windowStatus, testWindows, checkpoints, jobRuns, snapshots, taskStatus, tasks };
 

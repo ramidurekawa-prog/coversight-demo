@@ -4,6 +4,7 @@ import * as React from 'react';
 
 import { Icon, Button } from '../kit';
 import { useSaved } from '../engine';
+import { TasksPanel } from './tasks';
 import { useCv, cvMoney, cvFill, CV_D, CV_ROOM, CV_NOW, CV_PERSIST, cvPlanCandidates, cvChoosePlan, Claim, Money, Pill, Callout, Interval, PageHead, cvScale, SampleNote } from './core';
 
 /* Coversight — weekly and daily surfaces: This week, Today, Service, The plan.
@@ -177,6 +178,7 @@ function CvToday() {
     <div className="cv-page" style={{ maxWidth: 860 }}>
       <PageHead over={`${CV_ROOM.name} · ${CV_NOW.label}`} q="Clear this in fifteen minutes"
         sub="A work queue, not a dashboard. Each card is one decision, with what it's worth and how long it takes." />
+      <TasksPanel />
       <div className="cv-col" style={{ gap: 8 }}>
         <div className="cv-row" style={{ justifyContent: 'space-between' }}>
           <span className="cv-small cv-muted">{queue.length - left.length} of {queue.length} cleared</span>

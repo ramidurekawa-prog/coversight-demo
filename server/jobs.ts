@@ -10,6 +10,7 @@ import type { Db } from './db/client';
 import { jobRuns, memberships, orgs, snapshots, users } from './db/schema';
 import { loadDataset } from './dataset';
 import { runProofLoop, runReverify } from './proof';
+import { verifyTasks } from './tasks';
 
 export const JOBS = {
   detection: { schedule: 'Daily, 2:00 am Pacific', what: 'Re-reads every room’s data, re-grades the six levers and re-ranks the findings', cron: '0 10 * * *' },
@@ -35,7 +36,8 @@ export async function runDetection(db: Db, orgId: string) {
       .onConflictDoUpdate({ target: [snapshots.orgId, snapshots.roomId, snapshots.kind], set: { data, at: new Date() } });
     out[id] = { levers: levers.length, findings: findings.length, own: data.own };
   }
-  return { rooms: Object.keys(out).length, byRoom: out };
+  const checked = await verifyTasks(db, orgId);
+  return { rooms: Object.keys(out).length, byRoom: out, tasks: checked };
 }
 
 /** Sample guests older than 30 days, and orgs nobody belongs to any more. */

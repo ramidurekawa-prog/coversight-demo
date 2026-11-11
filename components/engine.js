@@ -7,6 +7,7 @@ import { SEED } from '../lib/data/seed';
 import { INPUT_KINDS as KINDS } from '../lib/data/apply';
 import { authClient } from '../lib/client/auth';
 import { cvLoad } from './screens/core';
+import { expectFor, stepsFor } from '../lib/data/writebacks';
 
 /* The data engine: which org's data is loaded, which room is showing, what's
  * been entered by hand, and the activity log. Every change re-derives the room
@@ -22,7 +23,7 @@ import { cvLoad } from './screens/core';
 
 const KEY = 'coversight-demo:v2';
 const OLD_KEYS = ['coversight-demo:v1'];
-const INITIAL = { mode: 'pending', base: SEED, org: null, viewer: null, room: 'oakland', inputs: {}, log: [], actions: {}, version: 0, notice: null, saving: false };
+const INITIAL = { mode: 'pending', base: SEED, org: null, viewer: null, room: 'oakland', inputs: {}, log: [], actions: {}, tasks: [], version: 0, notice: null, saving: false };
 let state = INITIAL;
 const subs = new Set();
 const pending = new Map();
@@ -30,7 +31,7 @@ const pending = new Map();
 function emit() { subs.forEach((f) => f()); }
 function persist() {
   try {
-    const saved = state.mode === 'server' ? { room: state.room } : { room: state.room, inputs: state.inputs, log: state.log, actions: state.actions };
+    const saved = state.mode === 'server' ? { room: state.room } : { room: state.room, inputs: state.inputs, log: state.log, actions: state.actions, tasks: state.tasks };
     window.localStorage.setItem(KEY, JSON.stringify(saved));
   } catch { /* storage blocked: keep going in memory */ }
 }
@@ -69,7 +70,8 @@ export function sanitizeSaved(saved, base = SEED) {
       if ((roomId === GROUP || base.rooms[roomId]) && isObj(keys)) actions[roomId] = keys;
     });
   }
-  return { room, inputs, log, actions };
+  const tasks = Array.isArray(saved.tasks) ? saved.tasks.filter((t) => isObj(t) && typeof t.id === 'string' && base.rooms[t.roomId] && Array.isArray(t.steps)).slice(0, 200) : [];
+  return { room, inputs, log, actions, tasks };
 }
 
 /** Re-derive; if the data can't be derived, fall back to the org's base data and say so. */
@@ -142,6 +144,7 @@ export const engine = {
       actions: body.actions || {},
     };
     reload();
+    api('/api/tasks').then((b) => { state = { ...state, tasks: b.tasks || [] }; emit(); }).catch(() => { /* tasks load best-effort */ });
   },
 
   dismissNotice() { state = { ...state, notice: null }; emit(); },
@@ -236,6 +239,35 @@ export const engine = {
           emit();
         });
     }, 350);
+  },
+
+  /** An approved change becomes a guided task: steps to do in the other system, then Done. */
+  createTask(approvalId, a, roomId = state.room) {
+    const payload = { roomId, approvalId, title: a.title, system: a.system, diff: (a.diff || []).map((row) => row.map((c) => String(c).slice(0, 120))) };
+    if (state.mode === 'server') {
+      return api('/api/tasks', { method: 'POST', body: JSON.stringify(payload) })
+        .then((b) => { state = { ...state, tasks: b.tasks }; emit(); return b.task; })
+        .catch((err) => { state = { ...state, notice: `Task not saved: ${err.message}` }; emit(); return null; });
+    }
+    const dup = state.tasks.find((t) => t.roomId === roomId && t.approvalId === approvalId && (t.status === 'open' || t.status === 'done'));
+    if (dup) return Promise.resolve(dup);
+    const task = { id: `local-${Date.now().toString(36)}`, roomId, approvalId, title: a.title, system: a.system, steps: stepsFor(a.system, payload.diff), expect: expectFor(approvalId), status: 'open', createdAt: new Date().toISOString() };
+    state = { ...state, tasks: [task, ...state.tasks] };
+    persist(); emit();
+    return Promise.resolve(task);
+  },
+
+  /** done | reopen | cancel */
+  taskAction(id, action) {
+    if (state.mode === 'server') {
+      return api(`/api/tasks/${encodeURIComponent(id)}`, { method: 'POST', body: JSON.stringify({ action }) })
+        .then((b) => { state = { ...state, tasks: b.tasks }; emit(); return b.task; })
+        .catch((err) => { state = { ...state, notice: `Couldn’t update the task: ${err.message}` }; emit(); return null; });
+    }
+    const status = action === 'done' ? 'done' : action === 'reopen' ? 'open' : 'cancelled';
+    state = { ...state, tasks: state.tasks.map((t) => (t.id === id ? { ...t, status, ...(action === 'done' ? { doneAt: new Date().toISOString() } : {}) } : t)) };
+    persist(); emit();
+    return Promise.resolve(state.tasks.find((t) => t.id === id));
   },
 
   /** Hard reset from the error screen: clears browser storage and reloads the org. */

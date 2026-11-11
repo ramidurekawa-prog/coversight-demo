@@ -346,7 +346,8 @@ function AppShell({ children }) {
           onConfirm={(id) => {
             engine.act('approvals', { ...(engine.saved('approvals') || {}), [id]: { at: new Date().toISOString() } }, { summary: `${cvApproval(id).title}: approved` });
             approval.onOk && approval.onOk();
-            showToast(`${cvApproval(id).title}: approved and written back.`);
+            void engine.createTask(id, cvApproval(id));
+            showToast(`${cvApproval(id).title}: approved. The steps are on Today under "Approved changes to make".`);
           }}
         />
       )}
