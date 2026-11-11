@@ -11,6 +11,7 @@ import { CvChannels, CvControls, CvCoverage, CvInventory, CvKitchen } from './sc
 import { CvInputs } from './screens/inputs';
 import { CvConnect, CvData, CvLevers, CvWindows } from './screens/live';
 import { CvTrends } from './screens/trends';
+import { CvTeam } from './screens/team';
 import { pathFor } from '../lib/pages';
 
 /** Page id → screen component. Every key in CV_PAGES has one (tests check). */
@@ -36,6 +37,7 @@ export const SCREENS = {
   proof: CvProof,
   windows: CvWindows,
   levers: CvLevers,
+  team: CvTeam,
   packet: CvPacket,
   ledger: CvLedger,
   accountant: CvAccountant,

@@ -1,0 +1,20 @@
+CREATE TABLE "invites" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"org_id" uuid NOT NULL,
+	"role" "member_role" NOT NULL,
+	"rooms" jsonb,
+	"email" text,
+	"token_hash" text NOT NULL,
+	"created_by" text,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"expires_at" timestamp with time zone NOT NULL,
+	"accepted_by" text,
+	"accepted_at" timestamp with time zone,
+	"revoked_at" timestamp with time zone,
+	CONSTRAINT "invites_token_hash_unique" UNIQUE("token_hash")
+);
+--> statement-breakpoint
+ALTER TABLE "invites" ADD CONSTRAINT "invites_org_id_orgs_id_fk" FOREIGN KEY ("org_id") REFERENCES "public"."orgs"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "invites" ADD CONSTRAINT "invites_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "invites" ADD CONSTRAINT "invites_accepted_by_users_id_fk" FOREIGN KEY ("accepted_by") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "invites_org_idx" ON "invites" USING btree ("org_id");
