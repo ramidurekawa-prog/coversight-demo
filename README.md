@@ -44,7 +44,9 @@ pnpm check          # typecheck + tests (incl. server tests on PGlite) + build
 2. Settings → Environment Variables: `BETTER_AUTH_SECRET`, `CREDENTIALS_KEY`,
    `CRON_SECRET`, each a random 32+ character string
    (`openssl rand -hex 32`).
-3. Output directory must be the Next.js default (not `out`).
+3. Optional, for email: `RESEND_API_KEY` and `MAIL_FROM` (a sender on a domain
+   verified in Resend). Without them, emails are kept in the outbox as skipped.
+4. Output directory must be the Next.js default (not `out`).
 
 Vercel runs `pnpm vercel-build`, which applies migrations and then builds.
 `/api/health` returns 200 once the database is reachable.

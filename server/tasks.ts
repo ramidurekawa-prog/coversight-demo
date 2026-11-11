@@ -9,6 +9,7 @@ import { auditLog, rooms, tasks } from './db/schema';
 import { loadDataset } from './dataset';
 import { InputError } from './org';
 import { startWindow } from './proof';
+import { notify } from './notify';
 import { AuthError, type Viewer } from './session';
 
 type V = Pick<Viewer, 'orgId' | 'userId' | 'role' | 'rooms'>;
@@ -81,6 +82,7 @@ export async function verifyTasks(db: Db, orgId: string) {
       verified.push(t.id);
       await db.update(tasks).set({ status: 'verified', checkedAt: new Date(), note: `Toast data to ${room.fromToast.end} shows the new price.` }).where(eq(tasks.id, t.id));
       await db.insert(auditLog).values({ orgId, userId: null, action: 'task.verified', detail: { id: t.id } });
+      await notify(db, { orgId, roomId: t.roomId, kind: 'task.verified', severity: 'good', link: '/windows/', dedupe: `task.verified:${t.id}`, title: `Confirmed in Toast: ${t.title}`, body: 'Guests are paying the new price. Its 28-day test has started.' });
       const e = t.expect as { type: string; dish?: string };
       if (e.type === 'price' && e.dish) {
         await startWindow(db, { orgId, userId: t.doneBy ?? t.createdBy ?? null, rooms: null }, { roomId: t.roomId, lever: 'menu_margin', dish: e.dish }).catch(() => null);
@@ -89,6 +91,7 @@ export async function verifyTasks(db: Db, orgId: string) {
       mismatched.push(t.id);
       await db.update(tasks).set({ status: 'mismatch', checkedAt: new Date(), note: `Toast data to ${room.fromToast.end} still shows the old price. Check it was published.` }).where(eq(tasks.id, t.id));
       await db.insert(auditLog).values({ orgId, userId: null, action: 'task.mismatch', detail: { id: t.id } });
+      await notify(db, { orgId, roomId: t.roomId, kind: 'task.mismatch', severity: 'warn', link: '/today/', dedupe: `task.mismatch:${t.id}`, title: `Not showing in Toast yet: ${t.title}`, body: `It was marked done, but a week of Toast data later guests still pay the old price. Check the change was published in ${t.system}.` });
     }
   }
   return { checked: open.length, verified, mismatched };

@@ -11,6 +11,7 @@ import type { Db } from './db/client';
 import { auditLog, checkpoints, testWindows } from './db/schema';
 import { loadDataset } from './dataset';
 import { InputError } from './org';
+import { notify } from './notify';
 
 const WINDOW_DAYS = 28;
 const EVERY = 7;
@@ -139,6 +140,20 @@ export async function runProofLoop(db: Db, orgId: string, now = new Date()) {
     if (isClosed) {
       closed.push(w.id);
       await db.insert(auditLog).values({ orgId, userId: null, action: `window.${st.status}`, detail: { id: w.id, bookedCents: st.bookedCents, lowCents: st.effect.lowCents } });
+      const dollars = `$${Math.round(st.bookedCents / 100).toLocaleString('en-US')}`;
+      await notify(db, {
+        orgId, roomId: w.roomId, kind: `window.${st.status}`, severity: st.status === 'verified' ? 'good' : 'warn', link: '/windows/', dedupe: `window.${st.status}:${w.id}`,
+        title: st.status === 'verified' ? `Verified: ${w.title}, ${dollars} a week` : `Not proven: ${w.title}`,
+        body: st.status === 'verified'
+          ? `The 28-day test closed. Coversight books ${dollars} a week, the cautious end of what the data shows, and keeps checking the guardrails every week.`
+          : 'The 28-day test closed without a move big and steady enough to count. Nothing is booked. You can keep the change or undo it.',
+      });
+    } else if (st.status === 'waiting' && w.status !== 'waiting') {
+      await notify(db, {
+        orgId, roomId: w.roomId, kind: 'window.waiting', severity: 'warn', link: '/inputs/', dedupe: `window.waiting:${w.id}:${dataEnd(room)}`,
+        title: `Test paused: no new Toast data since ${dataEnd(room)}`,
+        body: `${w.title} needs the next week of data to keep measuring. Upload the latest Toast export on Data inputs; the test picks up where it left off.`,
+      });
     }
   }
   return { windows: ws.length, recorded, closed };
@@ -161,6 +176,11 @@ export async function runReverify(db: Db, orgId: string) {
     if (!res.ok) {
       reversed.push(w.id);
       await db.update(testWindows).set({ status: 'reversed', bookedCents: 0, updatedAt: new Date() }).where(eq(testWindows.id, w.id));
+      await notify(db, {
+        orgId, roomId: w.roomId, kind: 'window.reversed', severity: 'warn', link: '/windows/', dedupe: `window.reversed:${w.id}`,
+        title: `Reversed: ${w.title}`,
+        body: `A guardrail broke after this result was verified (${res.rows.filter((r: { ok: boolean }) => !r.ok).map((r: { label: string; pct: number }) => `${r.label} ${r.pct.toFixed(1)}%`).join(', ')}). It no longer books savings. Consider undoing the change.`,
+      });
       await db.insert(auditLog).values({ orgId, userId: null, action: 'window.reversed', detail: { id: w.id, rows: res.rows.filter((r: { ok: boolean }) => !r.ok).map((r: { label: string; pct: number }) => ({ label: r.label, pct: r.pct })) } });
     }
   }

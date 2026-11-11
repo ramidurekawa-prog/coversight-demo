@@ -53,8 +53,12 @@ here ships to customers.
   never book anything outside `windowState`.
 - **Toast exports:** `lib/data/toast.js` reads Toast's data-export CSVs in the
   browser into the `toast` input kind; `server/toast-schema.ts` bounds it.
+- **Notifications:** `server/notify.ts` `notify()` for anything an operator
+  should hear about (dedupe key per event); email goes through the outbox and
+  Resend only when `RESEND_API_KEY` + `MAIL_FROM` are set, else it's kept as
+  skipped. Never email a sample guest.
 - **Secrets:** `DATABASE_URL`, `BETTER_AUTH_SECRET`, `CREDENTIALS_KEY`,
-  `CRON_SECRET` live in Vercel env only. Never log, return or export them, or
+  `CRON_SECRET`, `RESEND_API_KEY` live in Vercel env only. Never log, return or export them, or
   a Toast client secret.
 
 `pnpm check` = typecheck + tests + build. Run it before pushing.
