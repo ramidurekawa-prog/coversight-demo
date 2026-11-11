@@ -5,6 +5,7 @@ import * as React from 'react';
 import { Icon, Button, Tabs } from '../kit';
 import { PlatformHealth, ToastConnectionLine } from './live';
 import { useEngine, useSaved } from '../engine';
+import { bookedBetween, utcDay } from '../../lib/data/billing';
 import { useCv, cvMoney, CV_D, CV_DS, CV_GROUP, CV_ROOM, CV_DAYS_TO_DATE, CV_LOCS, CV_PROOF, CV_OUTCOME, Claim, Money, Pill, Outcome, Callout, Interval, PageHead, cvScale, SampleNote } from './core';
 
 /* Coversight — proof surfaces: Proof, Verification packet, Accountant, Savings ledger,
@@ -409,7 +410,71 @@ function LedgerChart({ series }) {
     </svg>
   );
 }
+/* A real group's ledger: every figure is the same daily accrual of verified
+   lower bounds (lib/data/billing.js bookedBetween), over a different span. */
+function LedgerReal() {
+  const cv = useCv();
+  const eng = useEngine();
+  const [cad, setCad] = React.useState('week');
+  const scope = cv.loc;
+  const ws = (eng.windows || []).filter((w) => (w.status === 'verified' || w.status === 'reversed') && (scope === 'all' || w.roomId === scope))
+    .map((w) => ({ ...w, bookedCentsBeforeReversal: Math.max(0, w.lowCents ?? 0) }));
+  const now = new Date();
+  const today = utcDay(now) + 1; // through today
+  const y = now.getUTCFullYear(), m = now.getUTCMonth();
+  const dayN = (yy, mm, dd) => Date.UTC(yy, mm, dd) / 864e5;
+  const span = (from) => ws.reduce((t, w) => t + bookedBetween(w, from, today).cents, 0) / 100;
+  const live = ws.filter((w) => w.status === 'verified');
+  const perDay = live.reduce((t, w) => t + w.bookedCents / 7, 0) / 100;
+  const qStart = dayN(y, Math.floor(m / 3) * 3, 1);
+  const name = scope === 'all' ? eng.org?.name : CV_ROOM.name;
+  const monthName = now.toLocaleDateString('en-US', { month: 'long', timeZone: 'UTC' });
+  const CAD = {
+    day: { fig: cvMoney(perDay, { cents: true }), say: live.length ? `Today ${live.length === 1 ? 'one verified change is' : `${live.length} verified changes are`} holding: ${cvMoney(perDay, { cents: true })}.` : 'Nothing is verified and holding yet.', math: 'Σ (weekly lower bound ÷ 7) for every verified change', note: 'An accrual of a rate already proven, not a new measurement.' },
+    week: { fig: cvMoney(span(today - 7), { cents: true }), say: `The last 7 days: ${cvMoney(span(today - 7), { cents: true })}.`, math: 'Σ of the last seven daily accruals', note: 'A new rate is only born when a 28-day test closes.' },
+    month: { fig: cvMoney(span(dayN(y, m, 1)), { cents: true }), say: `${monthName} so far: ${cvMoney(span(dayN(y, m, 1)), { cents: true })}.`, math: 'Σ of the month’s daily accruals, never weekly × 4.33', note: 'This is the reconciled savings the month’s invoice is built on.' },
+    quarter: { fig: cvMoney(span(qStart), { cents: true }), say: `This quarter: ${cvMoney(span(qStart), { cents: true })}, counted day by day from each change's verification.`, math: 'Σ of each day this quarter a change was accruing', note: 'Reversed changes stop accruing the day they were reversed.' },
+    year: { fig: cvMoney(span(dayN(y, 0, 1)), { cents: true }), say: `${y} to date: ${cvMoney(span(dayN(y, 0, 1)), { cents: true })}.`, math: 'Σ of every day this year a verified change held', note: 'Checked monthly against your books by your accountant.' },
+  };
+  const c = CAD[cad];
+  return (
+    <div className="cv-page wide">
+      <PageHead over={`Savings ledger · ${name}`} q="What has this been worth, at every zoom level?"
+        sub="Measured once, over 28 days. Everything after that is bookkeeping on that one measurement: the day is the week spread out, the month is its days added up." />
+      <div className="cv-grid g-hero">
+        <section className="cv-card">
+          <div className="cv-card-head">
+            <Tabs value={cad} onChange={setCad} tabs={['day', 'week', 'month', 'quarter', 'year'].map((k) => ({ value: k, label: k[0].toUpperCase() + k.slice(1) }))} />
+            <Claim k="book" />
+          </div>
+          <span className="cv-fig xl cv-up">{c.fig}</span>
+          <p className="cv-h4" style={{ fontWeight: 600 }}>{c.say}</p>
+          <div className="cv-formula" style={{ fontSize: 'var(--text-xs)' }}>{c.math}</div>
+          <span className="cv-small cv-muted">{c.note}</span>
+        </section>
+        <section className="cv-card">
+          <span className="cv-h4">What&apos;s accruing</span>
+          {ws.length === 0 ? <span className="cv-small cv-muted">Nothing yet. The ledger starts when a test verifies.</span> : ws.map((w) => (
+            <div key={w.id} className="cv-row nowrap" style={{ gap: 8 }}>
+              <Pill tone={w.status === 'verified' ? 'good' : 'bad'} icon={w.status === 'verified' ? 'BadgeCheck' : 'Undo2'}>{w.status === 'verified' ? 'Holding' : 'Reversed'}</Pill>
+              <span className="cv-small" style={{ flex: 1 }}>{w.title}</span>
+              <span className="cv-small cv-num">{w.status === 'verified' ? `${cvMoney(w.bookedCents / 100, { cents: true })}/wk` : 'stopped accruing'}</span>
+            </div>
+          ))}
+          <button className="cv-link" onClick={() => cv.go('billing')}>See the invoices <Icon name="ArrowRight" size={14} /></button>
+        </section>
+      </div>
+    </div>
+  );
+}
+
 function CvLedger() {
+  const eng = useEngine();
+  if (eng.mode === 'server' && eng.org && !eng.org.sample) return <LedgerReal />;
+  return <CvLedgerSample />;
+}
+
+function CvLedgerSample() {
   const cv = useCv();
   const [cad, setCad] = React.useState("week");
   const scope = cv.loc;

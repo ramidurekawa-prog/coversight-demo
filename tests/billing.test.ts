@@ -115,3 +115,14 @@ describe('invoices in the database', () => {
     expect((await db.select().from(invoices)).length).toBe(1);
   });
 });
+
+describe('the ledger spans', () => {
+  it('day, week and month are the same accrual over different spans', async () => {
+    const { bookedBetween, utcDay } = await import('../lib/data/billing.js');
+    const win = w({ bookedCents: 700, closedAt: '2026-10-01T12:00:00Z' });
+    const d = (s: string) => utcDay(s);
+    expect(bookedBetween(win, d('2026-10-01'), d('2026-10-03'))).toEqual({ days: 1, cents: 100 }); // accrues from Oct 2
+    expect(bookedBetween(win, d('2026-10-01'), d('2026-11-01')).cents).toBe(3000);
+    expect(bookedBetween(w({ status: 'reversed', bookedCents: 0, bookedCentsBeforeReversal: 700, closedAt: '2026-10-01T12:00:00Z', reversedAt: '2026-10-11T00:00:00Z' }), d('2026-10-01'), d('2026-11-01')).cents).toBe(900);
+  });
+});
