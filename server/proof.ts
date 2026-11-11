@@ -56,7 +56,7 @@ function pilotOf(w: Win, cps: Cp[], room: Room) {
   };
 }
 
-export async function startWindow(db: Db, v: { orgId: string; userId: string; rooms: string[] | null }, { roomId, lever, dish }: { roomId: unknown; lever: unknown; dish?: unknown }) {
+export async function startWindow(db: Db, v: { orgId: string; userId: string | null; rooms: string[] | null }, { roomId, lever, dish }: { roomId: unknown; lever: unknown; dish?: unknown }) {
   if (typeof roomId !== 'string' || typeof lever !== 'string' || !(lever in LEVER_METRIC)) throw new InputError('roomId and a known lever are required');
   if (v.rooms && !v.rooms.includes(roomId)) throw new InputError('That room is not one of yours.');
   const loaded = await loadDataset(db, v.orgId);
