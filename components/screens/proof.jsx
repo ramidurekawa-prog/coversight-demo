@@ -11,22 +11,38 @@ import { useCv, cvMoney, CV_D, CV_DS, CV_GROUP, CV_ROOM, CV_DAYS_TO_DATE, CV_LOC
    Comparison, Sources, System. */
 
 /* ================================================================ Proof */
+const roomTabs = () => [{ value: "all", label: "All rooms" }, ...CV_LOCS.filter((l) => l.id !== "all").map((l) => ({ value: l.id, label: l.short }))];
+const WIN_OUTCOME = { running: "testing", waiting: "data", verified: "verified", rejected: "inconclusive", reversed: "reversed" };
+
+/** A real group's tests as proof rows (stopped tests aren't claims). */
+function windowRows(windows) {
+  return (windows || []).filter((w) => w.status !== "stopped").map((w) => ({
+    id: w.id, real: true, title: w.title, loc: w.roomId, lever: w.lever.replace("_", " "), outcome: WIN_OUTCOME[w.status] || "testing",
+    bookable: w.status === "verified" ? w.bookedCents / 100 : 0, lo: w.lowCents != null && w.checkpoints?.length >= 2 ? Math.max(0, w.lowCents) / 100 : null, hi: w.pointCents != null && w.checkpoints?.length >= 2 ? w.pointCents / 100 : null,
+    method: w.status === "waiting" ? "waiting for the next week of Toast data" : w.status === "rejected" ? "didn’t move enough, for long enough, to count" : w.status === "reversed" ? "a guardrail broke after it verified" : `day ${w.day} of 28`,
+    held: w.status === "verified" ? `since ${new Date(w.closedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : w.status === "running" ? `${w.checkpoints?.length ?? 0} of 4 checkpoints` : "",
+  }));
+}
+
 function CvProof() {
   const cv = useCv();
+  const eng = useEngine();
+  const own = eng.mode === "server" && eng.org && !eng.org.sample;
   const [scope, setScope] = React.useState(cv.loc === "all" ? "all" : cv.loc);
   React.useEffect(() => setScope(cv.loc === "all" ? "all" : cv.loc), [cv.loc]);
-  const rows = CV_PROOF.filter((p) => scope === "all" || p.loc === scope);
+  const rows = (own ? windowRows(eng.windows) : CV_PROOF).filter((p) => scope === "all" || p.loc === scope);
   const count = (ks) => rows.filter((r) => ks.includes(r.outcome)).length;
   // A paused claim (guardrail amber) accrues nothing this week, so it is not bookable now.
   const bookable = rows.reduce((s, r) => s + (r.paused ? 0 : r.bookable), 0);
   return (
     <div className="cv-page wide">
       <PageHead over="Proof" q="What have we actually proven?"
-        sub="Every claimed dollar with its controls, interval, gates and how long it lasts. The ones that failed stay on screen with the reason, because a ledger that only goes up isn't a ledger."
+        sub={own ? "Every test this group has run: what it proved, at its cautious lower bound, and the ones that didn't, with the reason. Only Verified rows can be billed." : "Every claimed dollar with its controls, interval, gates and how long it lasts. The ones that failed stay on screen with the reason, because a ledger that only goes up isn't a ledger."}
         right={<>
-          <Tabs value={scope} onChange={setScope} tabs={[{ value: "all", label: "All rooms" }, { value: "oakland", label: "Oakland" }, { value: "berkeley", label: "Berkeley" }, { value: "walnut", label: "Walnut Creek" }]} />
-      <SampleNote what="The verification history" why="Banked dollars come from tests that ran for weeks on the sample group. A real restaurant starts at $0 banked, and its first result lands after its first test window closes." />
+          <Tabs value={scope} onChange={setScope} tabs={roomTabs()} />
+      {!own && <SampleNote what="The verification history" why="Banked dollars come from tests that ran for weeks on the sample group. A real restaurant starts at $0 banked, and its first result lands after its first test window closes." />}
         </>} />
+      {own && rows.length === 0 && <Callout icon="Timer">No tests yet. Start one from Today or Test windows; its result lands here when it closes at day 28.</Callout>}
       <div className="cv-life">
         {[["Verified", ["verified", "limited"]], ["In testing", ["testing"]], ["Data failure", ["data"]], ["Reversed", ["reversed"]], ["Inconclusive", ["inconclusive"]], ["Directional only", ["directional"]]].map(([k, ks]) => (
           <div key={k}><span className="n">{count(ks)}</span><span className="k">{k}</span></div>
@@ -46,14 +62,14 @@ function CvProof() {
             <thead><tr><th>Change</th><th>Room</th><th>Outcome</th><th className="r">Bookable /wk</th><th className="r">Measured interval</th><th>Status</th></tr></thead>
             <tbody>
               {rows.map((p) => (
-                <tr key={p.id} className="cv-tr" tabIndex={0} onClick={() => cv.go("packet", { id: p.id })} onKeyDown={(e) => { if (e.key === "Enter") cv.go("packet", { id: p.id }); }}>
+                <tr key={p.id} className="cv-tr" tabIndex={0} onClick={() => (p.real ? cv.go("windows") : cv.go("packet", { id: p.id }))} onKeyDown={(e) => { if (e.key === "Enter") (p.real ? cv.go("windows") : cv.go("packet", { id: p.id })); }}>
                   <td style={{ maxWidth: 380 }}>
                     <div className="cv-col" style={{ gap: 3 }}>
                       <span style={{ fontWeight: 600 }}>{p.title}</span>
                       <span className="cv-xs cv-faint" style={{ lineHeight: 1.45 }}>{p.lever} · {p.reason || p.limitation || p.checkpoint || p.method}</span>
                     </div>
                   </td>
-                  <td>{CV_LOCS.find((l) => l.id === p.loc).short}</td>
+                  <td>{CV_LOCS.find((l) => l.id === p.loc)?.short ?? p.loc}</td>
                   <td><Outcome k={p.outcome} /></td>
                   <td className="r">{p.outcome === "reversed" ? <span className="cv-down">−{cvMoney(p.removed)} removed</span> : p.paused ? <span className="cv-faint">{cvMoney(p.bookable)} paused</span> : cvMoney(p.bookable)}</td>
                   <td className="r">{p.lo != null ? `${cvMoney(p.lo)} – ${cvMoney(p.hi)}` : "—"}</td>
