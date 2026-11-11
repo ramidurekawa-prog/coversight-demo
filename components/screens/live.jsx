@@ -495,13 +495,104 @@ function CvWindows() {
 }
 
 /* ================================================================ Platform health (on System) */
+/* The real scheduled jobs (server mode): last run of each, Run now, recent runs, and the email outbox. */
+const ago = (d) => {
+  if (!d) return 'never';
+  const m = Math.round((Date.now() - new Date(d).getTime()) / 6e4);
+  return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 48 * 60 ? `${Math.round(m / 60)} h ago` : new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+};
+const runSummary = (r) => {
+  if (!r) return '';
+  if (r.ok === false) return `failed: ${r.detail?.error ?? 'error'}`;
+  const d = r.detail || {};
+  if (r.job === 'detection') return `${d.rooms ?? 0} rooms re-graded${d.tasks?.verified?.length ? ` · ${d.tasks.verified.length} price change confirmed` : ''}`;
+  if (r.job === 'proof') return `${d.windows ?? 0} open tests · ${d.recorded ?? 0} checkpoints recorded${d.closed?.length ? ` · ${d.closed.length} closed` : ''}`;
+  if (r.job === 'reverify') return `${d.checked ?? 0} verified checked${d.reversed?.length ? ` · ${d.reversed.length} reversed` : ''}`;
+  if (r.job === 'billing') return d.skipped ? `skipped (${d.skipped})` : `${d.period} drafted`;
+  if (r.job === 'cleanup') return `${d.guests ?? 0} old guests removed`;
+  return '';
+};
+const OUT_TONE = { sent: 'good', queued: 'info', held: 'info', draft: 'neutral', skipped: 'warn', failed: 'bad' };
+
+function JobsPanel() {
+  const cv = useCv();
+  const [st, setSt] = React.useState(null);
+  const [out, setOut] = React.useState(null);
+  const [health, setHealth] = React.useState(null);
+  const [busy, setBusy] = React.useState(null);
+  const [err, setErr] = React.useState(null);
+  const get = (u) => fetch(u, { credentials: 'same-origin' }).then(async (r) => { const b = await r.json().catch(() => ({})); if (!r.ok) throw new Error(b.error || r.status); return b; });
+  React.useEffect(() => {
+    get('/api/jobs').then(setSt).catch((e) => setErr(e.message));
+    get('/api/outbox').then(setOut).catch(() => setOut(null));
+    fetch('/api/health').then((r) => r.json().then((b) => setHealth({ ok: r.ok, ...b }))).catch(() => setHealth({ ok: false }));
+  }, []);
+  const run = async (job) => {
+    setBusy(job); setErr(null);
+    try {
+      const r = await fetch('/api/jobs', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ job }) });
+      const b = await r.json();
+      if (!r.ok) throw new Error(b.error);
+      setSt(b.status);
+      cv.toast(b.result.ok ? `Ran ${job}: ${runSummary({ job, ok: true, detail: b.result.detail })}.` : `${job} failed: ${b.result.detail?.error}`);
+      engine.refreshWindows(); engine.refreshNotes();
+    } catch (e) { setErr(e.message); } finally { setBusy(null); }
+  };
+  return (
+    <section className="cv-card" aria-labelledby="jobs-head">
+      <div className="cv-card-head">
+        <div className="cv-col" style={{ gap: 2 }}><span className="cv-h4" id="jobs-head">Scheduled jobs</span><span className="cv-xs cv-faint">Run by Vercel on a schedule for every group; an owner or admin can run one now for this group.</span></div>
+        {health && <Pill tone={health.ok ? 'good' : 'bad'} icon={health.ok ? 'CircleCheck' : 'CircleX'}>{health.ok ? 'Database reachable' : 'Database unreachable'}</Pill>}
+      </div>
+      {err && <Callout tone="warn" icon="CircleX">{err}</Callout>}
+      {st && (
+        <div className="cv-tablewrap"><table className="cv-table">
+          <thead><tr><th>Job</th><th>Runs</th><th>Last run</th><th /></tr></thead>
+          <tbody>
+            {st.jobs.map((j) => (
+              <tr key={j.job}>
+                <td><div className="cv-col" style={{ gap: 2 }}><span style={{ fontWeight: 600 }}>{j.job}</span><span className="cv-xs cv-faint">{j.what}</span></div></td>
+                <td className="cv-small">{j.schedule}</td>
+                <td className="cv-small">{j.last ? <span className={j.last.ok === false ? 'cv-down' : ''}>{ago(j.last.startedAt)}{j.last.trigger === 'manual' ? ' (run now)' : ''}<br /><span className="cv-xs cv-faint">{runSummary(j.last)}</span></span> : <span className="cv-faint">not yet</span>}</td>
+                <td>{j.job !== 'cleanup' && <Button size="sm" variant="secondary" icon="Play" disabled={!!busy} onClick={() => run(j.job)}>{busy === j.job ? 'Running…' : 'Run now'}</Button>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table></div>
+      )}
+      {out && (
+        <div className="cv-col" style={{ gap: 6 }}>
+          <div className="cv-row" style={{ justifyContent: 'space-between' }}>
+            <span className="cv-over">Email outbox</span>
+            <Pill tone={out.provider ? 'good' : 'warn'} icon="Mail">{out.provider ? 'Sending through Resend' : 'No email provider yet: kept, not sent'}</Pill>
+          </div>
+          {out.outbox.length === 0 ? <span className="cv-small cv-muted">No emails yet. Alerts email only rooms whose Fences &amp; alerts have email on.</span> : (
+            <div className="cv-tablewrap"><table className="cv-table">
+              <thead><tr><th>When</th><th>To</th><th>Subject</th><th>Status</th></tr></thead>
+              <tbody>{out.outbox.slice(0, 15).map((m) => (
+                <tr key={m.id}><td className="cv-small">{ago(m.createdAt)}</td><td className="cv-small">{m.toAddress || 'draft (no address)'}</td><td className="cv-small">{m.subject}</td><td><Pill tone={OUT_TONE[m.status] || 'neutral'}>{m.status}</Pill></td></tr>
+              ))}</tbody>
+            </table></div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function PlatformHealth() {
+  const eng = useEngine();
+  if (eng.mode === 'server') return <JobsPanel />;
+  return <PlatformHealthDemo />;
+}
+
+function PlatformHealthDemo() {
   const [workerOk, setWorkerOk] = React.useState(true);
   const body = statusz({ workerOk, rooms: ROOM_IDS.length, failing: 0 });
   return (
     <section className="cv-card">
       <div className="cv-card-head">
-        <div className="cv-col" style={{ gap: 2 }}><span className="cv-h4">Platform health</span><span className="cv-xs cv-faint">What the live platform's worker runs, and what an uptime monitor sees on /statusz every 5 minutes</span></div>
+        <div className="cv-col" style={{ gap: 2 }}><span className="cv-h4">Platform health</span><span className="cv-xs cv-faint">Demo: what the jobs look like when the server is set up (this preview runs in your browser only)</span></div>
         <div className="cv-row" style={{ gap: 8 }}>
           <Pill tone={workerOk ? 'good' : 'bad'} icon={workerOk ? 'CircleCheck' : 'CircleX'}>{workerOk ? '200 OK' : '503'}</Pill>
           <Button size="sm" variant="ghost" icon={workerOk ? 'CirclePause' : 'Play'} onClick={() => setWorkerOk(!workerOk)}>{workerOk ? 'Stop the worker' : 'Restart it'}</Button>
