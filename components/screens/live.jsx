@@ -642,6 +642,65 @@ function exportBundle() {
 }
 
 function CvData() {
+  const eng = useEngine();
+  if (eng.mode === 'server') return <CvDataReal />;
+  return <CvDataDemo />;
+}
+
+/* The real thing: download everything this group owns, or delete the group. */
+function CvDataReal() {
+  const cv = useCv();
+  const eng = useEngine();
+  const isOwner = eng.viewer?.role === 'owner';
+  const name = eng.org?.name || '';
+  const [typed, setTyped] = React.useState('');
+  const [busy, setBusy] = React.useState(null);
+  const [err, setErr] = React.useState(null);
+  const download = () => {
+    setBusy('export');
+    const a = document.createElement('a');
+    a.href = '/api/export';
+    a.click();
+    setTimeout(() => setBusy(null), 1500);
+    cv.toast('Export started: everything this group holds, as plain JSON.');
+  };
+  const del = async () => {
+    setBusy('delete'); setErr(null);
+    const r = await fetch('/api/org/delete', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ confirm: typed }) });
+    const b = await r.json().catch(() => ({}));
+    if (!r.ok) { setErr(b.error || 'Couldn’t delete.'); setBusy(null); return; }
+    window.location.assign('/');
+  };
+  return (
+    <div className="cv-page">
+      <PageHead over={`Your data · ${name}`} q="Can I take my data with me, or have it deleted?"
+        sub="Yes, both, any time, by an owner. The export is every table that belongs to this group; delete removes all of it in one step." />
+      <div className="cv-grid g2">
+        <section className="cv-card">
+          <div className="cv-card-head"><span className="cv-h4">Download all your data</span><Pill icon="FileOutput">coversight-export/v2</Pill></div>
+          <ul className="cv-ul">
+            {['Rooms and their data (menus, team, history, your Toast summaries)', 'Everything entered by hand, including undone entries', 'Decisions, approvals, tasks and test windows with every checkpoint', 'Notifications, emails sent or drafted, and the full audit log', 'People in the group and their roles'].map((t) => <li key={t}><Icon name="Check" size={14} />{t}</li>)}
+          </ul>
+          <Button icon="Download" disabled={!isOwner || busy === 'export'} onClick={download}>Download all your data</Button>
+          <span className="cv-xs cv-faint">Never included: passwords, sessions, invite links, or anyone else&apos;s groups.</span>
+        </section>
+        <section className="cv-card">
+          <div className="cv-card-head"><span className="cv-h4">Delete the group</span><Pill tone="bad" icon="Trash2">Irreversible</Pill></div>
+          <p className="cv-small cv-muted" style={{ lineHeight: 1.55 }}>Removes everything this group owns, now. People&apos;s logins stay, because they may belong to other groups. Download your data first.</p>
+          <label className="cv-col" style={{ gap: 4 }}>
+            <span className="cv-small">Type <b>{name}</b> to confirm</span>
+            <input className="input" value={typed} onChange={(e) => setTyped(e.target.value)} disabled={!isOwner} aria-label="Group name to confirm" />
+          </label>
+          <Button variant="secondary" icon="Trash2" disabled={!isOwner || typed !== name || busy === 'delete'} onClick={del}>{busy === 'delete' ? 'Deleting…' : 'Delete the group'}</Button>
+          {err && <Callout tone="warn" icon="CircleX">{err}</Callout>}
+        </section>
+      </div>
+      {!isOwner && <Callout icon="Lock">Only an owner can export or delete. You&apos;re signed in as {eng.viewer?.role === 'gm' ? 'a GM' : 'an admin'}.</Callout>}
+    </div>
+  );
+}
+
+function CvDataDemo() {
   const cv = useCv();
   const canManage = cv.role === 'owner';
   const [typed, setTyped] = React.useState('');
