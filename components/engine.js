@@ -23,7 +23,7 @@ import { expectFor, stepsFor } from '../lib/data/writebacks';
 
 const KEY = 'coversight-demo:v2';
 const OLD_KEYS = ['coversight-demo:v1'];
-const INITIAL = { mode: 'pending', base: SEED, org: null, viewer: null, room: 'oakland', inputs: {}, log: [], actions: {}, tasks: [], notes: { items: [], unread: 0 }, version: 0, notice: null, saving: false };
+const INITIAL = { mode: 'pending', base: SEED, org: null, viewer: null, room: 'oakland', inputs: {}, log: [], actions: {}, tasks: [], windows: [], notes: { items: [], unread: 0 }, version: 0, notice: null, saving: false };
 let state = INITIAL;
 const subs = new Set();
 const pending = new Map();
@@ -147,6 +147,7 @@ export const engine = {
     reload();
     api('/api/tasks').then((b) => { state = { ...state, tasks: b.tasks || [] }; emit(); }).catch(() => { /* tasks load best-effort */ });
     engine.refreshNotes();
+    engine.refreshWindows();
     if (!notesTimer) notesTimer = setInterval(() => { if (document.visibilityState === 'visible') engine.refreshNotes(); }, 60_000);
   },
 
@@ -271,6 +272,24 @@ export const engine = {
     state = { ...state, tasks: state.tasks.map((t) => (t.id === id ? { ...t, status, ...(action === 'done' ? { doneAt: new Date().toISOString() } : {}) } : t)) };
     persist(); emit();
     return Promise.resolve(state.tasks.find((t) => t.id === id));
+  },
+
+  /** Test windows (server mode only). */
+  refreshWindows() {
+    if (state.mode !== 'server') return Promise.resolve([]);
+    return api('/api/windows').then((b) => { state = { ...state, windows: b.windows || [] }; emit(); return b.windows; }).catch(() => []);
+  },
+  /** Start a 28-day test on a lever in a room. Resolves to { ok, error? }. */
+  startWindow(lever, { roomId = state.room, dish } = {}) {
+    if (state.mode !== 'server') return Promise.resolve({ ok: false, error: 'Tests need the server; this preview runs in your browser only.' });
+    return api('/api/windows', { method: 'POST', body: JSON.stringify({ roomId, lever, dish }) })
+      .then((b) => { state = { ...state, windows: b.windows }; emit(); return { ok: true, window: b.window }; })
+      .catch((err) => ({ ok: false, error: err.message }));
+  },
+  stopWindow(id) {
+    return api(`/api/windows/${encodeURIComponent(id)}/stop`, { method: 'POST' })
+      .then((b) => { state = { ...state, windows: b.windows }; emit(); return { ok: true }; })
+      .catch((err) => ({ ok: false, error: err.message }));
   },
 
   /** The bell: notifications for this viewer (server mode only). */
