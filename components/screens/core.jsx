@@ -5,6 +5,7 @@ import * as React from 'react';
 import { Icon, Button } from '../kit';
 import { LOCS, NOW, SEED } from '../../lib/data/seed';
 import * as M from '../../lib/data/model';
+import { findingBlocked } from '../../lib/data/findings';
 
 /* Coversight demo core: the current room's data (loaded from lib/data),
    money helpers, claim chips, derivation drawer, approval modal and shared
@@ -378,8 +379,17 @@ function fenceBreach(id, eng) {
   return null;
 }
 
+/** A price change whose margin rests on a cost we only estimated is refused, whichever screen asked for it. */
+function inputBlock(id) {
+  const m = /^price:([\w-]+):([\d.]+)$/.exec(id || "");
+  if (!m) return null;
+  const c = CV_D.candidates.find((x) => x.kind === "price" && x.item === m[1]) || { kind: "price", item: m[1] };
+  return findingBlocked(c, CV_D.room);
+}
+
 function ApprovalModal({ id, onClose, onConfirm, eng }) {
   const a = cvApproval(id);
+  const blockedBy = inputBlock(id);
   const breach = fenceBreach(id, eng);
   const [step, setStep] = React.useState("review");
   React.useEffect(() => {
@@ -422,12 +432,13 @@ function ApprovalModal({ id, onClose, onConfirm, eng }) {
               </div>
               <Callout icon="Timer">{a.window}</Callout>
               <Callout icon="Undo2">{a.revert}</Callout>
+              {blockedBy && <Callout tone="bad" icon="TriangleAlert">{blockedBy}</Callout>}
               {breach && <Callout tone="bad" icon="Fence">{breach}</Callout>}
             </div>
             <div className="ft">
               <Button variant="ghost" onClick={onClose}>Not now</Button>
               <Button variant="secondary" onClick={onClose}>Edit first</Button>
-              <Button icon="Check" disabled={!!breach} onClick={() => { setStep("done"); onConfirm && onConfirm(id); }}>Approve</Button>
+              <Button icon="Check" disabled={!!breach || !!blockedBy} onClick={() => { setStep("done"); onConfirm && onConfirm(id); }}>Approve</Button>
             </div>
           </>
         ) : (
