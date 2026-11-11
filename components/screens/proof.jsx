@@ -4,7 +4,7 @@ import * as React from 'react';
 
 import { Icon, Button, Tabs } from '../kit';
 import { PlatformHealth, ToastConnectionLine } from './live';
-import { useSaved } from '../engine';
+import { useEngine, useSaved } from '../engine';
 import { useCv, cvMoney, CV_D, CV_DS, CV_GROUP, CV_ROOM, CV_DAYS_TO_DATE, CV_LOCS, CV_PROOF, CV_OUTCOME, Claim, Money, Pill, Outcome, Callout, Interval, PageHead, cvScale, SampleNote } from './core';
 
 /* Coversight — proof surfaces: Proof, Verification packet, Accountant, Savings ledger,
@@ -493,7 +493,14 @@ const LEVER_NEED = {
 const cvLevers = () => Object.entries(CV_D.room.autonomy).map(([k, [now, earned]]) => ({ k, now, earned, need: LEVER_NEED[k] }));
 function CvSystem() {
   const CV_LEVERS = cvLevers();
-  const [levels, setLevels] = React.useState(() => Object.fromEntries(CV_LEVERS.map((l) => [l.k, l.now])));
+  const eng = useEngine();
+  const [levels, saveLevels] = useSaved('autonomy', Object.fromEntries(CV_LEVERS.map((l) => [l.k, l.now])));
+  const setLevels = (fn) => saveLevels(fn, 'Autonomy changed');
+  const [real, setReal] = React.useState(null);
+  React.useEffect(() => {
+    if (eng.mode !== 'server') return;
+    fetch('/api/activity', { credentials: 'same-origin' }).then((r) => r.json()).then((b) => setReal(b.activity || [])).catch(() => setReal([]));
+  }, [eng.mode]);
   const [feed, setFeed] = React.useState(() => CV_EVENTS.slice(0, 4).map((e, i) => ({ id: i, t: `7:1${4 - i} pm`, a: e[0], m: e[1] })));
   React.useEffect(() => {
     let n = 4;
@@ -506,12 +513,14 @@ function CvSystem() {
     }, 3800);
     return () => clearInterval(iv);
   }, []);
+  const when = (d) => new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   const LV = ["Observes", "Recommends", "Drafts", "Executes within a fence", "Holds the line"];
   return (
     <div className="cv-page wide">
       <PageHead over="System" q="Who is doing what, and how much rope do they have?"
         sub="Autonomy is granted per lever and per room, never globally. Each level is earned by evidence, and any guardrail breach drops that lever back to recommending." />
       <PlatformHealth />
+      <Callout icon="Info">Autonomy is saved per room, but in practice every lever is at most <b>Recommends</b> today: Coversight can&apos;t write to Toast or 7shifts yet, so an approval becomes a guided task (Today) rather than a change made for you.</Callout>
       <section className="cv-card">
         <div className="cv-card-head"><span className="cv-h4">Autonomy at {CV_ROOM.name}</span><span className="cv-small cv-faint">A0 observes · A1 recommends · A2 drafts · A3 executes within a fence · A4 holds the line</span></div>
         <div className="cv-col" style={{ gap: 14 }}>
@@ -546,10 +555,12 @@ function CvSystem() {
         </section>
         <section className="cv-card flush">
           <div className="cv-row" style={{ padding: "14px 16px", borderBottom: "1px solid var(--border)", justifyContent: "space-between" }}>
-            <span className="cv-h4">What they're doing</span><Pill icon="FlaskConical">Simulated</Pill>
+            <span className="cv-h4">{real ? 'What happened' : "What they're doing"}</span>{real ? <Pill icon="ScrollText">From the audit log</Pill> : <Pill icon="FlaskConical">Simulated</Pill>}
           </div>
           <div className="cv-feed" aria-live="polite">
-            {feed.map((e) => <div key={e.id} className="ev"><span className="t">{e.t}</span><span className="a">{e.a}</span><span className="m">{e.m}</span></div>)}
+            {real
+              ? (real.length ? real.map((e, i) => <div key={i} className="ev"><span className="t">{when(e.at)}</span><span className="a">{e.who}</span><span className="m">{e.what}{e.room ? ` · ${e.room}` : ''}</span></div>) : <div className="ev"><span className="m">Nothing yet.</span></div>)
+              : feed.map((e) => <div key={e.id} className="ev"><span className="t">{e.t}</span><span className="a">{e.a}</span><span className="m">{e.m}</span></div>)}
           </div>
         </section>
       </div>

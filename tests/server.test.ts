@@ -207,3 +207,19 @@ describe('Toast export import', () => {
     expect(deriveRoom(applyInputs(base, inputs), 'berkeley').week.net).toBeGreaterThan(0);
   });
 });
+
+describe('activity feed', () => {
+  it('reads the audit log in plain words, scoped for a GM', async () => {
+    const { activity } = await import('../server/activity');
+    const { users } = await import('../server/db/schema');
+    await db.insert(users).values({ id: 'u1', name: 'Maria', email: 'm@x.co' });
+    const org = await createSampleOrg(db, { ownerId: 'u1' });
+    await commitInput(db, { orgId: org.id, userId: 'u1', roomId: 'oakland', kind: 'waste', rows: [{ item: 'Salmon', qty: 1, reason: 'spoiled' }] });
+    await saveAction(db, { orgId: org.id, userId: 'u1', role: 'owner', rooms: null }, { roomId: 'berkeley', key: 'autonomy', value: { Labour: 2 }, summary: 'Autonomy changed' });
+    const all = await activity(db, { orgId: org.id, rooms: null });
+    expect(all.map((a) => a.what)).toEqual(['decided: Autonomy changed', 'entered data', 'created the group']);
+    expect(all[0]!.who).toBe('Maria');
+    const gm = await activity(db, { orgId: org.id, rooms: ['berkeley'] });
+    expect(gm.map((a) => a.what)).toEqual(['decided: Autonomy changed', 'created the group']);
+  });
+});
