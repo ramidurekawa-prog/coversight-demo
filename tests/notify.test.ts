@@ -20,7 +20,7 @@ beforeEach(async () => {
 });
 afterEach(() => { delete process.env.RESEND_API_KEY; delete process.env.MAIL_FROM; });
 
-const emailOn = (roomId: string, quiet = false) => db.insert(actions).values({ orgId, roomId, key: 'fences', value: { version: 4, f: {}, al: { push: true, sms: false, email: true, onePerService: true, quiet } } });
+const emailOn = (roomId: string, quiet = false) => db.insert(actions).values({ orgId, roomId, key: 'fences', value: { version: 4, f: {}, al: { push: true, sms: false, email: true, onePerService: false, quiet } } });
 const daytime = new Date('2026-11-10T20:00:00Z'); // noon Pacific
 
 describe('notifications', () => {
@@ -102,6 +102,14 @@ describe('the outbox', () => {
     await expect(draftEmail(db, { orgId, userId: 'u1' }, { kind: 'vendor', toAddress: 'not-an-email', subject: 's', body: 'b' })).rejects.toThrow(/invalid email/);
     await expect(draftEmail(db, { orgId, userId: 'u1' }, { kind: 'spam', subject: 's', body: 'b' })).rejects.toThrow(/invalid email/);
     await expect(listOutbox(db, { orgId, role: 'gm' })).rejects.toThrow(/owner or admin/);
+  });
+
+  it('at most one email per person per room every 4 hours when the room asks for it; the bell still gets each one', async () => {
+    await db.insert(actions).values({ orgId, roomId: 'oakland', key: 'fences', value: { version: 4, f: {}, al: { push: true, sms: false, email: true, onePerService: true, quiet: false } } });
+    await notify(db, { orgId, roomId: 'oakland', kind: 'x', title: 'One' });
+    await notify(db, { orgId, roomId: 'oakland', kind: 'x', title: 'Two' });
+    expect((await db.select().from(outbox)).map((m) => m.subject)).toEqual(['Coversight: One']);
+    expect((await listNotifications(db, { orgId, ...owner })).items.length).toBe(2);
   });
 
   it('never emails a sample guest', async () => {

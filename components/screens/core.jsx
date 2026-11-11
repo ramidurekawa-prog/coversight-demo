@@ -363,8 +363,24 @@ function cvApproval(id) {
   };
 }
 
-function ApprovalModal({ id, onClose, onConfirm }) {
+/** A price approval checked against the room's saved fences: size of the move, and weeks since the last one on that dish. */
+function fenceBreach(id, eng) {
+  const m = /^price:([\w-]+):([\d.]+)$/.exec(id || "");
+  if (!m) return null;
+  const item = CV_MENU.find((x) => x.key === m[1]);
+  if (!item) return null;
+  const f = eng?.actions?.[CV_D.id]?.fences?.f ?? { maxPrice: 8, priceGap: 6 };
+  const pct = ((+m[2] - item.price) / item.price) * 100;
+  if (Math.abs(pct) > f.maxPrice + 1e-9) return `A ${pct.toFixed(1)}% move is past your fence of ${f.maxPrice}% for a single price change. Change the fence on Fences & alerts, or pick a smaller step.`;
+  const last = (eng?.tasks || []).filter((t) => t.roomId === CV_D.id && t.approvalId.startsWith(`price:${m[1]}:`) && t.approvalId !== id && t.status !== "cancelled")
+    .map((t) => new Date(t.createdAt).getTime()).sort((a, b) => b - a)[0];
+  if (last && Date.now() - last < f.priceGap * 7 * 864e5) return `The ${item.name.toLowerCase()} was repriced ${Math.round((Date.now() - last) / 864e5)} days ago. Your fence allows one move every ${f.priceGap} weeks.`;
+  return null;
+}
+
+function ApprovalModal({ id, onClose, onConfirm, eng }) {
   const a = cvApproval(id);
+  const breach = fenceBreach(id, eng);
   const [step, setStep] = React.useState("review");
   React.useEffect(() => {
     const k = (e) => { if (e.key === "Escape") onClose(); };
@@ -406,11 +422,12 @@ function ApprovalModal({ id, onClose, onConfirm }) {
               </div>
               <Callout icon="Timer">{a.window}</Callout>
               <Callout icon="Undo2">{a.revert}</Callout>
+              {breach && <Callout tone="bad" icon="Fence">{breach}</Callout>}
             </div>
             <div className="ft">
               <Button variant="ghost" onClick={onClose}>Not now</Button>
               <Button variant="secondary" onClick={onClose}>Edit first</Button>
-              <Button icon="Check" onClick={() => { setStep("done"); onConfirm && onConfirm(id); }}>Approve</Button>
+              <Button icon="Check" disabled={!!breach} onClick={() => { setStep("done"); onConfirm && onConfirm(id); }}>Approve</Button>
             </div>
           </>
         ) : (

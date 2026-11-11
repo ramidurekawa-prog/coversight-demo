@@ -373,6 +373,7 @@ function AppShell({ children }) {
       {approval && (
         <ApprovalModal
           id={approval.id}
+          eng={eng}
           onClose={() => setApproval(null)}
           onConfirm={(id) => {
             engine.act('approvals', { ...(engine.saved('approvals') || {}), [id]: { at: new Date().toISOString() } }, { summary: `${cvApproval(id).title}: approved` });

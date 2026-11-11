@@ -352,10 +352,10 @@ function CvFences() {
       </div>
     </div>
   );
-  const tog = (k, label, sub) => (
-    <label className="cv-row nowrap" style={{ justifyContent: "space-between", gap: 12, cursor: "pointer" }}>
+  const tog = (k, label, sub, off) => (
+    <label className="cv-row nowrap" style={{ justifyContent: "space-between", gap: 12, cursor: off ? "not-allowed" : "pointer", opacity: off ? 0.6 : 1 }}>
       <span className="cv-col" style={{ gap: 2 }}><span className="cv-small">{label}</span>{sub && <span className="cv-xs cv-faint">{sub}</span>}</span>
-      <input id={`a-${k}`} type="checkbox" checked={al[k]} onChange={(e) => setAl({ ...al, [k]: e.target.checked })} style={{ width: 18, height: 18, accentColor: "var(--primary)" }} />
+      <input id={`a-${k}`} type="checkbox" checked={off ? false : al[k]} disabled={!!off} onChange={(e) => setAl({ ...al, [k]: e.target.checked })} style={{ width: 18, height: 18, accentColor: "var(--primary)" }} />
     </label>
   );
   return (
@@ -384,14 +384,14 @@ function CvFences() {
         </section>
         <section className="cv-card">
           <span className="cv-h4">How we reach you</span>
-          {tog("push", "Push to the app", "Service suggestions and guardrail breaches")}
-          {tog("sms", "Text message", "Guardrail breaches only")}
-          {tog("email", "Email", "Weekly summary")}
+          {tog("push", "In the app (the bell)", "Test results, reversed savings, changes that don't show up in Toast")}
+          {tog("sms", "Text message", "Not available yet: needs a texting provider", true)}
+          {tog("email", "Email", "The same alerts, to everyone who manages this room (sent once email is set up)")}
         </section>
         <section className="cv-card">
           <span className="cv-h4">Keeping it quiet</span>
-          {tog("onePerService", "At most one message per service", "Alert fatigue is what kills engagement")}
-          {tog("quiet", "Silent when nothing crosses a limit", "Control charts target about one false alarm a quarter")}
+          {tog("onePerService", "At most one email per person every 4 hours", "Alert fatigue is what kills engagement; the rest wait in the bell")}
+          {tog("quiet", "Quiet hours, 10 pm to 7 am", "Email waits until morning")}
           <Callout icon="Users">The GM gets service and labour messages. The owner gets alarms and the weekly summary. The controller gets period packages only.</Callout>
         </section>
       </div>
