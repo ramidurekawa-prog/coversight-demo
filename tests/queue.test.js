@@ -36,3 +36,16 @@ describe('today’s queue on a room’s own data', () => {
     if (find) expect(q2.some((c) => c.id === find.id)).toBe(false);
   });
 });
+
+describe('tonight’s staffing plan from own data', () => {
+  it('Mondays run 3 servers for light covers: cut one from the first hour that stays spare to close', async () => {
+    const { tonightPlan } = await import('../components/screens/week.jsx');
+    const mon = tonightPlan(d.room, 'Mon');
+    expect(mon.hours.length).toBeGreaterThan(3);
+    expect(mon.hours.every((h) => h.weeks === 4)).toBe(true);
+    expect(mon.cutFrom).not.toBeNull();
+    const fri = tonightPlan(d.room, 'Fri');
+    expect(fri.hours.find((h) => h.hour === 19).servers).toBe(4);
+    expect(tonightPlan({ levers: {} }, 'Mon')).toBeNull();
+  });
+});
