@@ -3,6 +3,7 @@
 import * as React from 'react';
 
 import { Icon, Button, Tabs } from '../kit';
+import { engine, useEngine } from '../engine';
 import { useCv, cvMoney, CV_D, CV_ROOM, CV_LOCS, CV_MENU, CV_CM_WEIGHTED, cvPriceMove, cvPriceMoveInterval, CV_INVOICES, CV_PRICE_LEG, CV_MIX_LEG, CV_PROOF, Claim, Money, Pill, Outcome, Callout, Interval, PageHead, cvApproval, cvScale, SampleNote } from './core';
 
 /* Coversight — the four levers: Menu, Labour, Throughput, Purchasing. */
@@ -285,8 +286,19 @@ function CvThroughput() {
 }
 
 /* ================================================================ Purchasing */
+/** The credit-request email for one vendor's increase: the numbers from the invoices, ready to send. */
+function vendorEmail(r) {
+  const room = CV_ROOM.name;
+  return {
+    subject: `${r.item}: price increase on our last invoices`,
+    body: `Hi ${r.vendor} team,\n\nOn our recent invoices for ${room}, ${r.item} went from $${r.p0.toFixed(2)} to $${r.p1.toFixed(2)} per ${r.unit} (up ${r.pct.toFixed(1)}%). We buy about ${Math.round(r.q1)} ${r.unit} a month.\n\nCan you take us back toward the earlier price, or tell us what changed and what volume would get it there? We'd like to keep ordering from you.\n\nThanks,\n${CV_ROOM.gm || 'Purchasing'}, ${room}`,
+  };
+}
+
 function CvPurchasing() {
   const cv = useCv();
+  const eng = useEngine();
+  const [drafts, setDrafts] = React.useState(null);
   const before = CV_INVOICES.reduce((s, r) => s + r.p0 * r.q0, 0);
   const after = CV_INVOICES.reduce((s, r) => s + r.p1 * r.q1, 0);
   const rows = [...CV_INVOICES].sort((a, b) => b.priceLeg - a.priceLeg);
@@ -306,6 +318,7 @@ function CvPurchasing() {
       <PageHead over={`Purchasing · ${CV_ROOM.name} · ${CV_INVOICES.length} invoice lines from ${new Set(CV_INVOICES.map((r) => r.vendor)).size} vendors`}
         q="Did food cost rise because vendors raised prices, or because you bought differently?"
         sub="Every invoice line split into the part the vendor did and the part you did. The two add up to the total by construction, so this needs no model." />
+      {CV_D.room.fromToast && !CV_D.inputs.invoices && <Callout tone="warn" icon="FileSpreadsheet"><span>Toast doesn&apos;t carry invoices, so these lines are still the sample&apos;s, scaled to your sales. <button className="cv-link" onClick={() => cv.go('inputs', { kind: 'invoices' })}>Enter your invoice lines</button> to see your own vendors.</span></Callout>}
       <div className="cv-grid g-hero">
         <section className="cv-card">
           <div className="cv-card-head"><span className="cv-h4">Every invoice line, last 28 days vs the 28 before</span><Claim k="obs" /></div>
@@ -338,7 +351,27 @@ function CvPurchasing() {
             </div>
           ))}
           <p className="cv-small cv-muted" style={{ lineHeight: 1.5 }}>Groups like yours win back about 60% of an increase this size. Once you do, the saving is the unit-price change on the next invoices, and the same check catches the next increase.</p>
-          <Button icon="Mail" onClick={() => cv.toast(`Draft emails to ${calls.map((r) => r.vendor).join(" and ")} are in your outbox.`)}>Draft both emails</Button>
+          {!drafts ? (
+            <Button icon="Mail" onClick={async () => {
+              const ds = calls.map((r) => ({ vendor: r.vendor, ...vendorEmail(r) }));
+              setDrafts(ds);
+              if (eng.mode === 'server') {
+                await Promise.all(ds.map((d) => engine.draftEmail({ kind: 'vendor', subject: d.subject, body: d.body }).catch(() => null)));
+                cv.toast(`Drafts saved for ${ds.map((d) => d.vendor).join(' and ')}. Open each in your email to send.`);
+              } else cv.toast('Drafts ready. Open each in your email to send.');
+            }}>Draft both emails</Button>
+          ) : (
+            <div className="cv-col" style={{ gap: 8 }}>
+              {drafts.map((d) => (
+                <details key={d.vendor} className="cv-card" style={{ padding: 10 }}>
+                  <summary className="cv-small" style={{ fontWeight: 600, cursor: 'pointer' }}>{d.vendor}: {d.subject}</summary>
+                  <pre className="cv-small" style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', margin: '8px 0' }}>{d.body}</pre>
+                  <a className="btn btn-secondary btn-sm" href={`mailto:?subject=${encodeURIComponent(d.subject)}&body=${encodeURIComponent(d.body)}`}><Icon name="Mail" size={14} /> Open in your email</a>
+                </details>
+              ))}
+              <span className="cv-xs cv-faint">Coversight doesn&apos;t have your vendors&apos; addresses, so these open in your own email app to send.{eng.mode === 'server' ? ' A copy of each is kept in the outbox on System.' : ''}</span>
+            </div>
+          )}
         </section>
       </div>
       <section className="cv-card flush">
