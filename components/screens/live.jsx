@@ -6,6 +6,8 @@ import { Icon, Button, Tabs } from '../kit';
 import { useCv, cvMoney, CV_D, CV_DS, CV_LOCS, CV_PROOF, CV_ROOM, Claim, Pill, Callout, Interval, PageHead, cvScale } from './core';
 import { leverReport } from '../../lib/data/levers.js';
 import { windowState, METHOD_LABEL, MAGNITUDE_FLOOR_PCT, WORKER_JOBS, statusz, TOAST_ERRORS } from '../../lib/data/pilot.js';
+import { LEVER_METRIC } from '../../lib/data/readers.js';
+import { engine, useEngine } from '../engine';
 
 /* Coversight — the live platform, as it runs in a pilot today: connecting a
    restaurant's own Toast, a test window run by the daily proof loop with the
@@ -218,6 +220,7 @@ const STATUS = {
   verified: { label: 'Verified', tone: 'good', icon: 'BadgeCheck' },
   rejected: { label: 'Rejected', tone: 'bad', icon: 'CircleX' },
   reversed: { label: 'Reversed', tone: 'bad', icon: 'Undo2' },
+  stopped: { label: 'Stopped', tone: 'neutral', icon: 'CircleMinus' },
 };
 const fmtUnit = (p, v, signed = false) => {
   const s = signed && v > 0 ? '+' : '';
@@ -254,9 +257,99 @@ function CheckpointChart({ p, w, controls }) {
   );
 }
 
+/* ---------------------------------------------------------------- the group's own tests */
+const fmtM = (unit, v) => (v == null ? '—' : unit === '$/wk' ? `$${Math.round(v).toLocaleString('en-US')}` : `${(Math.round(v * 10) / 10).toLocaleString('en-US')} ${unit.replace('/wk', '').replace('/turn', '')}`);
+
+function SeriesChart({ w }) {
+  const W = 1000, H = 160, P = { l: 64, r: 16, t: 12, b: 24 };
+  const pts = w.series || [];
+  if (pts.length < 2) return null;
+  const vals = [w.baseline, ...pts.map((p) => p.value)];
+  const lo = Math.min(...vals), hi = Math.max(...vals), pad = (hi - lo) * 0.2 || 1;
+  const x = cvScale(0, pts.length - 1, P.l, W - P.r), y = cvScale(lo - pad, hi + pad, H - P.b, P.t);
+  const startIdx = pts.findIndex((p) => p.weekEnd > w.startedAt);
+  return (
+    <svg className="cv-chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`${w.title}: weekly values against the baseline`}>
+      <line className="grid" x1={P.l} x2={W - P.r} y1={y(w.baseline)} y2={y(w.baseline)} strokeDasharray="4 3" />
+      <text x={P.l - 6} y={y(w.baseline) + 3} textAnchor="end">{fmtM(w.unit, w.baseline)}</text>
+      {startIdx > 0 && <rect x={x(startIdx - 0.5)} y={P.t} width={x(pts.length - 1) - x(startIdx - 0.5) + 8} height={H - P.b - P.t} fill="var(--accent)" opacity="0.06" />}
+      <polyline fill="none" stroke="var(--accent)" strokeWidth="2" points={pts.map((p, i) => `${x(i)},${y(p.value)}`).join(' ')} />
+      {pts.map((p, i) => <circle key={p.weekEnd} cx={x(i)} cy={y(p.value)} r={p.weekEnd > w.startedAt ? 5 : 3} fill={p.weekEnd > w.startedAt ? 'var(--accent)' : 'var(--surface)'} stroke="var(--accent)" />)}
+      {pts.map((p, i) => (i % 2 === pts.length % 2 ? null : <text key={`t${p.weekEnd}`} x={x(i)} y={H - 6} textAnchor="middle">{p.weekEnd.slice(5)}</text>))}
+    </svg>
+  );
+}
+
+function YourTests() {
+  const cv = useCv();
+  const eng = useEngine();
+  const [lever, setLever] = React.useState('labour');
+  const [dish, setDish] = React.useState('');
+  const [busy, setBusy] = React.useState(false);
+  const room = CV_D.room;
+  const mine = (eng.windows || []).filter((w) => w.roomId === CV_D.id);
+  const report = leverReport(room, CV_D);
+  const dishes = room.menu.filter((m) => room.levers?.priceHistory?.[m.key]);
+  const start = async () => {
+    setBusy(true);
+    const r = await engine.startWindow(lever, { dish: lever === 'menu_margin' ? dish : undefined });
+    setBusy(false);
+    cv.toast(r.ok ? 'Test started. Baseline frozen at the last 4 weeks; each new week of Toast data is a checkpoint.' : r.error);
+  };
+  if (eng.mode !== 'server') return <Callout icon="Info">Real tests need the server. This preview runs in your browser only; the walk-through below shows how one runs.</Callout>;
+  return (
+    <section className="cv-card" aria-labelledby="your-tests">
+      <div className="cv-card-head">
+        <div className="cv-col" style={{ gap: 2 }}>
+          <span className="cv-h4" id="your-tests">Tests at {CV_ROOM.short}</span>
+          <span className="cv-xs cv-faint">Measured in weeks of {room.fromToast ? `your Toast data (through ${room.fromToast.end})` : 'this room’s data (sample until you load your Toast exports)'}. The daily proof loop records checkpoints and closes each one at day 28.</span>
+        </div>
+        <Pill icon="Timer">{mine.filter((w) => w.status === 'running' || w.status === 'waiting').length} running</Pill>
+      </div>
+      {mine.length === 0 && <span className="cv-small cv-muted">No tests here yet. Start one on the lever worth the most below, or from Today.</span>}
+      {mine.map((w) => {
+        const st = STATUS[w.status] || STATUS.running;
+        return (
+          <div key={w.id} className="cv-col" style={{ gap: 8, borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+            <div className="cv-row nowrap" style={{ gap: 10 }}>
+              <span className="cv-col" style={{ gap: 2, flex: 1 }}>
+                <span style={{ fontWeight: 600 }}>{w.title}</span>
+                <span className="cv-xs cv-faint">{LEVER_METRIC[w.lever]?.label} · {w.direction === 'down' ? 'down is better' : 'up is better'} · started on data to {w.startedAt} · day {w.day} of 28{w.staleDays > 9 && (w.status === 'running' || w.status === 'waiting') ? ` · no new data for ${w.staleDays} days` : ''}</span>
+              </span>
+              <Pill tone={st.tone} icon={st.icon}>{st.label}</Pill>
+              {(w.status === 'running' || w.status === 'waiting') && <Button size="sm" variant="ghost" onClick={async () => { const r = await engine.stopWindow(w.id); cv.toast(r.ok ? 'Stopped. Nothing is booked from it.' : r.error); }}>Stop</Button>}
+            </div>
+            <SeriesChart w={w} />
+            <dl className="cv-kv">
+              <dt>Baseline (frozen)</dt><dd>{fmtM(w.unit, w.baseline)}</dd>
+              <dt>Checkpoints</dt><dd>{w.checkpoints.length ? w.checkpoints.map((c) => `day ${c.day}: ${fmtM(w.unit, c.observed)}`).join(' · ') : 'none yet'}</dd>
+              {w.method && <><dt>Method</dt><dd style={{ fontFamily: 'var(--font-sans)' }}>{METHOD_LABEL[w.method]}</dd></>}
+              {w.pointCents != null && w.checkpoints.length >= 2 && <><dt>Measured, a week</dt><dd>${(w.pointCents / 100).toFixed(2)} point · ${(Math.max(0, w.lowCents) / 100).toFixed(2)} lower bound</dd></>}
+              <dt>Booked</dt><dd><Claim k={w.status === 'verified' ? 'book' : 'none'} /> {w.status === 'verified' ? `$${(w.bookedCents / 100).toFixed(2)} a week` : '$0 until it verifies'}</dd>
+            </dl>
+          </div>
+        );
+      })}
+      <div className="cv-row" style={{ gap: 8, borderTop: '1px solid var(--border)', paddingTop: 12, alignItems: 'center' }}>
+        <span className="cv-small" style={{ fontWeight: 600 }}>Start a test</span>
+        <select className="input" style={{ width: 'auto' }} value={lever} onChange={(e) => setLever(e.target.value)} aria-label="Lever to test">
+          {report.map((l) => <option key={l.key} value={l.key}>{l.name} · {l.scope}{l.weekly > 0 ? ` · ~$${Math.round(l.weekly)}/wk` : ''}</option>)}
+        </select>
+        {lever === 'menu_margin' && (
+          <select className="input" style={{ width: 'auto' }} value={dish} onChange={(e) => setDish(e.target.value)} aria-label="Dish">
+            <option value="">Pick a dish…</option>
+            {dishes.map((m) => <option key={m.key} value={m.key}>{m.name}</option>)}
+          </select>
+        )}
+        <Button size="sm" icon="Play" disabled={busy || (lever === 'menu_margin' && !dish)} onClick={start}>{busy ? 'Starting…' : 'Start'}</Button>
+      </div>
+    </section>
+  );
+}
+
 function CvWindows() {
   const cv = useCv();
-  const roomId = cv.loc === 'all' ? 'oakland' : cv.loc;
+  const roomId = cv.loc === 'all' ? CV_D.id : cv.loc;
   const p = pilotOf(roomId);
   const TODAY = 21;
   const [day, setDay] = React.useState(TODAY);
@@ -271,9 +364,16 @@ function CvWindows() {
   const showInterval = e.n >= 2;
   return (
     <div className="cv-page wide">
-      <PageHead over={`Live platform · ${locOf(roomId).name}`} q="How does a test run on the platform today?"
-        sub="The pilot's proof loop, computed in your browser with the platform's own estimator. A window opens when the owner presses Start, a checkpoint lands every 7 days, and at day 28 it closes Verified at the lower bound of its interval, or Rejected. Drag the day to run it forward."
-        right={cv.loc === 'all' && <Pill icon="Building2">Showing Oakland; pick a room in the top bar</Pill>} />
+      <PageHead over={`Test windows · ${locOf(roomId)?.name ?? CV_ROOM.name}`} q="Is the change working, and what can we book?"
+        sub="A window opens when you press Start, a checkpoint lands with every new week of data, and at day 28 it closes Verified at the lower bound of its interval, or Rejected. Nothing is booked before then."
+        right={cv.loc === 'all' && <Pill icon="Building2">{`Showing ${CV_ROOM.short}; pick a room in the top bar`}</Pill>} />
+
+      <YourTests />
+
+      <div className="cv-col" style={{ gap: 4 }}>
+        <span className="cv-h4">How a window runs: the sample walk-through</span>
+        <span className="cv-small cv-muted">The sample room&apos;s window, computed with the same estimator. Drag the day to run it forward.</span>
+      </div>
 
       <section className="cv-card">
         <div className="cv-card-head">
@@ -388,7 +488,7 @@ function CvWindows() {
       </div>
 
       <Callout tone="warn" icon="TriangleAlert">
-        What the live platform doesn't do yet, and the finished screens assume: it opens the window when the owner presses Start rather than on evidence the change happened; no reader supplies matched controls, so every real window today is a before/after; and it records 3 of the 10 verification outcomes, so "couldn't tell" and "didn't work" both close as Rejected. <button className="cv-link" onClick={() => cv.go('proof')}>See the finished Proof screen</button>
+        Still to come: a window opens when you press Start (or when Toast confirms a price change), not on other evidence the change happened; no matched control rooms are subtracted yet, so every real window is a before/after; and "couldn't tell" and "didn't work" both close as Rejected. <button className="cv-link" onClick={() => cv.go('proof')}>See the Proof screen</button>
       </Callout>
     </div>
   );
