@@ -33,7 +33,7 @@ export const toastSummary = z.object({
     priceHistory: z.record(name, z.array(z.object({ price: n(500), units: n(100_000) })).min(4).max(8)).optional(),
     turns: z.array(z.object({ fri: z.boolean(), min: n(360) })).max(400).optional(),
     reseatGaps: z.array(n(120).nullable()).max(300).optional(),
-    history: z.array(z.object({ ago: z.number().int().min(0).max(51), net: n(20_000_000), covers: n(1_000_000), labour: n(10_000_000).nullable() })).max(52).optional(),
+    history: z.array(z.object({ ago: z.number().int().min(0).max(51), net: n(20_000_000), covers: n(1_000_000), labour: n(10_000_000).nullable(), turn: n(360).nullable().optional(), otMin: n(1_000_000).nullable().optional() })).max(52).optional(),
     tickets: z.object({
       stations: z.array(z.tuple([z.string().max(60), n(100)])).max(8),
       fri: z.array(n(120).nullable()).length(6), sat: z.array(n(120).nullable()).length(6),

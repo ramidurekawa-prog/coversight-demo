@@ -46,6 +46,13 @@ here ships to customers.
   hours, the period package) use `useSaved(key, initial)` from
   `components/engine.js`; each key needs a zod schema and scope in
   `server/actions.ts` `ACTION_KEYS`, or the server refuses it.
+- **Jobs and tests:** `server/jobs.ts` (detection, proof, reverify, cleanup)
+  run from Vercel Cron (`vercel.json` → `/api/cron/<job>`, `CRON_SECRET`) or
+  "Run now". Test windows (`server/proof.ts`) are measured in weeks of the
+  room's *data* via `lib/data/readers.js` and closed with `lib/data/pilot.js`;
+  never book anything outside `windowState`.
+- **Toast exports:** `lib/data/toast.js` reads Toast's data-export CSVs in the
+  browser into the `toast` input kind; `server/toast-schema.ts` bounds it.
 - **Secrets:** `DATABASE_URL`, `BETTER_AUTH_SECRET`, `CREDENTIALS_KEY`,
   `CRON_SECRET` live in Vercel env only. Never log, return or export them, or
   a Toast client secret.
