@@ -40,7 +40,9 @@ export const ACTION_KEYS = {
   /** The plan: manager hours available this week. */
   plan: { scope: 'room', schema: z.object({ hours: z.number().min(0.5).max(5) }) },
   /** The accountant's period package. */
-  billing: { scope: 'group', schema: z.object({ status: z.enum(['open', 'approved', 'disputed']), note: z.string().max(2000).optional(), at: isoDate.optional() }) },
+  billing: { scope: 'group', schema: z.object({ status: z.enum(['open', 'approved', 'disputed']), note: z.string().max(2000).optional(), at: isoDate.optional(), period: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).optional() }) },
+  /** Pricing on the invoice: per room per month, and the fee on reconciled savings. */
+  pricing: { scope: 'group', schema: z.object({ perRoomMonthlyCents: z.number().int().min(0).max(1_000_000), feePct: z.number().min(0).max(50) }) },
 } as const;
 
 export type ActionKey = keyof typeof ACTION_KEYS;

@@ -12,11 +12,14 @@ import { loadDataset } from './dataset';
 import { runProofLoop, runReverify } from './proof';
 import { verifyTasks } from './tasks';
 import { deliverOutbox } from './notify';
+import { runBilling } from './billing';
+import { previousPeriod } from '../lib/data/billing.js';
 
 export const JOBS = {
   detection: { schedule: 'Daily, 2:00 am Pacific', what: 'Re-reads every room’s data, re-grades the six levers and re-ranks the findings', cron: '0 10 * * *' },
   proof: { schedule: 'Daily, 4:00 am Pacific', what: 'Records due checkpoints and closes test windows that reached day 28', cron: '0 12 * * *' },
   reverify: { schedule: 'Mondays, 3:00 am Pacific', what: 'Checks average check and turn time against each verified test’s guardrails; a breach reverses it', cron: '0 11 * * 1' },
+  billing: { schedule: '2nd of the month, 6:00 am Pacific', what: 'Drafts last month’s invoice for every group from its verified tests', cron: '0 14 2 * *' },
   cleanup: { schedule: 'Daily, 5:00 am Pacific', what: 'Deletes “try the sample” guests older than 30 days and their sample copies', cron: '0 13 * * *' },
 } as const;
 export type JobName = keyof typeof JOBS;
@@ -68,7 +71,7 @@ export async function runJob(db: Db, job: JobName, { orgId, trigger = 'schedule'
   const ids = orgId ? [orgId] : (await db.select({ id: orgs.id }).from(orgs)).map((o) => o.id);
   const results = [];
   for (const id of ids) {
-    results.push(await record(db, job, id, trigger, () => (job === 'detection' ? runDetection(db, id) : job === 'proof' ? runProofLoop(db, id, now) : runReverify(db, id))));
+    results.push(await record(db, job, id, trigger, () => (job === 'detection' ? runDetection(db, id) : job === 'proof' ? runProofLoop(db, id, now) : job === 'billing' ? runBilling(db, id, previousPeriod(now)) : runReverify(db, id))));
   }
   await deliverOutbox(db, { now }).catch(() => null);
   return results;
