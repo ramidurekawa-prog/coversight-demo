@@ -295,11 +295,13 @@ function CvInventory() {
   const U = CV_D.usage;
   const top = [...U.flagged].sort((a, b) => b.dollars - a.dollars)[0];
   const max = Math.max(0.12, ...U.rows.map((r) => r.pct)) * 1.15;
-  const salmonTest = CV_D.proofs.find((p) => p.id === 'salmon-plate');
+  const salmonTest = CV_D.room.fromToast ? null : CV_D.proofs.find((p) => p.id === 'salmon-plate');
   return (
     <div className="cv-page wide">
       <PageHead over={`Inventory & waste · theoretical vs actual · ${CV_ROOM.name}`} q="Are we using more than we sell?"
         sub="What the plates and pours you sold should have used, against what actually left the walk-in and the bar. Logged waste explains part of any gap; the rest is over-portioning, spoilage or something rung in wrong." />
+      {CV_D.room.fromToast && !CV_D.inputs.counts && <Callout tone="warn" icon="Package"><span>Toast doesn&apos;t count stock, so these counts are still the sample&apos;s. Your plates sold are real (from Toast), but a gap needs your own count. <button className="cv-link" onClick={() => cv.go('inputs', { kind: 'counts' })}>Enter a count</button> · <button className="cv-link" onClick={() => cv.go('inputs', { kind: 'waste' })}>Log waste</button></span></Callout>}
+      {CV_D.inputs.counts && <Callout icon="ClipboardList">Counts entered by hand {CV_D.inputs.counts.date}: {CV_D.inputs.counts.n} item{CV_D.inputs.counts.n === 1 ? '' : 's'}{CV_D.inputs.waste ? `, plus ${CV_D.inputs.waste.n} waste entries` : ''}. Expected use comes from {CV_D.room.fromToast ? 'your Toast plates sold' : 'the plates sold'} and your recipes.</Callout>}
       <LoopStrip stage={U.flagged.length ? 'detect' : 'understand'} notes={{ detect: `${U.flagged.length} items past tolerance`, understand: U.wasteWeek > 0 ? 'Waste log explains part of it' : 'Needs a spot count to separate causes', act: 'Portion scale, prep pars, pour spouts', verify: 'Usage gap vs the count baseline' }} />
       <div className="cv-grid g-hero">
         <section className="cv-card">
