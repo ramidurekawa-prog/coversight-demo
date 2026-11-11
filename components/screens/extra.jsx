@@ -164,8 +164,26 @@ function CvPortfolio() {
 }
 
 /* ================================================================ Weekly meeting */
+function meetingSummary(log, at) {
+  const when = new Date(at || Date.now()).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+  return { subject: `${CV_ROOM.name}: weekly meeting, ${when}`, body: `Weekly meeting at ${CV_ROOM.name}, ${when}.\n\n${log.map((l) => `• ${l}`).join('\n')}\n\nFrom Coversight.` };
+}
+
+function MeetingSend({ log, at }) {
+  const cv = useCv();
+  const eng = useEngine();
+  const m = meetingSummary(log, at);
+  return (
+    <div className="cv-row" style={{ gap: 8 }}>
+      <a className="btn btn-secondary btn-sm" href={`mailto:?subject=${encodeURIComponent(m.subject)}&body=${encodeURIComponent(m.body)}`} onClick={() => { if (eng.mode === 'server') engine.draftEmail({ kind: 'gm-note', subject: m.subject, body: m.body }).catch(() => null); cv.toast('Opening the summary in your email.'); }}><Icon name="Mail" size={14} /> Email the summary</a>
+    </div>
+  );
+}
+
 function CvMeeting() {
   const cv = useCv();
+  const eng = useEngine();
+  const real = eng.mode === 'server' && eng.org && !eng.org.sample;
   const CV_AGENDA = CV_D.meeting.map((a) => ({ ...a, body: cvFill(a.body) }));
   const [i, setI] = React.useState(-1);
   const [left, setLeft] = React.useState(0);
@@ -220,22 +238,23 @@ function CvMeeting() {
         <section className="cv-card">
           <span className="cv-h4">Logged from this meeting</span>
           <ul className="cv-ul">{log.map((l) => <li key={l}><Icon name="Check" size={15} />{l}</li>)}</ul>
-          <span className="cv-small cv-muted">Sent to Maria Reyes and {CV_ROOM.gm}. The plan is committed, and the decision is on Thursday's queue.</span>
-          <Button size="sm" variant="secondary" onClick={() => { setI(-1); setLog([]); setDecision(null); }}>Reset the demo</Button>
+          <span className="cv-small cv-muted">Saved with the time. Send it to whoever wasn&apos;t in the room.</span>
+          <MeetingSend log={log} />
+          <Button size="sm" variant="ghost" onClick={() => { setI(-1); setLog([]); setDecision(null); }}>{real ? 'Close' : 'Reset the demo'}</Button>
         </section>
       )}
       {i < 0 && last && (
         <section className="cv-card">
           <span className="cv-h4">Last meeting · {new Date(last.at).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</span>
           <ul className="cv-ul">{last.log.map((l) => <li key={l}><Icon name="Check" size={15} />{l}</li>)}</ul>
-          <div className="cv-row"><Button size="sm" variant="ghost" icon="Undo2" onClick={() => setLast(null, "Meeting record cleared")}>Clear the record</Button></div>
+          <div className="cv-row"><MeetingSend log={last.log} at={last.at} /><Button size="sm" variant="ghost" icon="Undo2" onClick={() => setLast(null, "Meeting record cleared")}>Clear the record</Button></div>
         </section>
       )}
-      <div className="cv-grid g3">
+      {!real && <div className="cv-grid g3">
         {[["Meetings held", "7 of last 8"], ["Average length", "14 min"], ["Decisions made per meeting", "1.3"]].map(([k, v]) => (
           <div key={k} className="cv-card" style={{ gap: 4 }}><span className="cv-xs cv-faint">{k}</span><span className="cv-fig md">{v}</span></div>
         ))}
-      </div>
+      </div>}
     </div>
   );
 }
