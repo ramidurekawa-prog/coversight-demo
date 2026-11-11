@@ -57,7 +57,8 @@ function CvMenu() {
   return (
     <div className="cv-page wide">
       <PageHead over={`Menu · ${CV_ROOM.name} · ${CV_MENU.length} dishes`} q="What should this dish cost, and what happens if I change it?"
-        sub="One surface for margin, mix and pricing. Price response comes from your own price history, and the simulator refuses when there isn't enough of it." />
+        sub={`One surface for margin, mix and pricing. Price response comes from your own price history, and the simulator refuses when there isn't enough of it.${CV_D.room.fromToast ? ` Prices and plates sold are from your Toast data through ${CV_D.room.fromToast.end}.` : ''}`} />
+      {CV_MENU.some((m) => m.costEstimated) && <Callout tone="warn" icon="Calculator"><span>{CV_MENU.filter((m) => m.costEstimated).length} dishes have no plate cost yet, so their margins (and any price move on them) are <b>estimates</b> at your food-cost rate. <button className="cv-link" onClick={() => cv.go('inputs', { kind: 'recipes' })}>Enter plate costs</button></span></Callout>}
       <div className="cv-grid g-hero">
         <section className="cv-card">
           <div className="cv-card-head">
@@ -77,7 +78,7 @@ function CvMenu() {
               <span className="cv-over">Price simulator</span>
               <span className="cv-h4">{item.name}</span>
             </div>
-            <Claim k="mod" />
+            <Claim k={item.costEstimated ? "est" : "mod"} />
           </div>
           <dl className="cv-kv">
             <dt>Price now</dt><dd>{cvMoney(item.price, { cents: true })}</dd>
@@ -117,7 +118,7 @@ function CvMenu() {
                 const up = cvPriceMove(m, m.price + 1);
                 return (
                   <tr key={m.key} className={`cv-tr ${sel === m.key ? "sel" : ""}`} onClick={() => setSel(m.key)}>
-                    <td><span style={{ fontWeight: 600 }}>{m.name}</span> <span className="cv-xs cv-faint">{m.balancing ? "balancing line" : m.cat}</span></td>
+                    <td><span style={{ fontWeight: 600 }}>{m.name}</span> <span className="cv-xs cv-faint">{m.balancing ? "balancing line" : m.cat}</span>{m.costEstimated && <> <Pill tone="warn" icon="Calculator">cost estimated</Pill></>}</td>
                     <td className="r">{cvMoney(m.price, { cents: true })}</td>
                     <td className="r">{cvMoney(m.cost, { cents: true })}</td>
                     <td className={`r ${m.cost / m.price > 0.38 ? "cv-exp" : ""}`}>{Math.round((m.cost / m.price) * 100)}%</td>
