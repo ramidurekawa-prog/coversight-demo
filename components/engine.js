@@ -23,10 +23,11 @@ import { expectFor, stepsFor } from '../lib/data/writebacks';
 
 const KEY = 'coversight-demo:v2';
 const OLD_KEYS = ['coversight-demo:v1'];
-const INITIAL = { mode: 'pending', base: SEED, org: null, viewer: null, room: 'oakland', inputs: {}, log: [], actions: {}, tasks: [], version: 0, notice: null, saving: false };
+const INITIAL = { mode: 'pending', base: SEED, org: null, viewer: null, room: 'oakland', inputs: {}, log: [], actions: {}, tasks: [], notes: { items: [], unread: 0 }, version: 0, notice: null, saving: false };
 let state = INITIAL;
 const subs = new Set();
 const pending = new Map();
+let notesTimer = null;
 
 function emit() { subs.forEach((f) => f()); }
 function persist() {
@@ -145,6 +146,8 @@ export const engine = {
     };
     reload();
     api('/api/tasks').then((b) => { state = { ...state, tasks: b.tasks || [] }; emit(); }).catch(() => { /* tasks load best-effort */ });
+    engine.refreshNotes();
+    if (!notesTimer) notesTimer = setInterval(() => { if (document.visibilityState === 'visible') engine.refreshNotes(); }, 60_000);
   },
 
   dismissNotice() { state = { ...state, notice: null }; emit(); },
@@ -268,6 +271,25 @@ export const engine = {
     state = { ...state, tasks: state.tasks.map((t) => (t.id === id ? { ...t, status, ...(action === 'done' ? { doneAt: new Date().toISOString() } : {}) } : t)) };
     persist(); emit();
     return Promise.resolve(state.tasks.find((t) => t.id === id));
+  },
+
+  /** The bell: notifications for this viewer (server mode only). */
+  refreshNotes() {
+    if (state.mode !== 'server') return;
+    api('/api/notifications').then((b) => { state = { ...state, notes: b }; emit(); }).catch(() => { /* best-effort */ });
+  },
+  markRead(ids) {
+    if (state.mode !== 'server') return;
+    const all = ids === 'all';
+    state = { ...state, notes: { items: state.notes.items.map((n) => (all || ids.includes(n.id) ? { ...n, read: true } : n)), unread: all ? 0 : Math.max(0, state.notes.unread - ids.length) } };
+    emit();
+    api('/api/notifications', { method: 'POST', body: JSON.stringify({ ids }) }).then((b) => { state = { ...state, notes: b }; emit(); }).catch(() => { /* best-effort */ });
+  },
+
+  /** An email the operator asked for (vendor request, GM talking points). No address → a draft. */
+  draftEmail(payload) {
+    if (state.mode !== 'server') return Promise.resolve({ status: 'local' });
+    return api('/api/outbox', { method: 'POST', body: JSON.stringify(payload) }).then((b) => b.email);
   },
 
   /** Hard reset from the error screen: clears browser storage and reloads the org. */

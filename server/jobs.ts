@@ -11,6 +11,7 @@ import { jobRuns, memberships, orgs, snapshots, users } from './db/schema';
 import { loadDataset } from './dataset';
 import { runProofLoop, runReverify } from './proof';
 import { verifyTasks } from './tasks';
+import { deliverOutbox } from './notify';
 
 export const JOBS = {
   detection: { schedule: 'Daily, 2:00 am Pacific', what: 'Re-reads every room’s data, re-grades the six levers and re-ranks the findings', cron: '0 10 * * *' },
@@ -69,6 +70,7 @@ export async function runJob(db: Db, job: JobName, { orgId, trigger = 'schedule'
   for (const id of ids) {
     results.push(await record(db, job, id, trigger, () => (job === 'detection' ? runDetection(db, id) : job === 'proof' ? runProofLoop(db, id, now) : runReverify(db, id))));
   }
+  await deliverOutbox(db, { now }).catch(() => null);
   return results;
 }
 

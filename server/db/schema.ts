@@ -280,7 +280,61 @@ export const tasks = pgTable(
   (t) => [index('tasks_org_status_idx').on(t.orgId, t.status)],
 );
 
+/** In-app notifications: what changed that someone should know (a test
+ * closed, a guardrail reversed a result, a change didn't show up in the data). */
+export const notifications = pgTable(
+  'notifications',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+    roomId: text('room_id'),
+    kind: text('kind').notNull(),
+    severity: text('severity').notNull().default('info'),
+    title: text('title').notNull(),
+    body: text('body').notNull().default(''),
+    link: text('link'),
+    dedupe: text('dedupe'),
+    createdAt: at('created_at').notNull().defaultNow(),
+  },
+  (t) => [index('notifications_org_idx').on(t.orgId, t.createdAt), unique('notifications_dedupe').on(t.orgId, t.dedupe)],
+);
+
+export const notificationReads = pgTable(
+  'notification_reads',
+  {
+    notificationId: uuid('notification_id').notNull().references(() => notifications.id, { onDelete: 'cascade' }),
+    userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    at: at('at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.notificationId, t.userId] })],
+);
+
+/** Every email or text Coversight would send, and whether it went: queued,
+ * sent, held (quiet hours), draft (no address: the operator sends it), skipped
+ * (no provider configured) or failed. */
+export const outbox = pgTable(
+  'outbox',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+    notificationId: uuid('notification_id').references(() => notifications.id, { onDelete: 'set null' }),
+    channel: text('channel').notNull(),
+    kind: text('kind').notNull(),
+    toAddress: text('to_address'),
+    toUserId: text('to_user_id').references(() => users.id, { onDelete: 'set null' }),
+    subject: text('subject').notNull(),
+    body: text('body').notNull(),
+    status: text('status').notNull().default('queued'),
+    providerId: text('provider_id'),
+    error: text('error'),
+    createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: at('created_at').notNull().defaultNow(),
+    sentAt: at('sent_at'),
+  },
+  (t) => [index('outbox_status_idx').on(t.status, t.createdAt), index('outbox_org_idx').on(t.orgId, t.createdAt)],
+);
+
 export const orgRelations = relations(orgs, ({ many }) => ({ rooms: many(rooms), memberships: many(memberships) }));
 
-export const schema = { users, sessions, accounts, verifications, orgs, memberships, rooms, roomData, inputs, actions, auditLog, memberRole, windowStatus, testWindows, checkpoints, jobRuns, snapshots, taskStatus, tasks };
+export const schema = { users, sessions, accounts, verifications, orgs, memberships, rooms, roomData, inputs, actions, auditLog, memberRole, windowStatus, testWindows, checkpoints, jobRuns, snapshots, taskStatus, tasks, notifications, notificationReads, outbox };
 
