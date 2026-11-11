@@ -147,3 +147,16 @@ describe('applied to a room', () => {
     expect(ds2.rooms.oakland.menu.find((m) => m.name === 'House Burger').cost).toBe(5.1);
   });
 });
+
+describe('sources on own data', () => {
+  it('each feed says what came in from the export and what is not connected', () => {
+    const { unknown, ...s } = readToastExports(Object.entries(FILES).filter(([n]) => n !== 'KitchenTimings.csv').map(([name, text]) => ({ name, text })));
+    const d = deriveRoom(applyInputs(SEED, { oakland: { toast: { rows: [s] } } }), 'oakland');
+    const f = Object.fromEntries(d.feeds.map((x) => [x.name, x]));
+    expect(f.Toast).toMatchObject({ state: 'healthy', dataEnd: '2026-10-24', input: 'toast' });
+    expect(f['7shifts'].last).toMatch(/Toast time entries/);
+    expect(f['Kitchen display']).toMatchObject({ state: 'off', input: 'toast' });
+    expect(f['QuickBooks Online'].state).toBe('off');
+    expect(f['Recipe costs'].state).toBe('partial');
+  });
+});

@@ -595,7 +595,9 @@ function CvComparison() {
 /* ================================================================ Sources */
 function CvSources() {
   const cv = useCv();
-  const CV_FEEDS = CV_D.feeds;
+  /* A Toast export more than 8 days old is stale, whatever else is true. */
+  const age = (end) => Math.round((Date.now() - Date.parse(`${end}T23:59:59Z`)) / 864e5);
+  const CV_FEEDS = CV_D.feeds.map((f) => (f.dataEnd && age(f.dataEnd) > 8 ? { ...f, state: 'stale', note: `The newest week is ${age(f.dataEnd)} days old. Tests pause until the next export is uploaded.` } : f));
   const fixes = CV_FEEDS.filter((f) => f.risk > 0);
   const total = CV_FEEDS.reduce((s, f) => s + f.risk, 0);
   const tone = { healthy: ["good", "CircleCheck", "Healthy"], stale: ["warn", "Clock", "Stale"], partial: ["warn", "CircleDot", "Partial"], off: ["neutral", "CircleMinus", "Not connected"] };
@@ -621,13 +623,14 @@ function CvSources() {
               <div className="cv-row" style={{ justifyContent: "flex-end" }}>
                 {f.risk > 0 && <span className="cv-num cv-exp" style={{ fontWeight: 600 }}>{cvMoney(f.risk)}/wk at risk</span>}
                 {f.manual && <Pill tone="info" icon="PencilLine">Manual</Pill>}
-                {f.fix && (f.state !== "healthy" || f.input) && <Button size="sm" variant={f.risk ? "primary" : "secondary"} onClick={() => (f.input ? cv.go("inputs", { kind: f.input }) : cv.toast(`${f.name}: ${f.fix.toLowerCase()} started.`))}>{f.fix}</Button>}
+                {f.fix && f.input && <Button size="sm" variant={f.risk || f.state === "stale" ? "primary" : "secondary"} onClick={() => cv.go("inputs", f.input === "toast" ? undefined : { kind: f.input })}>{f.fix}</Button>}
+                {f.fix && !f.input && <Button size="sm" variant="secondary" onClick={() => cv.go("connect")}>How to connect</Button>}
               </div>
             </div>
           );
         })}
       </section>
-      <Callout icon="Info">There's no overall completeness score here on purpose. Today's 76% is a weighted average of twelve constants. It isn't 76% of records or 76% confidence, and a feed that stopped three weeks ago still reads healthy.</Callout>
+      <Callout icon="Info">There&apos;s no overall completeness score here on purpose: a single percentage hides a feed that stopped three weeks ago. Each feed says when it last brought in data.</Callout>
     </div>
   );
 }
