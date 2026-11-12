@@ -6,6 +6,7 @@ import { Icon, Button } from '../kit';
 import { engine, useEngine, useSaved } from '../engine';
 import { buildOwnQueue } from '../../lib/data/queue';
 import { dataEnd as roomDataEnd } from '../../lib/data/readers';
+import { measuredServiceRate } from '../../lib/data/levers';
 import { TasksPanel } from './tasks';
 import { useCv, cvMoney, cvFill, CV_D, CV_ROOM, CV_NOW, CV_PERSIST, cvPlanCandidates, cvChoosePlan, Claim, Money, Pill, Callout, Interval, PageHead, cvScale, SampleNote } from './core';
 
@@ -270,7 +271,94 @@ function ServiceChart({ s }) {
   );
 }
 
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const hourLabel = (h) => `${((h + 11) % 12) + 1} ${h < 12 ? 'am' : 'pm'}`;
+
+/**
+ * Tonight's staffing plan from the room's own Toast data: for today's weekday,
+ * the typical covers and servers on the floor each hour over the last four
+ * same weekdays, against the room's measured covers per server-hour.
+ */
+export function tonightPlan(room, dayName) {
+  const L = room.levers || {};
+  const rate = measuredServiceRate(L.serviceHours || [])?.coversPerServerHour;
+  const rows = (L.serviceHours || []).filter((h) => h.day === dayName && h.servers != null);
+  if (!rate || !rows.length) return null;
+  const hours = [...new Set(rows.map((h) => h.hour))].sort((a, b) => a - b).map((hour) => {
+    const hs = rows.filter((h) => h.hour === hour);
+    const covers = hs.reduce((t, h) => t + h.covers, 0) / hs.length;
+    const servers = hs.reduce((t, h) => t + h.servers, 0) / hs.length;
+    const need = Math.max(1, Math.ceil(covers / rate));
+    return { hour, covers: Math.round(covers), servers: Math.round(servers * 10) / 10, need, idle: Math.max(0, Math.round(servers) - need), weeks: hs.length };
+  });
+  // The first hour from which every later hour has a spare server: cut one from there to close.
+  let cutFrom = null;
+  for (let i = hours.length - 1; i >= 0 && hours[i].idle >= 1; i--) cutFrom = hours[i].hour;
+  const idleHours = cutFrom == null ? 0 : hours.filter((h) => h.hour >= cutFrom).length;
+  return { rate, hours, cutFrom, idleHours, wage: L.wage ?? 18 };
+}
+
+function ServiceOwn() {
+  const cv = useCv();
+  const eng = useEngine();
+  const day = new Date().toLocaleDateString('en-US', { weekday: 'short', timeZone: 'America/Los_Angeles' }).slice(0, 3);
+  const plan = tonightPlan(CV_D.room, day);
+  const [answer, setAnswer] = useSaved('service', 'ask');
+  const approvalId = plan?.cutFrom != null ? `cut:${day}:${plan.cutFrom}` : null;
+  const task = approvalId && (eng.tasks || []).find((t) => t.roomId === CV_D.id && t.approvalId === approvalId && t.status !== 'cancelled');
+  const approve = async () => {
+    const top = Math.round(plan.hours.find((h) => h.hour === plan.cutFrom).servers);
+    await engine.createTask(approvalId, { title: `${day}: one fewer server from ${hourLabel(plan.cutFrom)} to close`, system: '7shifts', diff: [[`${day} ${hourLabel(plan.cutFrom)} to close`, `${top} servers`, `${top - 1} servers`]] });
+    setAnswer('yes', `${day}: one fewer server from ${hourLabel(plan.cutFrom)}`);
+    cv.toast('Approved. The steps for 7shifts are on Today.');
+  };
+  return (
+    <div className="cv-page">
+      <PageHead over={`Service · ${CV_ROOM.name} · ${DAYS.includes(day) ? day : ''}`} q="How many servers does tonight need?"
+        sub={`From your Toast data through ${CV_D.room.fromToast.end}: each hour on the last ${plan?.hours[0]?.weeks ?? 4} ${day}s, the covers you served and the servers on the floor, against this room's own pace of ${plan ? plan.rate.toFixed(1) : '—'} covers per server-hour.`} />
+      <Callout icon="Info">Live pacing during service needs the Toast API sync. Until it&apos;s on, this plans tonight from the same weekday in your data.</Callout>
+      {!plan ? <Callout icon="Clock">Not enough {day} dinners with servers on the floor in your data yet (needs TimeEntries.csv and 20+ busy hours).</Callout> : (
+        <>
+          <section className="cv-card flush">
+            <div className="cv-tablewrap"><table className="cv-table">
+              <thead><tr><th>Hour</th><th className="r">Typical covers</th><th className="r">Servers on the floor</th><th className="r">Servers needed</th><th className="r">Spare</th></tr></thead>
+              <tbody>{plan.hours.map((h) => (
+                <tr key={h.hour} style={h.hour >= (plan.cutFrom ?? 99) ? { background: 'var(--accent-subtle)' } : undefined}>
+                  <td>{hourLabel(h.hour)}</td><td className="r">{h.covers}</td><td className="r">{h.servers}</td><td className="r">{h.need}</td><td className="r">{h.idle || '—'}</td>
+                </tr>
+              ))}</tbody>
+            </table></div>
+          </section>
+          <section className="cv-card">
+            {plan.cutFrom == null ? (
+              <><span className="cv-h4">Keep everyone on tonight</span><span className="cv-small cv-muted">Every hour to close has used its servers on recent {day}s.</span></>
+            ) : (
+              <>
+                <span className="cv-h4">One fewer server from {hourLabel(plan.cutFrom)} to close</span>
+                <span className="cv-small cv-muted">On recent {day}s every hour from {hourLabel(plan.cutFrom)} had a spare server: about {plan.idleHours} server-hour{plan.idleHours === 1 ? '' : 's'}, {cvMoney(plan.idleHours * plan.wage)} at your blended wage. <Claim k="mod" /></span>
+                {task ? <Pill tone="info" icon="ListChecks">Approved · steps on Today</Pill> : answer === 'no' ? (
+                  <div className="cv-row" style={{ gap: 8 }}><Pill icon="CircleMinus">Kept everyone on</Pill><Button size="sm" variant="ghost" onClick={() => setAnswer('ask', 'Service answer reopened')}>Change my answer</Button></div>
+                ) : (
+                  <div className="cv-row" style={{ gap: 8 }}>
+                    <Button icon="Check" onClick={approve}>Approve the cut</Button>
+                    <Button variant="secondary" onClick={() => { setAnswer('no', `${day}: kept everyone on`); cv.toast('Kept everyone on. Logged as declined.'); }}>Not tonight</Button>
+                  </div>
+                )}
+              </>
+            )}
+          </section>
+        </>
+      )}
+    </div>
+  );
+}
+
 function CvService() {
+  if (CV_D.room.fromToast) return <ServiceOwn />;
+  return <CvServiceSample />;
+}
+
+function CvServiceSample() {
   const cv = useCv();
   const s = CV_D.room.service;
   const [state, setState] = useSaved('service', 'ask');
