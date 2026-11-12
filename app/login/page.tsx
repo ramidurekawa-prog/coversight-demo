@@ -8,13 +8,14 @@ import { authClient } from '../../lib/client/auth';
    visitor) starts on its own private copy of the sample group, so every screen
    works at once; connecting Toast replaces it with the restaurant's own data. */
 
-type Mode = 'in' | 'up';
+type Mode = 'in' | 'up' | 'reset';
 
 export default function LoginPage() {
   const [mode, setMode] = React.useState<Mode>('in');
   const [form, setForm] = React.useState({ name: '', email: '', password: '' });
   const [busy, setBusy] = React.useState<null | 'form' | 'sample'>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const [sent, setSent] = React.useState(false);
   const next = () => {
     const n = new URLSearchParams(window.location.search).get('next');
     return n && n.startsWith('/') && !n.startsWith('//') ? n : '/';
@@ -26,6 +27,13 @@ export default function LoginPage() {
     if (busy) return;
     setBusy('form');
     setError(null);
+    if (mode === 'reset') {
+      const r = await authClient.requestPasswordReset({ email: form.email.trim(), redirectTo: '/reset-password/' });
+      setBusy(null);
+      if (r.error) { setError(r.error.message ?? 'Couldn’t send the reset link. Try again.'); return; }
+      setSent(true);
+      return;
+    }
     const res =
       mode === 'in'
         ? await authClient.signIn.email({ email: form.email.trim(), password: form.password })
@@ -63,19 +71,21 @@ export default function LoginPage() {
       <div className="cv-card cv-login-card">
         <div className="cv-col" style={{ gap: 4 }}>
           <span className="cv-over">Coversight</span>
-          <h1 className="cv-h3" style={{ margin: 0 }}>{mode === 'in' ? 'Sign in' : 'Create your account'}</h1>
+          <h1 className="cv-h3" style={{ margin: 0 }}>{mode === 'in' ? 'Sign in' : mode === 'up' ? 'Create your account' : 'Reset your password'}</h1>
           <span className="cv-small cv-muted">Your restaurants’ profit, found and proved.</span>
         </div>
         <form className="cv-col" style={{ gap: 12 }} onSubmit={submit}>
           {mode === 'up' && field('name', 'Your name', 'text', 'name')}
           {field('email', 'Email', 'email', 'email')}
-          {field('password', 'Password', 'password', mode === 'in' ? 'current-password' : 'new-password')}
+          {mode !== 'reset' && field('password', 'Password', 'password', mode === 'in' ? 'current-password' : 'new-password')}
+          {sent && <p className="cv-small" role="status" style={{ margin: 0 }}>If that email has an account, a reset link is on its way. It works for an hour.</p>}
           {error && <p className="cv-small" role="alert" style={{ color: 'var(--error-600)', margin: 0 }}>{error}</p>}
-          <button className="btn btn-primary" type="submit" disabled={!!busy}>{busy === 'form' ? 'One moment…' : mode === 'in' ? 'Sign in' : 'Create account'}</button>
+          <button className="btn btn-primary" type="submit" disabled={!!busy}>{busy === 'form' ? 'One moment…' : mode === 'in' ? 'Sign in' : mode === 'up' ? 'Create account' : 'Email me a reset link'}</button>
         </form>
         <button className="cv-link" type="button" onClick={() => { setMode(mode === 'in' ? 'up' : 'in'); setError(null); }}>
           {mode === 'in' ? 'New here? Create an account' : 'Have an account? Sign in'}
         </button>
+        {mode === 'in' && <button className="cv-link" type="button" onClick={() => { setMode('reset'); setError(null); setSent(false); }}>Forgot your password?</button>}
         <div className="cv-login-sep"><span>or</span></div>
         <button className="btn btn-secondary" type="button" onClick={sample} disabled={!!busy}>
           {busy === 'sample' ? 'Setting up the sample…' : 'Try the sample restaurant group'}

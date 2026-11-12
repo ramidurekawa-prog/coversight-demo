@@ -29,7 +29,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         {/* Hide the screens until the org's data has loaded (no flash of the sample). Fails open after 4 s. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `if(location.pathname.indexOf('/login')!==0){document.documentElement.classList.add('cv-pending');setTimeout(function(){document.documentElement.classList.remove('cv-pending')},4000)}`,
+            __html: `if(!['/login','/reset-password','/join'].some(function(p){return location.pathname.indexOf(p)===0})){document.documentElement.classList.add('cv-pending');setTimeout(function(){document.documentElement.classList.remove('cv-pending')},4000)}`,
           }}
         />
       </head>

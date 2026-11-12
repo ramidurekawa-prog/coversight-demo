@@ -46,8 +46,28 @@ here ships to customers.
   hours, the period package) use `useSaved(key, initial)` from
   `components/engine.js`; each key needs a zod schema and scope in
   `server/actions.ts` `ACTION_KEYS`, or the server refuses it.
+- **Jobs and tests:** `server/jobs.ts` (detection, proof, reverify, cleanup)
+  run from Vercel Cron (`vercel.json` → `/api/cron/<job>`, `CRON_SECRET`) or
+  "Run now". Test windows (`server/proof.ts`) are measured in weeks of the
+  room's *data* via `lib/data/readers.js` and closed with `lib/data/pilot.js`;
+  never book anything outside `windowState`.
+- **Toast exports:** `lib/data/toast.js` reads Toast's data-export CSVs in the
+  browser into the `toast` input kind; `server/toast-schema.ts` bounds it.
+- **Groups and people:** `server/team.ts`. A person can belong to several
+  groups; the `cv-org` cookie picks the one in view (`viewerFor` only honours
+  it for their own memberships). Invite tokens are stored hashed. Never
+  hardcode the sample's room ids in model or screens: derive from `ds.rooms`.
+- **Billing:** `lib/data/billing.js` (pure, cents) builds an invoice from
+  verified test windows only (accrued per day while verified; credits for days
+  billed after a later reversal). `server/billing.ts` drafts monthly, finalizes
+  only after the accountant approves that month's package, and pushes to
+  Stripe only when `STRIPE_SECRET_KEY` is set.
+- **Notifications:** `server/notify.ts` `notify()` for anything an operator
+  should hear about (dedupe key per event); email goes through the outbox and
+  Resend only when `RESEND_API_KEY` + `MAIL_FROM` are set, else it's kept as
+  skipped. Never email a sample guest.
 - **Secrets:** `DATABASE_URL`, `BETTER_AUTH_SECRET`, `CREDENTIALS_KEY`,
-  `CRON_SECRET` live in Vercel env only. Never log, return or export them, or
+  `CRON_SECRET`, `RESEND_API_KEY`, `STRIPE_SECRET_KEY` live in Vercel env only. Never log, return or export them, or
   a Toast client secret.
 
 `pnpm check` = typecheck + tests + build. Run it before pushing.

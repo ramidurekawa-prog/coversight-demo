@@ -187,8 +187,38 @@ function TopBar({ page, loc, onLoc, role, onRole, go, onMenu, onAsk }) {
 }
 
 /** Signed in: which org, whether it's the sample, and sign out. No backend: the old demo label. */
+function Bell() {
+  const eng = useEngine();
+  const router = useRouter();
+  const [open, setOpen] = React.useState(false);
+  const { items, unread } = eng.notes;
+  const when = (d) => new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  return (
+    <span style={{ position: 'relative' }}>
+      <Button size="sm" variant="ghost" icon="Bell" onClick={() => setOpen(!open)} aria-expanded={open} aria-label={`Notifications${unread ? `, ${unread} unread` : ''}`}>{unread ? String(unread) : ''}</Button>
+      {open && (
+        <div className="cv-card" role="dialog" aria-label="Notifications" style={{ position: 'absolute', right: 0, top: '110%', width: 360, maxHeight: 460, overflowY: 'auto', zIndex: 'var(--z-modal)', padding: 12, gap: 0, boxShadow: 'var(--shadow-lg)' }}>
+          <div className="cv-row" style={{ justifyContent: 'space-between', paddingBottom: 8 }}>
+            <span className="cv-h4">Notifications</span>
+            <Button size="sm" variant="ghost" disabled={!unread} onClick={() => engine.markRead('all')}>Mark all read</Button>
+          </div>
+          {items.length === 0 ? <span className="cv-small cv-muted">Nothing yet. Test results, reversed savings and changes that don&apos;t show up in your Toast data land here.</span> : items.map((n) => (
+            <button key={n.id} type="button" className="cv-col" onClick={() => { engine.markRead([n.id]); setOpen(false); if (n.link) router.push(n.link); }}
+              style={{ gap: 2, padding: '10px 0', borderTop: '1px solid var(--border)', textAlign: 'left', background: 'none', border: 0, borderTopStyle: 'solid', cursor: 'pointer', opacity: n.read ? 0.6 : 1, width: '100%' }}>
+              <span className="cv-small" style={{ fontWeight: n.read ? 400 : 700 }}><Icon name={n.severity === 'good' ? 'BadgeCheck' : n.severity === 'warn' ? 'MessageSquareWarning' : 'Info'} size={14} /> {n.title}</span>
+              {n.body && <span className="cv-xs cv-muted">{n.body}</span>}
+              <span className="cv-xs cv-faint">{when(n.createdAt)}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </span>
+  );
+}
+
 function AccountPill() {
   const eng = useEngine();
+  if (eng.mode === 'pending') return null;
   if (eng.mode !== 'server') {
     return (
       <span className="cv-strip-pill">
@@ -200,6 +230,7 @@ function AccountPill() {
     <span className="cv-strip-pill cv-row" style={{ gap: 8 }}>
       <Pill icon={eng.org?.sample ? 'FlaskConical' : 'Building2'}>{eng.org?.sample ? 'Sample group' : eng.org?.name}{eng.viewer?.anonymous ? ' · guest' : ''}</Pill>
       {eng.saving && <span className="cv-xs cv-faint">Saving…</span>}
+      <Bell />
       <Button size="sm" variant="ghost" icon="LogOut" onClick={() => engine.signOut()}>Sign out</Button>
     </span>
   );
@@ -236,7 +267,7 @@ function ModeStrip({ build }) {
 /** The sign-in screen renders on its own; everything else inside the app shell. */
 export function Shell({ children }) {
   const pathname = usePathname();
-  if (pathname?.startsWith('/login')) return children;
+  if (/^\/(login|reset-password|join)(\/|$)/.test(pathname || '')) return children;
   return <AppShell>{children}</AppShell>;
 }
 
@@ -346,7 +377,8 @@ function AppShell({ children }) {
           onConfirm={(id) => {
             engine.act('approvals', { ...(engine.saved('approvals') || {}), [id]: { at: new Date().toISOString() } }, { summary: `${cvApproval(id).title}: approved` });
             approval.onOk && approval.onOk();
-            showToast(`${cvApproval(id).title}: approved and written back.`);
+            void engine.createTask(id, cvApproval(id));
+            showToast(`${cvApproval(id).title}: approved. The steps are on Today under "Approved changes to make".`);
           }}
         />
       )}

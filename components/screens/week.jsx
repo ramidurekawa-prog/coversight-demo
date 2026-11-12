@@ -3,7 +3,10 @@
 import * as React from 'react';
 
 import { Icon, Button } from '../kit';
-import { useSaved } from '../engine';
+import { engine, useEngine, useSaved } from '../engine';
+import { buildOwnQueue } from '../../lib/data/queue';
+import { dataEnd as roomDataEnd } from '../../lib/data/readers';
+import { TasksPanel } from './tasks';
 import { useCv, cvMoney, cvFill, CV_D, CV_ROOM, CV_NOW, CV_PERSIST, cvPlanCandidates, cvChoosePlan, Claim, Money, Pill, Callout, Interval, PageHead, cvScale, SampleNote } from './core';
 
 /* Coversight — weekly and daily surfaces: This week, Today, Service, The plan.
@@ -164,32 +167,44 @@ function CvThisWeek() {
 }
 
 /* ================================================================ Today (work queue) */
+const todayIso = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' });
+
 function CvToday() {
   const cv = useCv();
-  const queue = CV_D.queue.map((q) => ({ ...q, title: cvFill(q.title), value: cvFill(q.value), body: cvFill(q.body) }));
-  const [saved, setSaved] = useSaved('queue', { done: {}, refused: {} });
-  const { done, refused } = saved;
+  const eng = useEngine();
+  const today = todayIso();
+  const own = !!CV_D.room.fromToast;
+  const [dismissed] = useSaved('findings', {});
+  /* A room on its own Toast data gets a queue built from that data every day; the sample keeps its written one. */
+  const queue = own
+    ? buildOwnQueue(CV_D, { today, dataEnd: roomDataEnd(CV_D.room), dismissed, testing: (eng.windows || []).filter((w) => w.roomId === CV_D.id && (w.status === 'running' || w.status === 'waiting')).map((w) => w.lever) })
+    : CV_D.queue.map((q) => ({ ...q, title: cvFill(q.title), value: cvFill(q.value), body: cvFill(q.body) }));
+  const [stored, setSaved] = useSaved('queue', { done: {}, refused: {} });
+  /* Cleared cards count for the day they were cleared; "not for us" lasts 90 days. */
+  const done = Object.fromEntries(Object.entries(stored.done || {}).filter(([, at]) => !own || new Date(at).toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' }) === today));
+  const refused = Object.fromEntries(Object.entries(stored.refused || {}).filter(([, at]) => Date.now() - new Date(at).getTime() < 90 * 864e5));
   const mark = (q, which, summary) => setSaved((s) => ({ ...s, [which]: { ...s[which], [q.id]: new Date().toISOString() } }), summary);
   const left = queue.filter((q) => !done[q.id] && !refused[q.id]);
   const minsLeft = left.reduce((s, q) => s + q.mins, 0);
   const finish = (q, label) => { mark(q, 'done', label || `${q.title} — done`); cv.toast(label || `${q.title} — done`); };
   return (
     <div className="cv-page" style={{ maxWidth: 860 }}>
-      <PageHead over={`${CV_ROOM.name} · ${CV_NOW.label}`} q="Clear this in fifteen minutes"
-        sub="A work queue, not a dashboard. Each card is one decision, with what it's worth and how long it takes." />
+      <PageHead over={`${CV_ROOM.name} · ${own ? new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'America/Los_Angeles' }) : CV_NOW.label}`} q="Clear this in fifteen minutes"
+        sub={own ? `Built this morning from your Toast data through ${roomDataEnd(CV_D.room)}. Each card is one decision, with what it's worth and how long it takes.` : "A work queue, not a dashboard. Each card is one decision, with what it's worth and how long it takes."} />
+      <TasksPanel />
       <div className="cv-col" style={{ gap: 8 }}>
         <div className="cv-row" style={{ justifyContent: 'space-between' }}>
           <span className="cv-small cv-muted">{queue.length - left.length} of {queue.length} cleared</span>
           <span className="cv-small cv-num cv-muted">{minsLeft ? `about ${minsLeft} min left` : 'all clear'}</span>
         </div>
-        <div className="progress"><span style={{ width: `${((queue.length - left.length) / queue.length) * 100}%` }} /></div>
+        <div className="progress"><span style={{ width: `${queue.length ? ((queue.length - left.length) / queue.length) * 100 : 100}%` }} /></div>
       </div>
       {left.length === 0 ? (
         <div className="cv-empty">
           <span className="ico"><Icon name="Check" size={22} /></span>
           <span className="cv-h3">Queue clear</span>
-          <span className="cv-small cv-muted" style={{ maxWidth: 380 }}>Nothing else needs you today. The next check is Thursday at 9 am, when overtime for the weekend is still preventable.</span>
-          <Button variant="secondary" size="sm" onClick={() => setSaved({ done: {}, refused: {} }, 'Queue reset')}>Reset the demo</Button>
+          <span className="cv-small cv-muted" style={{ maxWidth: 380 }}>{own ? 'Nothing else needs you today. Tomorrow’s queue is built overnight from your latest data.' : 'Nothing else needs you today. The next check is Thursday at 9 am, when overtime for the weekend is still preventable.'}</span>
+          <Button variant="secondary" size="sm" onClick={() => setSaved({ done: {}, refused: {} }, 'Queue reset')}>{own ? 'Show today’s cards again' : 'Reset the demo'}</Button>
         </div>
       ) : (
         <div className="cv-col" style={{ gap: 10 }}>
@@ -211,6 +226,8 @@ function CvToday() {
                   {!q.refuse && <Button variant="ghost" size="sm" onClick={() => finish(q, 'Snoozed until tomorrow')}>Snooze</Button>}
                   <Button size="sm" onClick={() => {
                     if (q.approval) cv.approve(q.approval, () => mark(q, 'done', `${q.title}: approved`));
+                    else if (q.start) engine.startWindow(q.start).then((r) => { if (r.ok) { mark(q, 'done', `${q.title}: started`); cv.toast('Test started. The baseline is frozen; each new week of Toast data is a checkpoint.'); } else cv.toast(r.error); });
+                    else if (q.go === 'finding') cv.go('finding', { id: q.goId });
                     else if (q.go) cv.go(q.go, q.input ? { kind: q.input } : undefined);
                     else finish(q);
                   }}>{q.primary}</Button>
@@ -335,8 +352,24 @@ function CvService() {
 }
 
 /* ================================================================ The plan */
+const TASK_LABEL = { open: 'Approved · to make', done: 'Made · waiting for data', verified: 'Confirmed in Toast', mismatch: 'Not in Toast yet' };
+
+/** Where a finding stands: an approval task, a running test, or an estimated cost underneath it. */
+function planStatus(c, eng) {
+  const out = [];
+  const approval = c.kind === 'price' ? `price:${c.item}:${c.to}` : c.kind === 'markup' ? 'delivery-markup' : null;
+  const t = approval && (eng.tasks || []).find((x) => x.roomId === CV_D.id && x.approvalId === approval && x.status !== 'cancelled');
+  if (t) out.push({ tone: t.status === 'verified' ? 'good' : t.status === 'mismatch' ? 'warn' : 'info', icon: 'ListChecks', label: TASK_LABEL[t.status] || t.status });
+  const w = c.kind === 'price' && (eng.windows || []).find((x) => x.roomId === CV_D.id && x.lever === 'menu_margin' && x.dish === c.item && x.status !== 'stopped');
+  if (w) out.push({ tone: w.status === 'verified' ? 'good' : 'info', icon: 'Timer', label: w.status === 'running' ? `Testing · day ${w.day} of 28` : w.status === 'verified' ? 'Verified' : w.status });
+  const dish = c.kind === 'price' && CV_D.room.menu.find((m) => m.key === c.item);
+  if (dish?.costEstimated) out.push({ tone: 'warn', icon: 'Calculator', label: 'Plate cost estimated' });
+  return out;
+}
+
 function CvPlan() {
   const cv = useCv();
+  const eng = useEngine();
   const [plan, setPlan] = useSaved('plan', { hours: CV_D.room.managerHours });
   const hours = plan.hours;
   const setHours = (h) => setPlan({ hours: h }, `Manager hours set to ${h} h`);
@@ -351,7 +384,7 @@ function CvPlan() {
   return (
     <div className="cv-page wide">
       <PageHead over={`${CV_ROOM.name} · this week`} q="What do I do this week?"
-        sub="Not a ranked list of everything. A chosen set that fits the hours you have, ordered by expected value that lasts, per hour of effort." />
+        sub={`Not a ranked list of everything. A chosen set that fits the hours you have, ordered by expected value that lasts, per hour of effort.${CV_D.room.fromToast ? ` Valued from your Toast data through ${roomDataEnd(CV_D.room)}.` : ''}`} />
 
       <section className="cv-card">
         <div className="cv-grid g3" style={{ alignItems: 'end' }}>
@@ -392,7 +425,7 @@ function CvPlan() {
                 <span className="cv-rank">{isIn ? <Icon name="Check" size={14} /> : i + 1}</span>
                 <div className="cv-col" style={{ gap: 3 }}>
                   <span className="t" style={{ fontWeight: 600 }}>{c.title}</span>
-                  <div className="cv-row" style={{ gap: 6 }}><span className="cv-xs cv-faint">{c.lever} · {CV_PERSIST[c.persist].label}</span>{c.prevent && <Pill icon="ShieldCheck">Prevented, not saved</Pill>}</div>
+                  <div className="cv-row" style={{ gap: 6 }}><span className="cv-xs cv-faint">{c.lever} · {CV_PERSIST[c.persist].label}</span>{c.prevent && <Pill icon="ShieldCheck">Prevented, not saved</Pill>}{planStatus(c, eng).map((p) => <Pill key={p.label} tone={p.tone} icon={p.icon}>{p.label}</Pill>)}</div>
                 </div>
                 <div className="cv-col" style={{ alignItems: 'flex-end', gap: 3 }}>
                   <span className="cv-num" style={{ fontWeight: 600 }}>{cvMoney(Math.round(c.value))}</span>

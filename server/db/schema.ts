@@ -4,7 +4,7 @@
 //     itself, stored per room and per kind in the same shape the model reads
 //     (lib/data/seed.js), so every figure is still computed by lib/data/model.js.
 import { relations, sql } from 'drizzle-orm';
-import { boolean, index, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { boolean, doublePrecision, index, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
 
 const at = (name: string) => timestamp(name, { withTimezone: true });
 const timestamps = {
@@ -177,7 +177,210 @@ export const auditLog = pgTable(
   (t) => [index('audit_org_at_idx').on(t.orgId, t.at)],
 );
 
+/** A 28-day test of one lever in one room. Measured in weeks of the room's
+ * data (startedAt is a data week-end), booked at the lower bound of the
+ * effect (lib/data/pilot.js), reversed if a guardrail breaks afterwards. */
+export const windowStatus = pgEnum('window_status', ['running', 'waiting', 'verified', 'rejected', 'reversed', 'stopped']);
+export const testWindows = pgTable(
+  'test_windows',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+    roomId: text('room_id').notNull(),
+    lever: text('lever').notNull(),
+    metric: text('metric').notNull(),
+    dish: text('dish'),
+    title: text('title').notNull(),
+    direction: text('direction').notNull(),
+    baseline: doublePrecision('baseline').notNull(),
+    centsPerUnitWeek: integer('cents_per_unit_week').notNull(),
+    startedAt: text('started_at').notNull(),
+    guard: jsonb('guard').notNull(),
+    status: windowStatus('status').notNull().default('running'),
+    bookedCents: integer('booked_cents').notNull().default(0),
+    lowCents: integer('low_cents'),
+    pointCents: integer('point_cents'),
+    method: text('method'),
+    day: integer('day').notNull().default(0),
+    userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: at('created_at').notNull().defaultNow(),
+    closedAt: at('closed_at'),
+    reversedAt: at('reversed_at'),
+    updatedAt: at('updated_at').notNull().defaultNow(),
+  },
+  (t) => [index('test_windows_org_idx').on(t.orgId, t.status)],
+);
+
+/** What the daily proof loop read at each 7-day checkpoint. */
+export const checkpoints = pgTable(
+  'checkpoints',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    windowId: uuid('window_id').notNull().references(() => testWindows.id, { onDelete: 'cascade' }),
+    day: integer('day').notNull(),
+    weekEnd: text('week_end').notNull(),
+    observed: doublePrecision('observed').notNull(),
+    controlDelta: doublePrecision('control_delta'),
+    services: integer('services').notNull(),
+    recordedAt: at('recorded_at').notNull().defaultNow(),
+  },
+  (t) => [unique('checkpoints_window_day').on(t.windowId, t.day)],
+);
+
+/** Every scheduled job run, per org: what ran, when, and what it found. */
+export const jobRuns = pgTable(
+  'job_runs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    job: text('job').notNull(),
+    orgId: uuid('org_id').references(() => orgs.id, { onDelete: 'cascade' }),
+    trigger: text('trigger').notNull().default('schedule'),
+    startedAt: at('started_at').notNull().defaultNow(),
+    finishedAt: at('finished_at'),
+    ok: boolean('ok'),
+    detail: jsonb('detail'),
+  },
+  (t) => [index('job_runs_org_idx').on(t.orgId, t.startedAt)],
+);
+
+/** The nightly detection's latest output per room (levers, findings, the week). */
+export const snapshots = pgTable(
+  'snapshots',
+  {
+    orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+    roomId: text('room_id').notNull(),
+    kind: text('kind').notNull(),
+    data: jsonb('data').notNull(),
+    at: at('at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.orgId, t.roomId, t.kind] })],
+);
+
+/** A guided write-back: an approved change the manager makes in another
+ * system, ticks off here, and the next data upload confirms where it can. */
+export const taskStatus = pgEnum('task_status', ['open', 'done', 'verified', 'mismatch', 'cancelled']);
+export const tasks = pgTable(
+  'tasks',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+    roomId: text('room_id').notNull(),
+    approvalId: text('approval_id').notNull(),
+    title: text('title').notNull(),
+    system: text('system').notNull(),
+    steps: jsonb('steps').$type<string[]>().notNull(),
+    expect: jsonb('expect').notNull(),
+    status: taskStatus('status').notNull().default('open'),
+    note: text('note'),
+    createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+    doneBy: text('done_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: at('created_at').notNull().defaultNow(),
+    doneAt: at('done_at'),
+    checkedAt: at('checked_at'),
+  },
+  (t) => [index('tasks_org_status_idx').on(t.orgId, t.status)],
+);
+
+/** In-app notifications: what changed that someone should know (a test
+ * closed, a guardrail reversed a result, a change didn't show up in the data). */
+export const notifications = pgTable(
+  'notifications',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+    roomId: text('room_id'),
+    kind: text('kind').notNull(),
+    severity: text('severity').notNull().default('info'),
+    title: text('title').notNull(),
+    body: text('body').notNull().default(''),
+    link: text('link'),
+    dedupe: text('dedupe'),
+    createdAt: at('created_at').notNull().defaultNow(),
+  },
+  (t) => [index('notifications_org_idx').on(t.orgId, t.createdAt), unique('notifications_dedupe').on(t.orgId, t.dedupe)],
+);
+
+export const notificationReads = pgTable(
+  'notification_reads',
+  {
+    notificationId: uuid('notification_id').notNull().references(() => notifications.id, { onDelete: 'cascade' }),
+    userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    at: at('at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.notificationId, t.userId] })],
+);
+
+/** Every email or text Coversight would send, and whether it went: queued,
+ * sent, held (quiet hours), draft (no address: the operator sends it), skipped
+ * (no provider configured) or failed. */
+export const outbox = pgTable(
+  'outbox',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+    notificationId: uuid('notification_id').references(() => notifications.id, { onDelete: 'set null' }),
+    channel: text('channel').notNull(),
+    kind: text('kind').notNull(),
+    toAddress: text('to_address'),
+    toUserId: text('to_user_id').references(() => users.id, { onDelete: 'set null' }),
+    subject: text('subject').notNull(),
+    body: text('body').notNull(),
+    status: text('status').notNull().default('queued'),
+    providerId: text('provider_id'),
+    error: text('error'),
+    createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: at('created_at').notNull().defaultNow(),
+    sentAt: at('sent_at'),
+  },
+  (t) => [index('outbox_status_idx').on(t.status, t.createdAt), index('outbox_org_idx').on(t.orgId, t.createdAt)],
+);
+
+/** An invite link to join an org as owner, GM (with rooms) or admin. Only a
+ * hash of the token is stored; the link is shown once. */
+export const invites = pgTable(
+  'invites',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+    role: memberRole('role').notNull(),
+    rooms: jsonb('rooms').$type<string[] | null>(),
+    email: text('email'),
+    tokenHash: text('token_hash').notNull().unique(),
+    createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: at('created_at').notNull().defaultNow(),
+    expiresAt: at('expires_at').notNull(),
+    acceptedBy: text('accepted_by').references(() => users.id, { onDelete: 'set null' }),
+    acceptedAt: at('accepted_at'),
+    revokedAt: at('revoked_at'),
+  },
+  (t) => [index('invites_org_idx').on(t.orgId)],
+);
+
+/** A month's invoice: subscription + fee on reconciled (verified, lower-bound)
+ * savings − credits. Drafts recalculate; a final invoice is frozen. */
+export const invoices = pgTable(
+  'invoices',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+    period: text('period').notNull(),
+    status: text('status').notNull().default('draft'),
+    lines: jsonb('lines').notNull(),
+    accruals: jsonb('accruals').notNull(),
+    pricing: jsonb('pricing').notNull(),
+    reconciledCents: integer('reconciled_cents').notNull(),
+    totalCents: integer('total_cents').notNull(),
+    stripeInvoiceId: text('stripe_invoice_id'),
+    stripeUrl: text('stripe_url'),
+    createdAt: at('created_at').notNull().defaultNow(),
+    updatedAt: at('updated_at').notNull().defaultNow(),
+    finalizedAt: at('finalized_at'),
+    finalizedBy: text('finalized_by').references(() => users.id, { onDelete: 'set null' }),
+  },
+  (t) => [unique('invoices_org_period').on(t.orgId, t.period)],
+);
+
 export const orgRelations = relations(orgs, ({ many }) => ({ rooms: many(rooms), memberships: many(memberships) }));
 
-export const schema = { users, sessions, accounts, verifications, orgs, memberships, rooms, roomData, inputs, actions, auditLog, memberRole };
+export const schema = { users, sessions, accounts, verifications, orgs, memberships, rooms, roomData, inputs, actions, auditLog, memberRole, windowStatus, testWindows, checkpoints, jobRuns, snapshots, taskStatus, tasks, notifications, notificationReads, outbox, invites, invoices };
 

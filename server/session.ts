@@ -1,7 +1,7 @@
 // Who is asking, and which org they're looking at. Better Auth says who; our
 // memberships say what they can see. A "try the sample" visitor (anonymous)
 // with no org yet gets a private copy of the sample group on first load.
-import { eq, sql } from 'drizzle-orm';
+import { asc, eq, sql } from 'drizzle-orm';
 
 import { getAuth } from './auth';
 import { getDb, type Db } from './db/client';
@@ -20,7 +20,10 @@ export async function viewerFor(headers: Headers, db: Db = getDb()): Promise<Vie
   const session = await getAuth().api.getSession({ headers });
   if (!session) throw new AuthError(401, 'Sign in to see Coversight.');
   const userId = session.user.id;
-  let [m] = await db.select().from(memberships).where(eq(memberships.userId, userId));
+  const all = await db.select().from(memberships).where(eq(memberships.userId, userId)).orderBy(asc(memberships.createdAt));
+  // The group picked in the switcher (cookie), if this person still belongs to it; else their first.
+  const want = orgCookie(headers);
+  let m = all.find((x) => x.orgId === want) ?? all[0];
   if (!m) {
     // Every new account starts on its own copy of the sample group, so every
     // page works on day one; connecting Toast replaces it with real data.
@@ -34,6 +37,17 @@ export async function viewerFor(headers: Headers, db: Db = getDb()): Promise<Vie
     if (!m) throw new AuthError(403, 'No organization for this account.');
   }
   return { userId, anonymous: !!(session.user as { isAnonymous?: boolean }).isAnonymous, orgId: m.orgId, role: m.role, rooms: m.rooms ?? null };
+}
+
+export const ORG_COOKIE = 'cv-org';
+export function orgCookie(headers: Headers) {
+  const m = /(?:^|;\s*)cv-org=([0-9a-f-]{36})/.exec(headers.get('cookie') ?? '');
+  return m ? m[1] : null;
+}
+/** Set-Cookie for the group switcher (or clear it with null). */
+export function setOrgCookie(orgId: string | null) {
+  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+  return orgId ? `${ORG_COOKIE}=${orgId}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000${secure}` : `${ORG_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`;
 }
 
 /** Turn a thrown error into a JSON response. */

@@ -35,7 +35,12 @@ export const DISHES = [
 ];
 const SERVERS = ['Ana P.', 'Ben K.', 'Cara L.', 'Dev S.'];
 
-export function toastFixture({ weeks = 13, end = Date.UTC(2026, 9, 25), seed = 7, dinnerServers = 3 } = {}) {
+/** otCut: from this time on, the cooks stop working Saturday overtime (what a test on the overtime lever changes). */
+/**
+ * priceChange: guests pay the new price from that time on.
+ * @param {{ weeks?: number, end?: number, seed?: number, dinnerServers?: number, otCut?: number, priceChange?: { dish: string, price: number, from: number } | null }} [opts]
+ */
+export function toastFixture({ weeks = 13, end = Date.UTC(2026, 9, 25), seed = 7, dinnerServers = 3, otCut = Infinity, priceChange = null } = {}) {
   const rand = rng(seed);
   const items = [], orders = [], time = [], payments = [], kitchen = [];
   let orderNo = 1000;
@@ -61,7 +66,8 @@ export function toastFixture({ weeks = 13, end = Date.UTC(2026, 9, 25), seed = 7
         let amount = 0;
         for (let g = 0; g < guests + 1; g++) {
           let r = rand() * DISHES.reduce((s, d) => s + d.w, 0);
-          const dish = DISHES.find((d) => (r -= d.w) < 0) || DISHES[0];
+          const base = DISHES.find((d) => (r -= d.w) < 0) || DISHES[0];
+          const dish = priceChange && base.name === priceChange.dish && opened >= priceChange.from ? { ...base, price: priceChange.price } : base;
           const voided = rand() < 0.02;
           const sent = opened + 4 * 6e4;
           items.push({
@@ -87,7 +93,7 @@ export function toastFixture({ weeks = 13, end = Date.UTC(2026, 9, 25), seed = 7
   }
   const timeRows = time.map((t, i) => {
     const hours = (t.out - t.in) / 36e5;
-    const ot = t.job === 'Line Cook' && new Date(t.in).getUTCDay() === 6 ? 2 : 0;
+    const ot = t.job === 'Line Cook' && new Date(t.in).getUTCDay() === 6 && t.in < otCut ? 2 : 0;
     return {
       Location: 'Fixture Bistro', 'Location Code': 'FB', Id: i, GUID: `te-${i}`, 'Employee Id': t.emp, 'Employee GUID': t.emp, 'Employee External Id': '', Employee: t.emp, 'Job Id': t.job, 'Job GUID': t.job, 'Job Code': '', 'Job Title': t.job,
       'In Date': toastDate(t.in), 'Out Date': toastDate(t.out), 'Total Hours': hours.toFixed(2), 'Unpaid Break Time': '0', 'Paid Break Time': '0', 'Payable Hours': hours.toFixed(2),
