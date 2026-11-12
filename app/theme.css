@@ -1,0 +1,109 @@
+/* =============================================================================
+   Coversight · Midnight & Brass
+   Overrides the design-system tokens in globals.css (loaded after it).
+   Light: ink-navy structure, brass accent, warm paper canvas.
+   Dark: near-black terminal, brass accent.
+   Status hues keep their meaning (green good, red bad, blue monitoring); the
+   warning hue moves to burnt orange so it can never be confused with brass.
+   ============================================================================= */
+
+:root {
+  --font-sans: 'IBM Plex Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  --font-wordmark: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+
+  /* Brass replaces the teal ramp everywhere components reference it. */
+  --teal-50: #F7F0DC;  --teal-100: #EFE2BC; --teal-200: #E3CD8F; --teal-300: #D4B562; --teal-400: #C29E3F;
+  --teal-500: #A9862A; --teal-600: #8F6A12; --teal-700: #7A5A0E; --teal-800: #654A0B; --teal-900: #503A08;
+
+  --background: #F5F2EA;
+  --surface: #FFFFFF;
+  --surface-sunken: #EFEBE1;
+  --surface-hover: #F3EFE6;
+  --fg-1: #141C28;
+  --fg-2: #4E5866;
+  --fg-3: #5E6672;
+  --border: #E4DFD3;
+  --border-strong: #D2CBBB;
+  --border-focus: #8F6A12;
+
+  --primary: #141C28;          /* ink-navy actions */
+  --primary-hover: #22304A;
+  --primary-active: #0B111A;
+  --primary-fg: #FFFFFF;
+  --fg-on-accent: #FFFFFF;
+  --accent: #8F6A12;           /* brass: links, key figures, focus */
+  --accent-subtle: #F7F0DC;
+  --ring: 0 0 0 3px rgba(143, 106, 18, 0.30);
+
+  /* Warning → burnt orange (brass owns gold). */
+  --warning-50: #FFF1E8; --warning-100: #FFDCC6; --warning-500: #EA580C; --warning-600: #C2410C; --warning-700: #9A3412;
+  --exposure-1: #FFF1E8; --exposure-2: #FFDCC6; --exposure-6: #C2410C; --exposure: #C2410C;
+
+  --cat-1: #141C28;
+  --cat-2: #B08A2E;
+  --cat-3: #7D8896;
+
+  /* Flat, precise geometry. Overlays keep their shadows. */
+  --radius-xs: 2px; --radius-sm: 2px; --radius-md: 3px; --radius-lg: 4px; --radius-xl: 6px;
+  --shadow-xs: none;
+  --shadow-sm: none;
+
+  --side-bg: #111A28; --side-fg: #E9E4D6; --side-mute: #8C93A0; --side-active: #22304A; --side-active-fg: #F2D58A; --side-line: #1E2A3D;
+}
+
+/* ---- Dark: the terminal ---------------------------------------------------- */
+[data-theme="dark"] {
+  --teal-50: #2A2212;  --teal-100: #3A2E15; --teal-200: #4A3A18; --teal-300: #8C6E2A; --teal-400: #C79C3A;
+  --teal-500: #D9AB45; --teal-600: #E2B54A; --teal-700: #E2B54A; --teal-800: #F0C463; --teal-900: #F5D488;
+  --neutral-0: #14161D;
+  --background: #0B0C10; --surface: #14161D; --surface-sunken: #0F1116; --surface-hover: #1A1D26;
+  --fg-1: #EAEAF0; --fg-2: #A3A6B5; --fg-3: #8E91A2;
+  --border: #242734; --border-strong: #333747; --border-focus: #E2B54A;
+  --primary: #E2B54A; --primary-hover: #F0C463; --primary-active: #C99A30; --primary-fg: #14130F; --fg-on-accent: #14130F;
+  --accent: #E2B54A; --accent-subtle: #2A2212;
+  --ring: 0 0 0 3px rgba(226, 181, 74, 0.35);
+  --money-up: #3DDC84; --money-down: #FF5C5C;
+  --warning-50: #2B1A10; --warning-100: #3D2414; --warning-500: #FF7A2E; --warning-600: #FF8A3D; --warning-700: #FFA466;
+  --exposure-1: #2B1A10; --exposure-2: #3D2414; --exposure-6: #FF8A3D; --exposure: #FF8A3D;
+  --cat-1: #E2B54A; --cat-2: #7FB2FF; --cat-3: #A3A6B5;
+  --side-bg: #08090C; --side-fg: #D9D6CC; --side-mute: #7E828F; --side-active: #1C1A12; --side-active-fg: #E2B54A; --side-line: #171920;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --teal-50: #2A2212;  --teal-100: #3A2E15; --teal-200: #4A3A18; --teal-300: #8C6E2A; --teal-400: #C79C3A;
+    --teal-500: #D9AB45; --teal-600: #E2B54A; --teal-700: #E2B54A; --teal-800: #F0C463; --teal-900: #F5D488;
+    --neutral-0: #14161D;
+    --background: #0B0C10; --surface: #14161D; --surface-sunken: #0F1116; --surface-hover: #1A1D26;
+    --fg-1: #EAEAF0; --fg-2: #A3A6B5; --fg-3: #8E91A2;
+    --border: #242734; --border-strong: #333747; --border-focus: #E2B54A;
+    --primary: #E2B54A; --primary-hover: #F0C463; --primary-active: #C99A30; --primary-fg: #14130F; --fg-on-accent: #14130F;
+    --accent: #E2B54A; --accent-subtle: #2A2212;
+    --ring: 0 0 0 3px rgba(226, 181, 74, 0.35);
+    --money-up: #3DDC84; --money-down: #FF5C5C;
+    --warning-50: #2B1A10; --warning-100: #3D2414; --warning-500: #FF7A2E; --warning-600: #FF8A3D; --warning-700: #FFA466;
+    --exposure-1: #2B1A10; --exposure-2: #3D2414; --exposure-6: #FF8A3D; --exposure: #FF8A3D;
+    --cat-1: #E2B54A; --cat-2: #7FB2FF; --cat-3: #A3A6B5;
+    --side-bg: #08090C; --side-fg: #D9D6CC; --side-mute: #7E828F; --side-active: #1C1A12; --side-active-fg: #E2B54A; --side-line: #171920;
+  }
+}
+
+/* ---- The signature: an ink-navy rail in both modes ------------------------- */
+.sidebar { background: var(--side-bg); border-color: var(--side-line); color: var(--side-fg); }
+.sidebar .cv-brand .wm, .sidebar .navitem, .sidebar .userchip { color: var(--side-fg); }
+.sidebar .navitem svg, .sidebar .cv-navgroup, .sidebar [class*="seclbl"], .sidebar .userchip .sub, .sidebar .navsec-rule { color: var(--side-mute); border-color: var(--side-line); }
+.sidebar .navitem:hover { background: var(--side-active); }
+.sidebar .navitem.active { background: var(--side-active); color: var(--side-active-fg); }
+.sidebar .navitem.active svg { color: var(--side-active-fg); }
+.sidebar .navitem.active::before { background: var(--side-active-fg); }
+.sidebar .navitem .cv-new { color: var(--side-active-fg); background: rgba(242, 213, 138, 0.12); }
+
+/* Money and figures always set in tabular mono. */
+.cv-fig, .cv-num { font-family: var(--font-mono); font-variant-numeric: tabular-nums lining-nums; letter-spacing: -0.01em; }
+h1, .cv-h4 { letter-spacing: -0.012em; }
+
+/* Theme switch in the top strip. */
+.cv-theme { display: inline-flex; padding: 2px; gap: 2px; border-radius: var(--radius-md); background: var(--surface-sunken); border: 1px solid var(--border); }
+.cv-theme button { height: 24px; padding: 0 9px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--fg-2); font: 600 var(--text-xs)/1 var(--font-sans); cursor: pointer; }
+.cv-theme button.on { background: var(--surface); color: var(--fg-1); }
+.cv-theme button:focus-visible { outline: none; box-shadow: var(--ring); }

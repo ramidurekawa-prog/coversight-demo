@@ -236,6 +236,24 @@ function AccountPill() {
   );
 }
 
+/** Auto (follow the device), Light or Dark. Kept per browser; the page renders fine without storage. */
+function ThemeSwitch() {
+  const [t, setT] = React.useState('auto');
+  React.useEffect(() => { try { setT(localStorage.getItem('cv-theme') || 'auto'); } catch {} }, []);
+  const pick = (v) => {
+    setT(v);
+    try { v === 'auto' ? localStorage.removeItem('cv-theme') : localStorage.setItem('cv-theme', v); } catch {}
+    if (v === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = v;
+  };
+  return (
+    <span className="cv-theme" role="radiogroup" aria-label="Appearance">
+      {[['auto', 'Auto'], ['light', 'Light'], ['dark', 'Dark']].map(([v, l]) => (
+        <button key={v} type="button" role="radio" aria-checked={t === v} className={t === v ? 'on' : ''} onClick={() => pick(v)}>{l}</button>
+      ))}
+    </span>
+  );
+}
+
 function ModeStrip({ build }) {
   return (
     <nav className="cv-strip" aria-label="Demo view">
@@ -259,6 +277,7 @@ function ModeStrip({ build }) {
         )}
       </span>
       <span className="spacer" />
+      <ThemeSwitch />
       <AccountPill />
     </nav>
   );
