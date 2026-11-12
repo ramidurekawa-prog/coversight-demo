@@ -1,0 +1,55 @@
+/* Service page only. Tokens and kit classes come from app/globals.css. */
+
+.status { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 4px; }
+.status .day { font-weight: 700; }
+.source { display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-xs); color: var(--fg-2); }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--fg-3); flex-shrink: 0; }
+.dot.live { background: var(--success-600); box-shadow: 0 0 0 3px var(--success-50); animation: pulse 2s ease-in-out infinite; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 6px transparent; } }
+@media (prefers-reduced-motion: reduce) { .dot.live { animation: none; } }
+
+.hero { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.paceChip { display: inline-flex; align-items: center; gap: 4px; font: 600 var(--text-xs)/1 var(--font-mono); padding: 4px 7px; border-radius: var(--radius-sm); border: 1px solid var(--border); }
+
+/* The call: one card, its tone set by what it asks. */
+.call { border-left-width: 3px; }
+.call.cut { border-color: var(--claim-cau-line); border-left-color: var(--accent); }
+.call.wait { border-left-color: var(--warning-500); }
+.call.quiet { border-left-color: var(--success-600); }
+.call.idle { border-left-color: var(--border-strong); }
+.callHead { display: flex; align-items: center; gap: 8px; }
+.callIcon { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-sunken); color: var(--fg-2); flex-shrink: 0; }
+.cut .callIcon { background: var(--accent-subtle); color: var(--accent); }
+.wait .callIcon { background: var(--warning-50); color: var(--warning-600); }
+.quiet .callIcon { background: var(--success-50); color: var(--success-600); }
+.callTitle { font-weight: 700; font-size: var(--text-lg); line-height: 1.25; }
+.callBody { font-size: var(--text-sm); color: var(--fg-2); line-height: 1.5; }
+.actions { display: flex; gap: 8px; }
+.actions > :first-child { flex: 1; }
+
+.tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.tile { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 10px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.tile .v { font: 600 var(--text-base)/1.2 var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* Tonight hour by hour: covers as a bar, servers as seats (filled = needed, open = spare). */
+.hours { display: flex; flex-direction: column; gap: 2px; }
+.hourRow { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 6px 8px; border-radius: var(--radius-md); }
+.hourRow.cutting { background: var(--accent-subtle); }
+.hourLabel { font: 500 var(--text-xs)/1 var(--font-mono); color: var(--fg-2); }
+.barTrack { height: 8px; border-radius: 99px; background: var(--surface-sunken); overflow: hidden; }
+.bar { height: 100%; border-radius: 99px; background: var(--accent); opacity: 0.75; }
+.seats { display: inline-flex; gap: 3px; align-items: center; }
+.seat { width: 9px; height: 9px; border-radius: 50%; background: var(--fg-2); }
+.seat.spare { background: transparent; border: 1.5px solid var(--fg-3); }
+.seat.gone { background: transparent; border: 1.5px dashed var(--accent); }
+.hourMeta { font: 500 var(--text-xs)/1 var(--font-mono); color: var(--fg-3); min-width: 54px; text-align: right; }
+
+.fences { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.fence { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: var(--radius-md); background: var(--surface-sunken); }
+.fence .v { font: 600 var(--text-base)/1.2 var(--font-mono); }
+.fence.on { outline: 1.5px solid var(--warning-500); outline-offset: -1.5px; }
+
+@media (max-width: 520px) {
+  .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .hourRow { gap: 8px; padding: 6px 4px; }
+}

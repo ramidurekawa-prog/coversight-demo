@@ -49,6 +49,8 @@ export const ACTION_KEYS = {
   autonomy: { scope: 'room', schema: z.record(z.string().min(1).max(40), z.number().int().min(0).max(4)) },
   /** Pricing on the invoice: per room per month, and the fee on reconciled savings. */
   pricing: { scope: 'group', schema: z.object({ perRoomMonthlyCents: z.number().int().min(0).max(1_000_000), feePct: z.number().min(0).max(50) }) },
+  /** Service: tonight's answer to the one staffing call, per night (the room's local date). */
+  'service.night': { scope: 'room', schema: z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), answer: z.enum(['ask', 'yes', 'no']), at: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable(), approvalId: z.string().max(120).optional() }) },
 } as const;
 
 export type ActionKey = keyof typeof ACTION_KEYS;
