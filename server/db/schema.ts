@@ -444,7 +444,85 @@ export const linkedSources = pgTable(
   (t) => [index('linked_sources_org_idx').on(t.orgId)],
 );
 
+/* ---------------------------------------------------------------- the crew */
+/** One run of the agent crew for a group: what started it and what came of it. */
+export const agentCycles = pgTable(
+  'agent_cycles',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+    trigger: text('trigger').notNull(),
+    startedAt: at('started_at').notNull().defaultNow(),
+    finishedAt: at('finished_at'),
+    summary: jsonb('summary'),
+  },
+  (t) => [index('agent_cycles_org_idx').on(t.orgId, t.startedAt)],
+);
+
+/** Each handoff on the crew's bus: who raised it, who it went to. */
+export const agentEvents = pgTable(
+  'agent_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+    cycleId: uuid('cycle_id').notNull().references(() => agentCycles.id, { onDelete: 'cascade' }),
+    seq: integer('seq').notNull(),
+    type: text('type').notNull(),
+    from: text('from_agent').notNull(),
+    to: jsonb('to_agents').$type<string[]>().notNull(),
+    roomId: text('room_id'),
+    payload: jsonb('payload').notNull(),
+    at: at('at').notNull().defaultNow(),
+  },
+  (t) => [index('agent_events_cycle_idx').on(t.cycleId, t.seq)],
+);
+
+/** One agent handling one event: what it applied, what policy refused. */
+export const agentRuns = pgTable(
+  'agent_runs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+    cycleId: uuid('cycle_id').notNull().references(() => agentCycles.id, { onDelete: 'cascade' }),
+    agent: text('agent').notNull(),
+    trigger: text('trigger').notNull(),
+    roomId: text('room_id'),
+    ms: integer('ms').notNull(),
+    ok: boolean('ok').notNull(),
+    error: text('error'),
+    applied: jsonb('applied').notNull(),
+    refused: jsonb('refused').notNull(),
+    notes: jsonb('notes').$type<string[]>().notNull(),
+    at: at('at').notNull().defaultNow(),
+  },
+  (t) => [index('agent_runs_org_agent_idx').on(t.orgId, t.agent, t.at)],
+);
+
+/** What the crew puts in front of a person. One row per key; a decision is final for 14 days. */
+export const agentProposals = pgTable(
+  'agent_proposals',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+    key: text('key').notNull(),
+    agent: text('agent').notNull(),
+    kind: text('kind').notNull(),
+    roomId: text('room_id'),
+    title: text('title').notNull(),
+    body: text('body').notNull().default(''),
+    needs: text('needs').notNull().default('human'),
+    payload: jsonb('payload').notNull(),
+    status: text('status').notNull().default('open'),
+    decidedBy: text('decided_by'),
+    decidedAt: at('decided_at'),
+    note: text('note'),
+    createdAt: at('created_at').notNull().defaultNow(),
+    updatedAt: at('updated_at').notNull().defaultNow(),
+  },
+  (t) => [unique('agent_proposals_org_key').on(t.orgId, t.key), index('agent_proposals_org_status_idx').on(t.orgId, t.status)],
+);
+
 export const orgRelations = relations(orgs, ({ many }) => ({ rooms: many(rooms), memberships: many(memberships) }));
 
-export const schema = { users, sessions, accounts, verifications, orgs, memberships, rooms, roomData, inputs, actions, auditLog, memberRole, windowStatus, testWindows, checkpoints, jobRuns, snapshots, taskStatus, tasks, notifications, notificationReads, outbox, invites, invoices, toastConnections, posDays, linkedSources };
+export const schema = { users, sessions, accounts, verifications, orgs, memberships, rooms, roomData, inputs, actions, auditLog, memberRole, windowStatus, testWindows, checkpoints, jobRuns, snapshots, taskStatus, tasks, notifications, notificationReads, outbox, invites, invoices, toastConnections, posDays, linkedSources, agentCycles, agentEvents, agentRuns, agentProposals };
 

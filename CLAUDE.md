@@ -66,6 +66,15 @@ here ships to customers.
     and re-reads linked ones daily (`links` job), committing only tabs with
     zero errors. `server/extract.ts` reads a photo or PDF into rows with
     Claude when `ANTHROPIC_API_KEY` is set; rows always go back for review.
+- **The agent crew:** `lib/agents/` (pure). `crew.js` holds the 19 roles; each
+  subscribes to events and returns *effects*; `policy.js` `authorize()` checks
+  every effect (permission level, the one agent a job belongs to, and the
+  eleven `NEVER` rules) before `cycle.js` applies it through a store
+  (`server/agents/store.ts` on Postgres, `memory-store.js` in the browser
+  preview and tests). Agents never start tests, write back, raise autonomy,
+  commit data or confirm mappings: a person's accept in `server/agents/service.ts`
+  does that, as that person. `tests/crew-scenarios.test.js` grades the crew on
+  scenarios; add one when an agent learns something new.
 - **Groups and people:** `server/team.ts`. A person can belong to several
   groups; the `cv-org` cookie picks the one in view (`viewerFor` only honours
   it for their own memberships). Invite tokens are stored hashed. Never
