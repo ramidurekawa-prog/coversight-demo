@@ -873,14 +873,18 @@ const gradeIcon = (g) => ({ A: 'BadgeCheck', 'A−': 'CircleCheck', Clear: 'Circ
 
 function CvLevers() {
   const cv = useCv();
-  const roomId = cv.loc === 'all' ? 'oakland' : cv.loc;
+  const eng = useEngine();
+  const roomId = cv.loc === 'all' ? CV_D.id : cv.loc;
   const room = CV_DS.rooms[roomId];
-  const levers = React.useMemo(() => leverReport(room), [room]);
+  const levers = React.useMemo(() => leverReport(room, roomId === CV_D.id ? CV_D : undefined), [room, roomId]);
   const [open, setOpen] = React.useState(null);
+  const own = !!room.fromToast;
+  const testOf = (key) => (eng.windows || []).find((w) => w.roomId === roomId && w.lever === key && (w.status === 'running' || w.status === 'waiting' || w.status === 'verified'));
+  const start = async (key) => { const r = await engine.startWindow(key, { roomId }); cv.toast(r.ok ? 'Test started. Baseline frozen; each new week of data is a checkpoint.' : r.error); };
   return (
     <div className="cv-page wide">
-      <PageHead over={`Levers · ${locOf(roomId).name}`} q="Is every lever running on measurement?"
-        sub="Each of the six Toast-fed levers, graded on five bars: it reads the room's own data, no number in its dollars is made up, a 28-day test could prove it, there's an untouched comparison to subtract, and a verified test books dollars. Every figure is computed in your browser from this room's sample observations."
+      <PageHead over={`Levers · ${locOf(roomId)?.name ?? CV_ROOM.name}`} q="Is every lever running on measurement?"
+        sub={`Each of the six Toast-fed levers, graded on five bars: it reads the room's own data, no number in its dollars is made up, a 28-day test could prove it, there's an untouched comparison to subtract, and a verified test books dollars. ${own ? `Every figure reads this room's own Toast data through ${room.fromToast.end}.` : 'Every figure here is computed from this room’s sample observations until its Toast data is loaded.'}`}
         right={cv.loc === 'all' && <Pill icon="Building2">Showing Oakland; pick a room in the top bar</Pill>} />
       <section className="cv-card flush">
         <div className="cv-tablewrap" tabIndex={0} role="group" aria-label="Scrollable table">
@@ -908,6 +912,12 @@ function CvLevers() {
                         <b>Test power:</b> {l.mde === null ? 'not enough spread to say' : `a 28-day test proves effects of ${l.mde.toFixed(2)} ${l.unit} or more; this one expects ${Math.abs(l.expectedUnits ?? 0).toFixed(2)}`}.{' '}
                         <b>Controls:</b> {l.controlNote}.
                         {l.conf && <> <b>Confidence:</b> {Math.round(l.conf.stability * 100)}% of weeks held × sample {Math.round(l.conf.sample * 100)}%{l.conf.estimatedShare ? `, ${Math.round(l.conf.estimatedShare * 100)}% inferred` : ''}.</>}
+                        {eng.mode === 'server' && (() => {
+                          const w = testOf(l.key);
+                          if (w) return <span className="cv-row" style={{ gap: 6, marginTop: 6 }}><Pill tone={w.status === 'verified' ? 'good' : 'info'} icon="Timer">{w.status === 'verified' ? 'Verified' : `Testing · day ${w.day} of 28`}</Pill><button className="cv-link" onClick={() => cv.go('windows')}>See the test</button></span>;
+                          if (l.key === 'menu_margin') return <span className="cv-row" style={{ marginTop: 6 }}><button className="cv-link" onClick={() => cv.go('windows')}>Pick a dish to test on Test windows</button></span>;
+                          return l.weekly > 0 ? <span className="cv-row" style={{ marginTop: 6 }}><Button size="sm" icon="Play" onClick={(e) => { e.stopPropagation(); start(l.key); }}>Start a 28-day test</Button></span> : null;
+                        })()}
                       </td>
                     </tr>
                   )}
@@ -931,9 +941,10 @@ function CvLevers() {
         <section className="cv-card">
           <span className="cv-h4">Still not 100%</span>
           <ul className="cv-ul">
-            <li><Icon name="ChefHat" size={15} />Ticket times: Toast's Standard API has no kitchen timings. Blocked until partner access.</li>
+            <li><Icon name="ChefHat" size={15} />Ticket times: {own && room.fromToast.files?.includes('kitchen') ? 'measured from your Toast kitchen timings, but not a lever until a waitlist shows who was turned away.' : 'need the KitchenTimings export (Toast’s Standard API has no kitchen timings).'}</li>
             <li><Icon name="Shuffle" size={15} />Mix: the whole menu moves together, so there's no untouched comparison; a test is a before/after.</li>
-            <li><Icon name="FlaskConical" size={15} />All of this runs on sample observations. It becomes real when a restaurant's own Toast data is behind it.</li>
+            <li><Icon name="GitCompareArrows" size={15} />Matched controls aren&apos;t subtracted in real tests yet, so every real test is a before/after against its frozen baseline.</li>
+            {!own && <li><Icon name="FlaskConical" size={15} />This room runs on sample observations. Load its Toast data exports to put every lever on its own numbers.</li>}
           </ul>
         </section>
       </div>
