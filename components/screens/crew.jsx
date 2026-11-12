@@ -53,6 +53,8 @@ async function jfetch(url, init) {
   return j;
 }
 
+const usd = (v) => `${v < 0 ? '−' : ''}$${Math.abs(Math.round(v)).toLocaleString('en-US')}`;
+
 /** "1539" in "$/wk" → "$1,539/wk"; other units stay as they are. */
 const amt = (v, unit) => (v == null ? '—' : /^\$/.test(unit ?? '') ? `$${Math.round(v).toLocaleString('en-US')}${unit.slice(1)}` : `${(+v).toLocaleString('en-US', { maximumFractionDigits: 1 })} ${unit}`);
 
@@ -78,7 +80,7 @@ function Proposal({ p, canDecide, onDecide, busy }) {
     <div className="cv-col" style={{ gap: 6, padding: '12px 14px', borderTop: '1px solid var(--border)' }} data-proposal={p.key}>
       <div className="cv-row" style={{ justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
         <span className="cv-row" style={{ gap: 6, flexWrap: 'wrap' }}><Pill icon={icon}>{k}</Pill><span className="cv-xs cv-faint">{roomName(p.roomId)} · from {nameOf[p.agent] ?? p.agent}</span></span>
-        {p.kind === 'plan' && <span className="cv-xs cv-num">~${pl.value}/wk <span className="cv-faint">({pl.lo}–{pl.hi}, estimate)</span></span>}
+        {p.kind === 'plan' && <span className="cv-xs cv-num">~{usd(pl.value)}/wk <span className="cv-faint">({usd(pl.lo)} to {usd(pl.hi)}, estimate)</span></span>}
       </div>
       <span style={{ fontWeight: 600 }}>{p.title}</span>
       <span className="cv-small cv-muted" style={{ maxWidth: '80ch' }}>{p.body}</span>
