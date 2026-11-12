@@ -63,7 +63,7 @@ function CvProof() {
             <thead><tr><th>Change</th><th>Room</th><th>Outcome</th><th className="r">Bookable /wk</th><th className="r">Measured interval</th><th>Status</th></tr></thead>
             <tbody>
               {rows.map((p) => (
-                <tr key={p.id} className="cv-tr" tabIndex={0} onClick={() => (p.real ? cv.go("windows") : cv.go("packet", { id: p.id }))} onKeyDown={(e) => { if (e.key === "Enter") (p.real ? cv.go("windows") : cv.go("packet", { id: p.id })); }}>
+                <tr key={p.id} className="cv-tr" tabIndex={0} onClick={() => cv.go("packet", { id: p.id })} onKeyDown={(e) => { if (e.key === "Enter") cv.go("packet", { id: p.id }); }}>
                   <td style={{ maxWidth: 380 }}>
                     <div className="cv-col" style={{ gap: 3 }}>
                       <span style={{ fontWeight: 600 }}>{p.title}</span>
@@ -111,9 +111,57 @@ function cvGates(p) {
   if (p.outcome === "directional") { set(6, "interval crosses zero", "no"); }
   return base;
 }
+function downloadJson(name, obj) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" }));
+  a.download = name;
+  a.click();
+}
+
+/* A real test window's packet: the gates it actually passed, from its own record. */
+function RealPacket({ w }) {
+  const cv = useCv();
+  const n = w.checkpoints?.length ?? 0;
+  const gates = [
+    ["Baseline frozen before the change", `${w.baseline} at start, data to ${w.startedAt}`, "ok"],
+    ["Watched the full window", `day ${w.day} of 28 · ${n} of 4 checkpoints`, w.day >= 28 && n >= 4 ? "ok" : "warn"],
+    ["Source data current", w.status === "waiting" ? "no new week of data for over 9 days" : "a new week of data each week", w.status === "waiting" ? "no" : "ok"],
+    ["Interval excludes zero", w.lowCents != null && n >= 2 ? `lower bound ${cvMoney(w.lowCents / 100, { cents: true })}/wk` : "not computed yet", w.lowCents > 0 ? "ok" : n >= 2 ? "no" : "warn"],
+    ["Guardrails held", w.status === "reversed" ? "a guardrail broke after it verified" : "average check and turn time inside limits", w.status === "reversed" ? "no" : "ok"],
+    ["Matched controls subtracted", "not yet: before/after against the frozen baseline", "warn"],
+    ["Booked at the lower bound only", w.status === "verified" ? `${cvMoney(w.bookedCents / 100, { cents: true })}/wk` : "$0 until it verifies", w.status === "verified" ? "ok" : "warn"],
+  ];
+  const outcome = { running: "testing", waiting: "data", verified: "verified", rejected: "inconclusive", reversed: "reversed", stopped: "inconclusive" }[w.status] || "testing";
+  return (
+    <div className="cv-page">
+      <button className="cv-link" onClick={() => cv.go("proof")}><Icon name="ArrowLeft" size={14} />All proof</button>
+      <PageHead over={`Verification packet · ${CV_LOCS.find((l) => l.id === w.roomId)?.name ?? w.roomId}`} q={w.title}
+        right={<><Outcome k={outcome} /><Button variant="secondary" size="sm" icon="Download" onClick={() => { downloadJson(`coversight-packet-${w.id.slice(0, 8)}.json`, { format: "coversight-packet/v1", exportedAt: new Date().toISOString(), window: w, gates: gates.map(([gate, detail, state]) => ({ gate, detail, state })), estimator: "lib/data/pilot.js measureEffect: two-sided 90% Student-t lower bound, never below $0" }); cv.toast("Packet downloaded: the window, every checkpoint, and the gates."); }}>Export</Button></>} />
+      <section className="cv-card">
+        <dl className="cv-kv">
+          <dt>Metric</dt><dd style={{ fontFamily: "var(--font-sans)" }}>{w.metric} · {w.direction === "down" ? "down is better" : "up is better"}</dd>
+          <dt>Checkpoints</dt><dd>{n ? w.checkpoints.map((c) => `day ${c.day}: ${c.observed}`).join(" · ") : "none yet"}</dd>
+          {w.pointCents != null && n >= 2 && <><dt>Measured, a week</dt><dd>{cvMoney(w.pointCents / 100, { cents: true })} point · {cvMoney(Math.max(0, w.lowCents) / 100, { cents: true })} lower bound</dd></>}
+        </dl>
+      </section>
+      <section className="cv-card flush">
+        <div className="cv-tablewrap"><table className="cv-table"><tbody>
+          {gates.map(([g, d, st]) => <tr key={g}><td style={{ fontWeight: 600 }}>{g}</td><td className="cv-small cv-muted">{d}</td><td><Icon name={st === "ok" ? "CircleCheck" : st === "no" ? "CircleX" : "CircleDot"} size={16} className={st === "ok" ? "ok" : st === "no" ? "no" : ""} /></td></tr>)}
+        </tbody></table></div>
+      </section>
+    </div>
+  );
+}
+
 function CvPacket({ params }) {
   const cv = useCv();
-  const p = CV_PROOF.find((r) => r.id === (params && params.id)) || CV_PROOF[0];
+  const eng = useEngine();
+  const id = params && params.id;
+  if (id && !CV_PROOF.some((r) => r.id === id) && /^[0-9a-f-]{36}$/.test(id)) {
+    const w = (eng.windows || []).find((x) => x.id === id);
+    return w ? <RealPacket w={w} /> : <div className="cv-page"><span className="cv-small cv-muted">{eng.mode === "pending" || eng.mode === "server" ? "Loading the packet…" : "This packet belongs to a real test and needs the server."}</span></div>;
+  }
+  const p = CV_PROOF.find((r) => r.id === id) || CV_PROOF[0];
   const gates = cvGates(p);
   const passed = gates.filter((g) => g[2] === "ok").length;
   const loc = CV_LOCS.find((l) => l.id === p.loc);
@@ -121,7 +169,7 @@ function CvPacket({ params }) {
     <div className="cv-page">
       <button className="cv-link" onClick={() => cv.go("proof")}><Icon name="ArrowLeft" size={14} />All proof</button>
       <PageHead over={`Verification packet · ${loc.name} · ${p.lever}`} q={p.title}
-        right={<><Outcome k={p.outcome} /><Button variant="secondary" size="sm" icon="Download" onClick={() => cv.toast("Packet exported as a re-runnable bundle.")}>Export</Button></>} />
+        right={<><Outcome k={p.outcome} /><Button variant="secondary" size="sm" icon="Download" onClick={() => { downloadJson(`coversight-packet-${p.id}.json`, { format: "coversight-packet/v1", exportedAt: new Date().toISOString(), sample: true, packet: p, gates: gates.map(([gate, detail, state]) => ({ gate, detail, state })) }); cv.toast("Packet downloaded."); }}>Export</Button></>} />
       <div className="cv-grid g-hero">
         <section className="cv-card">
           <div className="cv-card-head"><span className="cv-over">What can be claimed</span><Claim k={p.bookable ? "book" : "none"} /></div>
