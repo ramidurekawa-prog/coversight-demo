@@ -23,8 +23,11 @@ here ships to customers.
   Bookable, Observed) with its icon, never colour alone.
 - **Design system:** tokens and kit classes in `app/globals.css` come from the
   monorepo's design system. Use existing classes before adding new ones.
-- **Pages:** add a screen in `lib/pages.js` (title, icon, nav group) and map
-  it in `components/screen.jsx`; `tests/routes.test.js` enforces both. Id
+- **Pages:** one file per page at `components/screens/pages/<pageId>.jsx`.
+  Add a screen in `lib/pages.js` (title, icon, nav group) and import it in
+  `components/screen.jsx`; `tests/routes.test.js` enforces all three. Helpers
+  used by more than one page live in `components/screens/*.jsx`. When several
+  agents work on pages at once, follow `docs/PAGE_THREADS.md`. Id
   screens (`/packet/:id`, `/finding/:id`) list their ids in `lib/pages.js`.
 - **Icons:** lucide-react, imported by name in `components/kit.jsx`. A new icon
   must be added there (`tests/icons.test.js` catches misses).

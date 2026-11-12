@@ -8,7 +8,7 @@ import { CV_PAGES } from '../lib/pages.js';
 /* Icons are a static map (tree-shaken), so a name missing from it renders
  * nothing. Scan the source for every icon string and check the map has it. */
 test('every icon name used in the source is in the icon map', () => {
-  const files = ['components/shell.jsx', ...readdirSync('components/screens').map((f) => join('components/screens', f))];
+  const files = ['components/shell.jsx', ...readdirSync('components/screens', { recursive: true }).filter((f) => /\.jsx?$/.test(f)).map((f) => join('components/screens', f))];
   const used = new Set(Object.values(CV_PAGES).map((p) => p.icon));
   const patterns = [
     /<Icon\b[^>]*?\bname=\{?\s*["']([A-Z][A-Za-z0-9]+)["']/g, // <Icon name="X" />

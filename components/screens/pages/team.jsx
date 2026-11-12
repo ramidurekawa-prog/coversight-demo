@@ -2,9 +2,9 @@
 
 import * as React from 'react';
 
-import { Button, Icon } from '../kit';
-import { CV_LOCS, Callout, PageHead, Pill, useCv } from './core';
-import { useEngine } from '../engine';
+import { Button, Icon } from '../../kit';
+import { CV_LOCS, Callout, PageHead, Pill, useCv } from '../core';
+import { useEngine } from '../../engine';
 
 /* Team & groups: which groups you belong to (and switching), starting your own
  * group, the people in this one, invite links, roles and rooms. */

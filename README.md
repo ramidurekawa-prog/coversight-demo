@@ -109,7 +109,8 @@ per room closes the menu to the week. Inputs are saved per org on the server
 app/                 routes, API routes, login + globals.css (design tokens + kit)
 components/shell.jsx sidebar, top bar, drawers, toasts
 components/screen.jsx page id → screen component
-components/screens/  the screens and the sample data (core.jsx; areas.jsx = V3 operating areas)
+components/screens/  shared screen code (core.jsx = current room and kit pieces; week/areas/extra/live.jsx = helpers shared by several pages)
+components/screens/pages/  one file per page, named by page id (see docs/PAGE_THREADS.md)
 lib/pages.js         page registry, nav, roles, URLs
 tests/               pinned figures, dataset closure, ingestion, routing, icons
 ```

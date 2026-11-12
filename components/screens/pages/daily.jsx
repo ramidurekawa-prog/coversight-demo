@@ -2,9 +2,9 @@
 
 import * as React from 'react';
 
-import { Button, Icon, Tabs } from '../kit';
-import { CV_D, CV_GROUP, CV_ROOM, Callout, Claim, PageHead, cvMoney, cvScale } from './core';
-import { byMonth, densify, heat, pointCount, HOURS } from '../../lib/data/dense';
+import { Button, Icon, Tabs } from '../../kit';
+import { CV_D, CV_GROUP, CV_ROOM, Callout, Claim, PageHead, cvMoney, cvScale } from '../core';
+import { byMonth, densify, heat, pointCount, HOURS } from '../../../lib/data/dense';
 
 /* Daily detail: every day, hour and dish behind the weekly figures. On the
  * sample, days and hours are split from each week's totals and add back

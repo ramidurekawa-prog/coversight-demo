@@ -3,16 +3,42 @@
 import { usePathname, useRouter } from 'next/navigation';
 import * as React from 'react';
 
-import { CvPlan, CvService, CvThisWeek, CvToday } from './screens/week';
-import { CvLabour, CvMenu, CvPurchasing, CvThroughput } from './screens/levers';
-import { CvAccountant, CvComparison, CvLedger, CvPacket, CvProof, CvSources, CvSystem } from './screens/proof';
-import { CvBilling, CvBuild, CvFences, CvFinding, CvMeeting, CvPortfolio, CvStart } from './screens/extra';
-import { CvChannels, CvControls, CvCoverage, CvInventory, CvKitchen } from './screens/areas';
-import { CvInputs } from './screens/inputs';
-import { CvConnect, CvData, CvLevers, CvWindows } from './screens/live';
-import { CvTrends } from './screens/trends';
-import { CvDaily } from './screens/daily';
-import { CvTeam } from './screens/team';
+// One file per page: components/screens/pages/<pageId>.jsx (one import line each, sorted).
+import { CvAccountant } from './screens/pages/accountant';
+import { CvBilling } from './screens/pages/billing';
+import { CvBuild } from './screens/pages/build';
+import { CvChannels } from './screens/pages/channels';
+import { CvComparison } from './screens/pages/comparison';
+import { CvConnect } from './screens/pages/connect';
+import { CvControls } from './screens/pages/controls';
+import { CvCoverage } from './screens/pages/coverage';
+import { CvDaily } from './screens/pages/daily';
+import { CvData } from './screens/pages/data';
+import { CvFences } from './screens/pages/fences';
+import { CvFinding } from './screens/pages/finding';
+import { CvInputs } from './screens/pages/inputs';
+import { CvInventory } from './screens/pages/inventory';
+import { CvKitchen } from './screens/pages/kitchen';
+import { CvLabour } from './screens/pages/labour';
+import { CvLedger } from './screens/pages/ledger';
+import { CvLevers } from './screens/pages/levers';
+import { CvMeeting } from './screens/pages/meeting';
+import { CvMenu } from './screens/pages/menu';
+import { CvPacket } from './screens/pages/packet';
+import { CvPlan } from './screens/pages/plan';
+import { CvPortfolio } from './screens/pages/portfolio';
+import { CvProof } from './screens/pages/proof';
+import { CvPurchasing } from './screens/pages/purchasing';
+import { CvService } from './screens/pages/service';
+import { CvSources } from './screens/pages/sources';
+import { CvStart } from './screens/pages/start';
+import { CvSystem } from './screens/pages/system';
+import { CvTeam } from './screens/pages/team';
+import { CvThroughput } from './screens/pages/throughput';
+import { CvToday } from './screens/pages/today';
+import { CvTrends } from './screens/pages/trends';
+import { CvThisWeek } from './screens/pages/week';
+import { CvWindows } from './screens/pages/windows';
 import { pathFor } from '../lib/pages';
 
 /** Page id → screen component. Every key in CV_PAGES has one (tests check). */
