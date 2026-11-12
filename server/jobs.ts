@@ -12,7 +12,7 @@ import { loadDataset } from './dataset';
 import { runProofLoop, runReverify } from './proof';
 import { verifyTasks } from './tasks';
 import { deliverOutbox } from './notify';
-import { runBilling } from './billing';
+import { deliverInvoices, runBilling } from './billing';
 import { previousPeriod } from '../lib/data/billing.js';
 import { syncToast } from './pos-sync';
 import { pullLinks } from './links';
@@ -84,6 +84,8 @@ export async function runJob(db: Db, job: JobName, { orgId, trigger = 'schedule'
     results.push(await record(db, job, id, trigger, () => (job === 'sync' ? syncToast(db, id, { now, ...(fetchImpl ? { fetchImpl } : {}) }) : job === 'links' ? pullLinks(db, id, fetchImpl ? { fetchImpl } : {}) : job === 'agents' ? runAgents(db, id, { trigger, now, ...(fetchImpl ? { fetchImpl } : {}) }) : job === 'detection' ? runDetection(db, id) : job === 'proof' ? runProofLoop(db, id, now) : job === 'billing' ? runBilling(db, id, previousPeriod(now)) : runReverify(db, id))));
   }
   await deliverOutbox(db, { now }).catch(() => null);
+  // Stripe deliveries that are due (retries with backoff) ride on every job run.
+  await deliverInvoices(db, { now, ...(fetchImpl ? { fetchImpl } : {}), ...(orgId ? { orgId } : {}) }).catch(() => null);
   return results;
 }
 

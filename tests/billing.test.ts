@@ -2,10 +2,10 @@ import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { accrual, buildInvoice, previousPeriod } from '../lib/data/billing.js';
-import { draftInvoice, finalizeInvoice, listInvoices, runBilling } from '../server/billing';
+import { DELIVERY_BACKOFF_HOURS, deliverInvoices, draftInvoice, finalizeInvoice, listInvoices, retryDelivery, runBilling } from '../server/billing';
 import { saveAction } from '../server/actions';
 import type { Db } from '../server/db/client';
-import { invoices, orgs, testWindows, users } from '../server/db/schema';
+import { auditLog, invoices, notifications, orgs, testWindows, users } from '../server/db/schema';
 import { createOwnOrg } from '../server/team';
 import { createSampleOrg } from '../server/org';
 import { freshDb } from './helpers/db';
@@ -89,22 +89,125 @@ describe('invoices in the database', () => {
     expect(credit.cents).toBe(-Math.round(400 * 10 * 0.15)); // Oct 22–31 billed at $4/day
   });
 
-  it('pushes a final invoice to Stripe when configured, once per customer', async () => {
-    process.env.STRIPE_SECRET_KEY = 'sk_test_x';
-    await saveAction(db, owner(), { roomId: '', key: 'billing', value: { status: 'approved' } });
-    const calls: string[] = [];
-    const fake = (async (url: string) => {
+  /** A fake Stripe that remembers idempotency keys, like the real one. */
+  function fakeStripe(fail: (path: string, n: number) => number | 'network' | null = () => null) {
+    const calls: { path: string; key: string; body: string }[] = [];
+    const seen = new Map<string, unknown>();
+    let n = 0;
+    const ids: Record<string, number> = {};
+    const fetchImpl = (async (url: string, init: RequestInit) => {
       const path = url.replace('https://api.stripe.com/v1/', '');
-      calls.push(path);
-      const body = path === 'customers' ? { id: 'cus_1' } : path === 'invoices' ? { id: 'in_1' } : path.endsWith('/finalize') ? { id: 'in_1', hosted_invoice_url: 'https://pay.stripe.com/i/1' } : { id: 'ii' };
-      return new Response(JSON.stringify(body), { status: 200 });
+      const key = (init.headers as Record<string, string>)['idempotency-key']!;
+      const f = fail(path, n++);
+      if (f === 'network') throw new Error('socket hang up');
+      if (f) return new Response(JSON.stringify({ error: { message: `Stripe says ${f}` } }), { status: f });
+      calls.push({ path, key, body: String(init.body) });
+      if (!seen.has(key)) {
+        const kind = path === 'customers' ? 'cus' : path === 'invoices' ? 'in' : path.endsWith('/finalize') ? 'fin' : 'ii';
+        ids[kind] = (ids[kind] ?? 0) + 1;
+        seen.set(key, kind === 'fin' ? { id: 'in_1', hosted_invoice_url: 'https://pay.stripe.com/i/1' } : { id: `${kind}_${ids[kind]}` });
+      }
+      return new Response(JSON.stringify(seen.get(key)), { status: 200 });
     }) as unknown as typeof fetch;
-    const fin = await finalizeInvoice(db, owner(), '2026-10', { fetchImpl: fake });
-    expect(calls).toEqual(['customers', 'invoiceitems', 'invoiceitems', 'invoices', 'invoices/in_1/finalize']);
-    expect(fin.stripeInvoiceId).toBe('in_1');
-    expect(fin.stripeUrl).toBe('https://pay.stripe.com/i/1');
+    return { calls, fetchImpl, created: () => ids };
+  }
+  const approve = () => saveAction(db, owner(), { roomId: '', key: 'billing', value: { status: 'approved' } });
+  const oct = async () => (await db.select().from(invoices).where(eq(invoices.period, '2026-10')))[0]!;
+  const T = new Date('2026-11-03T15:00:00Z');
+  const hours = (h: number) => new Date(T.getTime() + h * 3_600_000);
+
+  it('delivers a final invoice to Stripe with an idempotency key on every call', async () => {
+    process.env.STRIPE_SECRET_KEY = 'sk_test_x';
+    await approve();
+    const s = fakeStripe();
+    const fin = await finalizeInvoice(db, owner(), '2026-10', { fetchImpl: s.fetchImpl, now: T });
+    // Draft invoice first, then its items attached to it, then finalize.
+    expect(s.calls.map((c) => c.path)).toEqual(['customers', 'invoices', 'invoiceitems', 'invoiceitems', 'invoices/in_1/finalize']);
+    expect(s.calls.every((c) => c.key.startsWith('cv-'))).toBe(true);
+    expect(s.calls.find((c) => c.path === 'invoices')!.body).toContain('pending_invoice_items_behavior=exclude');
+    expect(s.calls.filter((c) => c.path === 'invoiceitems').every((c) => c.body.includes('invoice=in_1'))).toBe(true);
+    expect(fin).toMatchObject({ status: 'final', delivery: 'sent', stripeInvoiceId: 'in_1', stripeUrl: 'https://pay.stripe.com/i/1' });
     const [org] = await db.select().from(orgs).where(eq(orgs.id, orgId));
     expect((org!.meta as { stripeCustomerId: string }).stripeCustomerId).toBe('cus_1');
+  });
+
+  it('Stripe down: the invoice is still final, and delivery retries with backoff', async () => {
+    process.env.STRIPE_SECRET_KEY = 'sk_test_x';
+    await approve();
+    let down = true;
+    const s = fakeStripe(() => (down ? 503 : null));
+    const fin = await finalizeInvoice(db, owner(), '2026-10', { fetchImpl: s.fetchImpl, now: T });
+    expect(fin).toMatchObject({ status: 'final', delivery: 'pending', deliveryAttempts: 1, deliveryError: 'Stripe says 503' });
+    expect(fin.nextDeliveryAt!.getTime()).toBe(hours(DELIVERY_BACKOFF_HOURS[0]!).getTime());
+    expect((await db.select().from(auditLog).where(eq(auditLog.action, 'invoice.finalized'))).length).toBe(1);
+    const notes = await db.select().from(notifications).where(eq(notifications.orgId, orgId));
+    expect(notes.some((n) => /will retry/.test(n.title))).toBe(true);
+
+    // Not due yet: nothing is tried.
+    expect(await deliverInvoices(db, { fetchImpl: s.fetchImpl, now: hours(0.5) })).toEqual([]);
+    down = false;
+    await deliverInvoices(db, { fetchImpl: s.fetchImpl, now: hours(1) });
+    expect(await oct()).toMatchObject({ status: 'final', delivery: 'sent', stripeInvoiceId: 'in_1' });
+    expect(s.created()).toEqual({ cus: 1, in: 1, ii: 2, fin: 1 });
+  });
+
+  it('a crash halfway resumes where it stopped: no second Stripe invoice, no duplicate line', async () => {
+    process.env.STRIPE_SECRET_KEY = 'sk_test_x';
+    await approve();
+    // Customer, invoice and the first item go through; the second item times out.
+    const s = fakeStripe((path) => (path === 'invoiceitems' && s.calls.filter((c) => c.path === 'invoiceitems').length === 1 ? 'network' : null));
+    await finalizeInvoice(db, owner(), '2026-10', { fetchImpl: s.fetchImpl, now: T });
+    expect((await oct()).deliveryProgress).toMatchObject({ customer: 'cus_1', invoice: 'in_1', items: { 0: 'ii_1' } });
+    const ok = fakeStripe();
+    await deliverInvoices(db, { fetchImpl: ok.fetchImpl, now: hours(1) });
+    // The retry only adds the missing line and finalizes.
+    expect(ok.calls.map((c) => c.path)).toEqual(['invoiceitems', 'invoices/in_1/finalize']);
+    expect(ok.calls[0]!.key).toMatch(/-1$/);
+    expect(await oct()).toMatchObject({ delivery: 'sent', stripeInvoiceId: 'in_1' });
+  });
+
+  it('a refusal a person must fix stops delivery at once; Retry sends it again', async () => {
+    process.env.STRIPE_SECRET_KEY = 'sk_test_x';
+    await approve();
+    const s = fakeStripe((path) => (path === 'customers' ? 400 : null));
+    await finalizeInvoice(db, owner(), '2026-10', { fetchImpl: s.fetchImpl, now: T });
+    expect(await oct()).toMatchObject({ status: 'final', delivery: 'failed', deliveryError: 'Stripe says 400', nextDeliveryAt: null });
+    expect(await deliverInvoices(db, { fetchImpl: s.fetchImpl, now: hours(48) })).toEqual([]);
+    await expect(retryDelivery(db, { ...owner(), role: 'admin' }, '2026-10')).rejects.toThrow(/Only an owner/);
+    const ok = fakeStripe();
+    const row = await retryDelivery(db, owner(), '2026-10', { fetchImpl: ok.fetchImpl, now: hours(48) });
+    expect(row).toMatchObject({ delivery: 'sent', stripeInvoiceId: 'in_1' });
+  });
+
+  it('gives up after the last backoff step and says so', async () => {
+    process.env.STRIPE_SECRET_KEY = 'sk_test_x';
+    await approve();
+    const s = fakeStripe(() => 500);
+    await finalizeInvoice(db, owner(), '2026-10', { fetchImpl: s.fetchImpl, now: T });
+    let at = T;
+    for (let i = 0; i < DELIVERY_BACKOFF_HOURS.length; i++) {
+      at = (await oct()).nextDeliveryAt!;
+      await deliverInvoices(db, { fetchImpl: s.fetchImpl, now: at });
+    }
+    expect(await oct()).toMatchObject({ delivery: 'failed', deliveryAttempts: DELIVERY_BACKOFF_HOURS.length + 1 });
+    const notes = await db.select().from(notifications).where(eq(notifications.orgId, orgId));
+    expect(notes.some((n) => /delivery stopped/.test(n.title))).toBe(true);
+  });
+
+  it('two deliveries racing make one Stripe invoice', async () => {
+    process.env.STRIPE_SECRET_KEY = 'sk_test_x';
+    await approve();
+    const down = fakeStripe(() => 503);
+    await finalizeInvoice(db, owner(), '2026-10', { fetchImpl: down.fetchImpl, now: T });
+    const s = fakeStripe();
+    await Promise.all([deliverInvoices(db, { fetchImpl: s.fetchImpl, now: hours(2) }), deliverInvoices(db, { fetchImpl: s.fetchImpl, now: hours(2) })]);
+    expect(s.created()).toEqual({ cus: 1, in: 1, ii: 2, fin: 1 });
+    expect(await oct()).toMatchObject({ delivery: 'sent' });
+  });
+
+  it('without Stripe, a final invoice is simply final', async () => {
+    await approve();
+    expect(await finalizeInvoice(db, owner(), '2026-10')).toMatchObject({ status: 'final', delivery: 'none' });
   });
 
   it('the monthly job drafts real groups, never the sample', async () => {

@@ -372,6 +372,15 @@ export const invoices = pgTable(
     totalCents: integer('total_cents').notNull(),
     stripeInvoiceId: text('stripe_invoice_id'),
     stripeUrl: text('stripe_url'),
+    // Stripe delivery, separate from finalizing: a final invoice is final
+    // whether or not Stripe has it. none (no Stripe) | pending | sent | failed.
+    delivery: text('delivery').notNull().default('none'),
+    deliveryAttempts: integer('delivery_attempts').notNull().default(0),
+    deliveryError: text('delivery_error'),
+    // When the next attempt may run; also a 10-minute lease while one is running.
+    nextDeliveryAt: at('next_delivery_at'),
+    // Which Stripe objects exist already, so a retry resumes rather than repeats.
+    deliveryProgress: jsonb('delivery_progress').notNull().default({}),
     createdAt: at('created_at').notNull().defaultNow(),
     updatedAt: at('updated_at').notNull().defaultNow(),
     finalizedAt: at('finalized_at'),

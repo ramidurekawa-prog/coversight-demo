@@ -82,8 +82,11 @@ here ships to customers.
 - **Billing:** `lib/data/billing.js` (pure, cents) builds an invoice from
   verified test windows only (accrued per day while verified; credits for days
   billed after a later reversal). `server/billing.ts` drafts monthly, finalizes
-  only after the accountant approves that month's package, and pushes to
-  Stripe only when `STRIPE_SECRET_KEY` is set.
+  only after the accountant approves that month's package. Finalizing never
+  waits on Stripe: delivery (`deliverInvoice`) runs only when
+  `STRIPE_SECRET_KEY` is set, resumes from `delivery_progress`, sends an
+  Idempotency-Key per call, and retries with backoff after every job run.
+  Sample groups are never sent.
 - **Notifications:** `server/notify.ts` `notify()` for anything an operator
   should hear about (dedupe key per event); email goes through the outbox and
   Resend only when `RESEND_API_KEY` + `MAIL_FROM` are set, else it's kept as

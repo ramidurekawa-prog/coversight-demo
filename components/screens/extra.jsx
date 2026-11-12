@@ -571,7 +571,7 @@ function BillingReal() {
               <span className="cv-xs cv-faint">Set at onboarding. Finalized invoices keep the pricing they were issued with.</span>
             </div>
           )}
-          {b.stripe ? <Callout icon="CreditCard">Finalized invoices go to Stripe, which emails a pay link.</Callout> : <Callout icon="Info">Stripe isn&apos;t connected, so invoices live here. Add STRIPE_SECRET_KEY in Vercel to send them with a pay link.</Callout>}
+          {b.stripe ? <Callout icon="CreditCard">Finalized invoices go to Stripe, which emails a pay link. If Stripe is slow or down, the invoice stays final and sending retries on its own.</Callout> : <Callout icon="Info">Stripe isn&apos;t connected, so invoices live here. Add STRIPE_SECRET_KEY in Vercel to send them with a pay link.</Callout>}
         </section>
       </div>
       <section className="cv-card flush">
@@ -586,8 +586,13 @@ function BillingReal() {
                   <td className="r">{$c(i.reconciledCents)}</td>
                   <td className="r">{$c(i.totalCents)}</td>
                   <td className={`r ${i.reconciledCents - i.totalCents >= 0 ? 'cv-up' : 'cv-down'}`}>{cvMoney((i.reconciledCents - i.totalCents) / 100, { cents: true, sign: true })}</td>
-                  <td>{i.status === 'final' ? <Pill tone="good" icon="BadgeCheck">{i.stripeUrl ? <a href={i.stripeUrl} target="_blank" rel="noreferrer">Final · pay link</a> : 'Final'}</Pill> : <Pill icon="Hourglass">Draft</Pill>}</td>
-                  <td>{i.status !== 'final' && isOwner && (
+                  <td>{i.status !== 'final' ? <Pill icon="Hourglass">Draft</Pill>
+                    : i.stripeUrl ? <Pill tone="good" icon="BadgeCheck"><a href={i.stripeUrl} target="_blank" rel="noreferrer">Final · pay link</a></Pill>
+                    : i.delivery === 'pending' ? <span title={i.deliveryError ?? 'Sending to Stripe'}><Pill icon="Clock">Final · sending{i.deliveryAttempts ? `, try ${i.deliveryAttempts + 1}` : ''}</Pill></span>
+                    : i.delivery === 'failed' ? <span title={i.deliveryError ?? ''}><Pill tone="bad" icon="TriangleAlert">Final · Stripe stopped</Pill></span>
+                    : <Pill tone="good" icon="BadgeCheck">Final</Pill>}</td>
+                  <td>{i.status === 'final' && i.delivery === 'failed' && isOwner && <Button size="sm" variant="secondary" disabled={!!busy} onClick={() => post('/api/billing/retry', i.period, 'Sent to Stripe again.')}>Retry</Button>}
+                  {i.status !== 'final' && isOwner && (
                     <span className="cv-row nowrap" style={{ gap: 6 }}>
                       <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => post('/api/billing/draft', i.period, 'Recalculated.')}>Recalculate</Button>
                       <Button size="sm" disabled={!!busy} onClick={() => post('/api/billing/finalize', i.period, `${monthName(i.period)} finalized.`)}>Finalize</Button>
