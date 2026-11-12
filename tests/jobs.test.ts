@@ -142,7 +142,7 @@ describe('job runs and cleanup', () => {
   it('records every run per org, ok or not', async () => {
     await runJob(db, 'proof', { orgId, trigger: 'manual' });
     const st = await jobStatus(db, orgId);
-    expect(st.jobs.map((j) => j.job)).toEqual(['detection', 'proof', 'reverify', 'billing', 'cleanup']);
+    expect(st.jobs.map((j) => j.job)).toEqual(['sync', 'detection', 'proof', 'reverify', 'billing', 'cleanup']);
     expect(st.jobs.find((j) => j.job === 'proof')!.last!.ok).toBe(true);
     expect(st.jobs.find((j) => j.job === 'proof')!.last!.trigger).toBe('manual');
     expect(st.jobs.find((j) => j.job === 'detection')!.last).toBeNull();

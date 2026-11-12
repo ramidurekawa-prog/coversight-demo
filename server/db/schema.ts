@@ -387,15 +387,42 @@ export const toastConnections = pgTable('toast_connections', {
   host: text('host').notNull(),
   clientId: text('client_id').notNull(),
   secretSealed: text('secret_sealed').notNull(),
-  restaurants: jsonb('restaurants').$type<{ guid: string; roomId: string; name: string }[]>().notNull(),
+  restaurants: jsonb('restaurants').$type<{ guid: string; roomId: string; name: string; tz?: string }[]>().notNull(),
   status: text('status').notNull().default('connected'),
   lastError: text('last_error'),
   checkedAt: at('checked_at').notNull().defaultNow(),
+  /** The live sync: 'off' until the first run, then 'backfilling' → 'live', or 'failing'. */
+  syncState: text('sync_state').notNull().default('off'),
+  syncedAt: at('synced_at'),
+  /** Per room: days held, days still to backfill, newest business day, rows last pulled. */
+  syncDetail: jsonb('sync_detail').$type<Record<string, { days: number; missing: number; newest: string | null; orders: number; shifts: number }>>(),
   createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
   createdAt: at('created_at').notNull().defaultNow(),
 });
 
+/**
+ * One business day of a room's POS data, already mapped to Toast export rows
+ * (lib/data/toast-api.js). The sync fills missing days and refreshes the last
+ * two (late tips, voids and clock-outs land after close); the summary every
+ * figure reads is rebuilt from these rows, the same way an upload is.
+ */
+export const posDays = pgTable(
+  'pos_days',
+  {
+    orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+    roomId: text('room_id').notNull(),
+    day: text('day').notNull(),
+    source: text('source').notNull().default('toast-api'),
+    items: jsonb('items').$type<Record<string, string>[]>().notNull(),
+    orders: jsonb('orders').$type<Record<string, string>[]>().notNull(),
+    time: jsonb('time').$type<Record<string, string>[]>().notNull(),
+    payments: jsonb('payments').$type<Record<string, string>[]>().notNull(),
+    fetchedAt: at('fetched_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.orgId, t.roomId, t.day] })],
+);
+
 export const orgRelations = relations(orgs, ({ many }) => ({ rooms: many(rooms), memberships: many(memberships) }));
 
-export const schema = { users, sessions, accounts, verifications, orgs, memberships, rooms, roomData, inputs, actions, auditLog, memberRole, windowStatus, testWindows, checkpoints, jobRuns, snapshots, taskStatus, tasks, notifications, notificationReads, outbox, invites, invoices, toastConnections };
+export const schema = { users, sessions, accounts, verifications, orgs, memberships, rooms, roomData, inputs, actions, auditLog, memberRole, windowStatus, testWindows, checkpoints, jobRuns, snapshots, taskStatus, tasks, notifications, notificationReads, outbox, invites, invoices, toastConnections, posDays };
 

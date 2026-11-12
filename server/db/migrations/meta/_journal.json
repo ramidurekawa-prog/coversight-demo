@@ -57,6 +57,13 @@
       "when": 1794359119524,
       "tag": "0007_toast_conn",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794473275825,
+      "tag": "0008_pos_sync",
+      "breakpoints": true
     }
   ]
 }
