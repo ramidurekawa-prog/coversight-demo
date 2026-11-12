@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, test } from 'vitest';
 
 import { cvPlanCandidates, CV_PROOF } from '../components/screens/core.jsx';
@@ -7,6 +8,14 @@ import { CV_NAV, CV_PAGES, CV_ROLES, DEFAULT_IDS, FINDING_IDS, PACKET_IDS, pageF
 describe('routing', () => {
   test('every page has a screen component', () => {
     for (const p of Object.keys(CV_PAGES)) expect(SCREENS[p], p).toBeTypeOf('function');
+  });
+
+  test('every page lives in its own file, so page work never shares a file', () => {
+    const map = readFileSync('components/screen.jsx', 'utf8');
+    for (const p of Object.keys(CV_PAGES)) {
+      expect(existsSync(`components/screens/pages/${p}.jsx`), p).toBe(true);
+      expect(map, p).toContain(`from './screens/pages/${p}';`);
+    }
   });
 
   test('pre-rendered ids match the screens’ own data', () => {

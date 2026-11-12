@@ -2,14 +2,14 @@
 
 import * as React from 'react';
 
-import { Button, Icon, Tabs } from '../kit';
-import { CV_D, CV_DS, CV_ROOM, Callout, Claim, Pill, PageHead, useCv } from './core';
-import { engine, useEngine } from '../engine';
-import { KINDS, SCHEMAS, mapColumns, parseCSV, preview, templateCSV, templateRows, validate } from '../../lib/data/ingest';
-import { SEED } from '../../lib/data/seed';
-import { KIND_LABEL } from '../../lib/data/apply';
-import { ToastImport } from './toast-import';
-import { BringIn } from './bring-in';
+import { Button, Icon, Tabs } from '../../kit';
+import { CV_D, CV_DS, CV_ROOM, Callout, Claim, Pill, PageHead, useCv } from '../core';
+import { engine, useEngine } from '../../engine';
+import { KINDS, SCHEMAS, mapColumns, parseCSV, preview, templateCSV, templateRows, validate } from '../../../lib/data/ingest';
+import { SEED } from '../../../lib/data/seed';
+import { KIND_LABEL } from '../../../lib/data/apply';
+import { ToastImport } from '../toast-import';
+import { BringIn } from '../bring-in';
 
 const META = (k) => SCHEMAS[k] || { title: KIND_LABEL[k] || k, icon: k === 'toast' ? 'PlugZap' : 'FilePen' };
 
