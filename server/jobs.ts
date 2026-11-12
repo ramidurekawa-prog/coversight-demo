@@ -17,7 +17,7 @@ import { previousPeriod } from '../lib/data/billing.js';
 import { syncToast } from './pos-sync';
 
 export const JOBS = {
-  sync: { schedule: 'Every hour, at :20', what: 'Pulls new Toast orders and time entries for every connected restaurant (13 weeks the first time) and rebuilds each room’s figures from them', cron: '20 * * * *' },
+  sync: { schedule: 'Daily, 2:20 am Pacific (hourly on Vercel Pro: set the cron to 20 * * * *)', what: 'Pulls new Toast orders and time entries for every connected restaurant (13 weeks the first time) and rebuilds each room’s figures from them', cron: '20 10 * * *' },
   detection: { schedule: 'Daily, 2:00 am Pacific', what: 'Re-reads every room’s data, re-grades the six levers and re-ranks the findings', cron: '0 10 * * *' },
   proof: { schedule: 'Daily, 4:00 am Pacific', what: 'Records due checkpoints and closes test windows that reached day 28', cron: '0 12 * * *' },
   reverify: { schedule: 'Mondays, 3:00 am Pacific', what: 'Checks average check and turn time against each verified test’s guardrails; a breach reverses it', cron: '0 11 * * 1' },

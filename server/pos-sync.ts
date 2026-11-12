@@ -203,7 +203,7 @@ export async function syncToast(db: Db, orgId: string, { fetchImpl = fetch, now 
   const state = Object.values(detail).some((d) => d.missing > 0) ? 'backfilling' : 'live';
   await db.update(toastConnections).set({ restaurants, syncState: state, syncedAt: new Date(), syncDetail: detail, status: 'connected', lastError: null }).where(eq(toastConnections.orgId, orgId));
   if (c.syncState === 'off' || (c.syncState === 'backfilling' && state === 'live')) {
-    await notify(db, { orgId, kind: 'toast.sync', title: state === 'live' ? 'Toast history is in' : 'Toast sync started', body: state === 'live' ? '13 weeks of Toast data are loaded. Every figure now reads your own data, refreshed every hour.' : 'Coversight is pulling 13 weeks of Toast history, newest first. Figures update as each run lands.', link: '/connect', dedupe: `toast-sync-${state}` }).catch(() => null);
+    await notify(db, { orgId, kind: 'toast.sync', title: state === 'live' ? 'Toast history is in' : 'Toast sync started', body: state === 'live' ? '13 weeks of Toast data are loaded. Every figure now reads your own data, refreshed every night (or on Sync now).' : 'Coversight is pulling 13 weeks of Toast history, newest first. Figures update as each run lands.', link: '/connect', dedupe: `toast-sync-${state}` }).catch(() => null);
   }
   await db.insert(auditLog).values({ orgId, userId: null, action: 'toast.synced', detail: { state, rooms: Object.keys(detail).length } });
   return { ok: true as const, state, rooms: detail };
