@@ -380,7 +380,22 @@ export const invoices = pgTable(
   (t) => [unique('invoices_org_period').on(t.orgId, t.period)],
 );
 
+/** A group's Toast API credentials: the secret is sealed with CREDENTIALS_KEY
+ * (AES-256-GCM) and never returned or exported. One per group. */
+export const toastConnections = pgTable('toast_connections', {
+  orgId: uuid('org_id').primaryKey().references(() => orgs.id, { onDelete: 'cascade' }),
+  host: text('host').notNull(),
+  clientId: text('client_id').notNull(),
+  secretSealed: text('secret_sealed').notNull(),
+  restaurants: jsonb('restaurants').$type<{ guid: string; roomId: string; name: string }[]>().notNull(),
+  status: text('status').notNull().default('connected'),
+  lastError: text('last_error'),
+  checkedAt: at('checked_at').notNull().defaultNow(),
+  createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: at('created_at').notNull().defaultNow(),
+});
+
 export const orgRelations = relations(orgs, ({ many }) => ({ rooms: many(rooms), memberships: many(memberships) }));
 
-export const schema = { users, sessions, accounts, verifications, orgs, memberships, rooms, roomData, inputs, actions, auditLog, memberRole, windowStatus, testWindows, checkpoints, jobRuns, snapshots, taskStatus, tasks, notifications, notificationReads, outbox, invites, invoices };
+export const schema = { users, sessions, accounts, verifications, orgs, memberships, rooms, roomData, inputs, actions, auditLog, memberRole, windowStatus, testWindows, checkpoints, jobRuns, snapshots, taskStatus, tasks, notifications, notificationReads, outbox, invites, invoices, toastConnections };
 

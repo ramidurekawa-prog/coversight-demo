@@ -8,6 +8,7 @@ import { leverReport } from '../../lib/data/levers.js';
 import { windowState, METHOD_LABEL, MAGNITUDE_FLOOR_PCT, WORKER_JOBS, statusz, TOAST_ERRORS } from '../../lib/data/pilot.js';
 import { LEVER_METRIC } from '../../lib/data/readers.js';
 import { engine, useEngine } from '../engine';
+import { ToastImport } from './toast-import';
 
 /* Coversight — the live platform, as it runs in a pilot today: connecting a
    restaurant's own Toast, a test window run by the daily proof loop with the
@@ -42,7 +43,95 @@ function checkCredentials(form) {
   };
 }
 
+/* Server mode: data exports today, plus real Toast credentials checked against Toast and stored sealed. */
+async function jpost(url, body) {
+  const r = await fetch(url, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || `Request failed (${r.status})`);
+  return j;
+}
+
+function CvConnectReal() {
+  const cv = useCv();
+  const eng = useEngine();
+  const isOwner = eng.viewer?.role === 'owner';
+  const rooms = CV_LOCS.filter((l) => l.id !== 'all');
+  const [st, setSt] = React.useState(undefined);
+  const [canStore, setCanStore] = React.useState(true);
+  const [form, setForm] = React.useState({ host: 'ws-api.toasttab.com', clientId: '', secret: '', restaurants: [{ guid: '', roomId: rooms[0]?.id ?? '' }] });
+  const [check, setCheck] = React.useState(null);
+  const [busy, setBusy] = React.useState(null);
+  const [err, setErr] = React.useState(null);
+  React.useEffect(() => { fetch('/api/toast', { credentials: 'same-origin' }).then((r) => r.json()).then((j) => { setSt(j.connection); setCanStore(j.canStore); }).catch(() => setSt(null)); }, []);
+  const set = (k, v) => { setForm((f) => ({ ...f, [k]: v })); setCheck(null); };
+  const setR = (i, k, v) => set('restaurants', form.restaurants.map((x, j) => (j === i ? { ...x, [k]: v.trim ? v.trim() : v } : x)));
+  const act = async (name, fn) => { setBusy(name); setErr(null); try { await fn(); } catch (e) { setErr(e.message); } finally { setBusy(null); } };
+  return (
+    <div className="cv-page">
+      <PageHead over={`Connect your POS · ${eng.org?.name ?? ''}`} q="How does our Toast data get in?"
+        sub="Today: upload Toast's data exports each week. Next: the live API sync, once Toast issues credentials. Both feed the same figures." />
+      <ToastImport compact />
+      <section className="cv-card" aria-labelledby="toast-api">
+        <div className="cv-card-head">
+          <div className="cv-col" style={{ gap: 2 }}><span className="cv-h4" id="toast-api">Toast API credentials</span><span className="cv-xs cv-faint">Checked against Toast for real and stored sealed. The secret never leaves the server and is never exported.</span></div>
+          {st ? <Pill tone={st.status === 'connected' ? 'good' : 'bad'} icon={st.status === 'connected' ? 'CircleCheck' : 'CircleX'}>{st.status === 'connected' ? 'Credentials work' : 'Failing'}</Pill> : <Pill icon="CircleMinus">Not connected</Pill>}
+        </div>
+        {!canStore && <Callout tone="warn" icon="Lock">The server has no CREDENTIALS_KEY yet, so it won&apos;t store credentials. Add a random 32+ character CREDENTIALS_KEY in Vercel first.</Callout>}
+        {err && <Callout tone="bad" icon="CircleX">{err}</Callout>}
+        {st ? (
+          <>
+            <dl className="cv-kv">
+              <dt>API host</dt><dd>{st.host}</dd>
+              <dt>Client ID</dt><dd>{st.clientId}</dd>
+              <dt>Restaurants</dt><dd style={{ fontFamily: 'var(--font-sans)' }}>{st.restaurants.map((r) => `${r.name} → ${rooms.find((x) => x.id === r.roomId)?.short ?? r.roomId}`).join(' · ')}</dd>
+              <dt>Last checked</dt><dd>{new Date(st.checkedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</dd>
+            </dl>
+            {st.lastError && <Callout tone="bad" icon="CircleX">{st.lastError}</Callout>}
+            <Callout icon="Info">The automatic sync (13 weeks of history, then every 15 minutes) isn&apos;t switched on yet. Until it is, keep uploading the Toast data exports above each week.</Callout>
+            <div className="cv-row" style={{ gap: 8 }}>
+              <Button size="sm" variant="secondary" icon="RefreshCw" disabled={!!busy || eng.viewer?.role === 'gm'} onClick={() => act('recheck', async () => { const j = await jpost('/api/toast/recheck'); setSt(j.connection); cv.toast(j.connection.status === 'connected' ? 'Toast accepted the credentials.' : 'Toast refused them. See the error.'); })}>{busy === 'recheck' ? 'Checking…' : 'Check again'}</Button>
+              {isOwner && <Button size="sm" variant="ghost" icon="CircleMinus" disabled={!!busy} onClick={() => act('off', async () => { await jpost('/api/toast/disconnect'); setSt(null); cv.toast('Disconnected. The stored credentials were deleted.'); })}>Disconnect</Button>}
+            </div>
+          </>
+        ) : st === null && (
+          <>
+            <ol className="cv-col" style={{ gap: 4, margin: 0, paddingLeft: 18 }}>{HOW_TO.map((h) => <li key={h} className="cv-small">{h}</li>)}</ol>
+            <div className="cv-col" style={{ gap: 8 }}>
+              <label className="cv-col" style={{ gap: 4 }}><span className="cv-small">API hostname</span><input className="input" value={form.host} onChange={(e) => set('host', e.target.value)} disabled={!isOwner} /></label>
+              <label className="cv-col" style={{ gap: 4 }}><span className="cv-small">Client ID</span><input className="input" value={form.clientId} onChange={(e) => set('clientId', e.target.value)} disabled={!isOwner} autoComplete="off" /></label>
+              <label className="cv-col" style={{ gap: 4 }}><span className="cv-small">Client secret</span><input className="input" type="password" value={form.secret} onChange={(e) => set('secret', e.target.value)} disabled={!isOwner} autoComplete="new-password" /></label>
+              <span className="cv-small">Restaurants (GUID → room)</span>
+              {form.restaurants.map((r, i) => (
+                <span key={i} className="cv-row nowrap" style={{ gap: 6 }}>
+                  <input className="input" style={{ flex: 1 }} placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" value={r.guid} onChange={(e) => setR(i, 'guid', e.target.value)} disabled={!isOwner} aria-label={`Restaurant ${i + 1} GUID`} />
+                  <select className="input" style={{ width: 'auto' }} value={r.roomId} onChange={(e) => setR(i, 'roomId', e.target.value)} disabled={!isOwner} aria-label={`Restaurant ${i + 1} room`}>{rooms.map((x) => <option key={x.id} value={x.id}>{x.short}</option>)}</select>
+                  {check?.restaurants?.[i] && <Icon name={check.restaurants[i].ok ? 'CircleCheck' : 'CircleX'} size={16} />}
+                </span>
+              ))}
+              {isOwner && form.restaurants.length < rooms.length && <span><Button size="sm" variant="ghost" icon="Plus" onClick={() => set('restaurants', [...form.restaurants, { guid: '', roomId: rooms[form.restaurants.length]?.id ?? rooms[0].id }])}>Add a restaurant</Button></span>}
+              {check && !check.ok && <Callout tone="bad" icon="CircleX">{check.error || check.restaurants?.find((x) => !x.ok)?.error}</Callout>}
+              {check?.ok && <Callout tone="good" icon="CircleCheck">Toast accepted these and can read {check.restaurants.map((x) => x.name).join(', ')}.</Callout>}
+              {isOwner ? (
+                <div className="cv-row" style={{ gap: 8 }}>
+                  <Button variant="secondary" disabled={!!busy || !form.clientId || !form.secret} onClick={() => act('check', async () => setCheck(await jpost('/api/toast/check', form)))}>{busy === 'check' ? 'Checking with Toast…' : 'Check'}</Button>
+                  <Button disabled={!!busy || !check?.ok || !canStore} onClick={() => act('connect', async () => { const j = await jpost('/api/toast/connect', form); if (j.connected) { setSt(j.status); setForm((f) => ({ ...f, secret: '' })); cv.toast('Stored, sealed. Toast accepted the credentials.'); } else setCheck(j.check); })}>{busy === 'connect' ? 'Storing…' : 'Store the credentials'}</Button>
+                </div>
+              ) : <Callout icon="Lock">Only an owner can connect Toast.</Callout>}
+            </div>
+          </>
+        )}
+      </section>
+    </div>
+  );
+}
+
 function CvConnect() {
+  const eng = useEngine();
+  if (eng.mode === 'server') return <CvConnectReal />;
+  return <CvConnectDemo />;
+}
+
+function CvConnectDemo() {
   const cv = useCv();
   const canManage = cv.role === 'owner';
   const [mode, setMode] = React.useState('status'); // status | form
