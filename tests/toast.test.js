@@ -160,3 +160,14 @@ describe('sources on own data', () => {
     expect(f['Recipe costs'].state).toBe('partial');
   });
 });
+
+describe('channels on own data', () => {
+  it('a channel the export never saw has no sales, never the sample’s', () => {
+    const { unknown, ...s } = readToastExports(Object.entries(FILES).map(([name, text]) => ({ name, text })));
+    const room = applyInputs(SEED, { oakland: { toast: { rows: [s] } } }).rooms.oakland;
+    const ue = room.channels.find((c) => c.k === 'ue');
+    expect(ue).toMatchObject({ sales: 0, refunds: 0, none: true });
+    const d = deriveRoom(applyInputs(SEED, { oakland: { toast: { rows: [s] } } }), 'oakland');
+    expect(d.chan.channels.every((c) => Number.isFinite(c.per100))).toBe(true);
+  });
+});
