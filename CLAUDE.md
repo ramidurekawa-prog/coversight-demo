@@ -46,13 +46,26 @@ here ships to customers.
   hours, the period package) use `useSaved(key, initial)` from
   `components/engine.js`; each key needs a zod schema and scope in
   `server/actions.ts` `ACTION_KEYS`, or the server refuses it.
-- **Jobs and tests:** `server/jobs.ts` (detection, proof, reverify, cleanup)
+- **Jobs and tests:** `server/jobs.ts` (sync, links, detection, proof, reverify, billing, cleanup)
   run from Vercel Cron (`vercel.json` → `/api/cron/<job>`, `CRON_SECRET`) or
   "Run now". Test windows (`server/proof.ts`) are measured in weeks of the
   room's *data* via `lib/data/readers.js` and closed with `lib/data/pilot.js`;
   never book anything outside `windowState`.
-- **Toast exports:** `lib/data/toast.js` reads Toast's data-export CSVs in the
-  browser into the `toast` input kind; `server/toast-schema.ts` bounds it.
+- **Ingestion lanes.** Every lane ends in the same reader and checks; never
+  compute a figure differently by lane.
+  - *Lane 1, POS:* `server/pos-sync.ts` pulls Toast's Standard API a business
+    day at a time into `pos_days` (rows shaped like the exports by
+    `lib/data/toast-api.js`) and rebuilds the room's `toast` input with
+    `summarizeToast()`. Hourly `sync` job; 13-week backfill over several runs.
+  - *Toast exports:* `lib/data/toast.js` reads Toast's data-export CSVs in the
+    browser into the `toast` input kind; `server/toast-schema.ts` bounds it.
+  - *Lane 2, easy imports:* `lib/data/sniff.js` reads anything dropped or
+    pasted (CSV/TSV, .xlsx via `lib/data/xlsx.js`, zips) and classifies each
+    table; the Data inputs review panel still validates and previews it.
+    `server/links.ts` fetches Google Sheets / Dropbox links (those hosts only)
+    and re-reads linked ones daily (`links` job), committing only tabs with
+    zero errors. `server/extract.ts` reads a photo or PDF into rows with
+    Claude when `ANTHROPIC_API_KEY` is set; rows always go back for review.
 - **Groups and people:** `server/team.ts`. A person can belong to several
   groups; the `cv-org` cookie picks the one in view (`viewerFor` only honours
   it for their own memberships). Invite tokens are stored hashed. Never
@@ -67,7 +80,7 @@ here ships to customers.
   Resend only when `RESEND_API_KEY` + `MAIL_FROM` are set, else it's kept as
   skipped. Never email a sample guest.
 - **Secrets:** `DATABASE_URL`, `BETTER_AUTH_SECRET`, `CREDENTIALS_KEY`,
-  `CRON_SECRET`, `RESEND_API_KEY`, `STRIPE_SECRET_KEY` live in Vercel env only. Never log, return or export them, or
+  `CRON_SECRET`, `RESEND_API_KEY`, `STRIPE_SECRET_KEY`, `ANTHROPIC_API_KEY` live in Vercel env only. Never log, return or export them, or
   a Toast client secret.
 
 `pnpm check` = typecheck + tests + build. Run it before pushing.

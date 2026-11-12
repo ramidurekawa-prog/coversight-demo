@@ -14,6 +14,7 @@ import { daysToFiles, localStamp, mapToastDay, toBusinessDate } from '../lib/dat
 import { summarizeToast } from '../lib/data/toast.js';
 import type { Db } from './db/client';
 import { auditLog, inputs, posDays, toastConnections } from './db/schema';
+import { stable } from './links';
 import { notify } from './notify';
 import { TOAST_MSG, unseal } from './toast-conn';
 import { toastSummary } from './toast-schema';
@@ -134,7 +135,7 @@ export async function rebuildRoom(db: Db, orgId: string, roomId: string, today: 
   const label = `Toast sync · ${days.length} days to ${days.at(-1)!.day}`;
   const [last] = await db.select().from(inputs).where(and(eq(inputs.orgId, orgId), eq(inputs.roomId, roomId), eq(inputs.kind, 'toast'), eq(inputs.undone, false))).orderBy(desc(inputs.createdAt)).limit(1);
   if (last && last.userId == null && last.summary.startsWith('Toast sync')) {
-    if (JSON.stringify(last.rows) === JSON.stringify([parsed.data])) return { ok: true as const, changed: false, label };
+    if (stable(last.rows) === stable([parsed.data])) return { ok: true as const, changed: false, label };
     await db.update(inputs).set({ rows: [parsed.data], summary: label, updatedAt: new Date() }).where(eq(inputs.id, last.id));
   } else {
     await db.insert(inputs).values({ orgId, roomId, kind: 'toast', rows: [parsed.data], summary: label, userId: null });
