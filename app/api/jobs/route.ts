@@ -22,7 +22,7 @@ export async function POST(req: Request) {
     const v = await viewerFor(req.headers, db);
     if (v.role === 'gm') throw new AuthError(403, 'Only an owner or admin can run jobs.');
     const { job } = ((await req.json().catch(() => ({}))) ?? {}) as { job?: string };
-    if (!job || !(job in JOBS) || job === 'cleanup') return Response.json({ error: 'Pick sync, links, detection, proof, reverify or billing.' }, { status: 400 });
+    if (!job || !(job in JOBS) || job === 'cleanup') return Response.json({ error: 'Pick sync, links, agents, detection, proof, reverify or billing.' }, { status: 400 });
     const [result] = await runJob(db, job as JobName, { orgId: v.orgId, trigger: 'manual' });
     return Response.json({ result, status: await jobStatus(db, v.orgId, v.rooms) });
   } catch (err) {

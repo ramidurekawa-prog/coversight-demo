@@ -29,7 +29,7 @@ const CV_GAPS = [
   { n: 8, title: "Control-chart alerting with a stated false-alarm rate", state: "Drift found at month end", value: "Days, not quarters; no alert fatigue", effort: "M", grade: "B", wave: 1 },
   { n: 9, title: "QuickBooks Online + P&L bridge", state: "Specified, unbuilt", value: "A fee basis an accountant signs", effort: "L", grade: "B", wave: 4 },
   { n: 10, title: "Persistence and decay after verification", state: "No 26-week monitoring", value: "Stops counting one dollar forever", effort: "M", grade: "C", wave: 4 },
-  { n: 11, title: "Approval, fence and autonomy records", state: "No agents exist; 10 of 16 greenfield", value: "Fewer manager-hours per banked dollar", effort: "L", grade: "C", wave: 2 },
+  { n: 11, title: "Approval, fence and autonomy records", state: "The 19-role crew runs (System), proposing only; no writeback yet", value: "Fewer manager-hours per banked dollar", effort: "L", grade: "C", wave: 2 },
   { n: 12, title: "Waitlist feed", state: "None, so faster turns are always $0", value: "≈$1k/mo ceiling at Rosewood", effort: "S", grade: "D", wave: 5 },
   { n: 13, title: "Invoicing on the reconciled figure, with credits", state: "No billing surface", value: "The commercial model, made visible", effort: "M", grade: "C", wave: 4 },
   { n: 14, title: "Notification service (one message per service)", state: "No push or SMS", value: "Service screen only works if the phone buzzes", effort: "M", grade: "B", wave: 1 },

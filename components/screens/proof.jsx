@@ -4,6 +4,7 @@ import * as React from 'react';
 
 import { Icon, Button, Tabs } from '../kit';
 import { PlatformHealth, ToastConnectionLine } from './live';
+import { Crew } from './crew';
 import { useEngine, useSaved } from '../engine';
 import { bookedBetween, utcDay } from '../../lib/data/billing';
 import { compareRooms, PEER_COHORT_MIN } from '../../lib/data/compare';
@@ -715,37 +716,7 @@ function CvSources() {
   );
 }
 
-/* ================================================================ System (agents) */
-const CV_AGENTS = [
-  ["Orchestration", "Routes work between agents and opens tasks", "Propose"],
-  ["Data quality", "Watches every feed for staleness and gaps", "Read"],
-  ["Opportunity detection", "Runs the detectors and resolves overlaps", "Propose"],
-  ["Recommendation", "Ranks candidates by durable value per hour", "Propose"],
-  ["Action planning", "Drafts the schedule, price or par change", "Draft"],
-  ["Execution evidence", "Proves the change actually happened", "Read"],
-  ["Experiment design", "Registers the measurement plan before the change", "Draft"],
-  ["Control selection", "Finds matched services and items", "Read"],
-  ["Measurement", "Runs the estimator when a window closes", "Read"],
-  ["Guardrail", "Watches counter-metrics and drops autonomy on a breach", "Act within fence"],
-  ["Verification decision", "Deterministic rules produce the verdict. Not an agent.", "Rules only"],
-  ["Accounting reconciliation", "Bridges claims to the ledger and proposes mappings", "Propose"],
-  ["Persistence monitoring", "Fits decay after verification and flags drift", "Read"],
-  ["Operator copilot", "Answers the GM in plain language", "Read"],
-  ["Accountant copilot", "Answers the controller with lineage", "Read"],
-  ["Portfolio intelligence", "Learns which levers verify, across rooms", "Read"],
-];
-const CV_EVENTS = [
-  ["Guardrail", "Tuesday dinner: turn time 47 min, inside the 52-minute guard"],
-  ["Data quality", "7shifts: still no successful sync since 1:12 am"],
-  ["Opportunity detection", "Ran 7 detectors on Oakland. No new findings above threshold"],
-  ["Persistence monitoring", "Thursday prep: week 18 on target, decay rate 0.0"],
-  ["Recommendation", "Re-ranked Oakland candidates after salmon refusal window"],
-  ["Accounting reconciliation", "Proposed mapping 5010 and 5020 for purchasing, 92% confidence"],
-  ["Execution evidence", "Tuesday dinner: 7shifts diff confirms 4 servers, Oct 20"],
-  ["Control selection", "Matched 3 Berkeley Tuesdays for the Tuesday dinner test"],
-  ["Orchestration", "Opened task: upload recipe costs, assigned to Maria Reyes"],
-  ["Operator copilot", "Answered: \"Why is the salmon test stuck?\""],
-];
+/* ================================================================ System (autonomy and the crew) */
 const LEVER_NEED = {
   Labour: "A4 needs a full quarter at A3 without an un-caught reversal",
   Menu: "A2 needs write access to Toast menus and a preview of the change",
@@ -764,18 +735,6 @@ function CvSystem() {
     if (eng.mode !== 'server') return;
     fetch('/api/activity', { credentials: 'same-origin' }).then((r) => r.json()).then((b) => setReal(b.activity || [])).catch(() => setReal([]));
   }, [eng.mode]);
-  const [feed, setFeed] = React.useState(() => CV_EVENTS.slice(0, 4).map((e, i) => ({ id: i, t: `7:1${4 - i} pm`, a: e[0], m: e[1] })));
-  React.useEffect(() => {
-    let n = 4;
-    const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reduce) return;
-    const iv = setInterval(() => {
-      const e = CV_EVENTS[n % CV_EVENTS.length];
-      setFeed((f) => [{ id: n, t: "just now", a: e[0], m: e[1] }, ...f.map((x, i) => (i === 0 && x.t === "just now" ? { ...x, t: "7:15 pm" } : x))].slice(0, 12));
-      n += 1;
-    }, 3800);
-    return () => clearInterval(iv);
-  }, []);
   const when = (d) => new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   const LV = ["Observes", "Recommends", "Drafts", "Executes within a fence", "Holds the line"];
   return (
@@ -801,33 +760,17 @@ function CvSystem() {
           ))}
         </div>
       </section>
-      <div className="cv-grid g2">
+      <Crew />
+      {real && (
         <section className="cv-card flush">
           <div className="cv-row" style={{ padding: "14px 16px", borderBottom: "1px solid var(--border)", justifyContent: "space-between" }}>
-            <span className="cv-h4">Sixteen roles</span><span className="cv-xs cv-faint">Most can only read or propose</span>
+            <span className="cv-h4">What people and jobs did</span><Pill icon="ScrollText">From the audit log</Pill>
           </div>
-          <div className="cv-tablewrap" tabIndex={0} role="group" aria-label="Scrollable table" style={{ maxHeight: 460, overflowY: "auto" }}>
-            <table className="cv-table">
-              <tbody>
-                {CV_AGENTS.map(([n, w, a]) => (
-                  <tr key={n}><td><div className="cv-col" style={{ gap: 2 }}><span style={{ fontWeight: 600 }}>{n}</span><span className="cv-xs cv-faint">{w}</span></div></td><td className="r"><Pill tone={a === "Act within fence" ? "warn" : a === "Rules only" ? "info" : "neutral"} icon={a === "Read" ? "Eye" : a === "Propose" ? "Lightbulb" : a === "Draft" ? "PenLine" : a === "Rules only" ? "Scale" : "Zap"}>{a}</Pill></td></tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="cv-feed" style={{ maxHeight: 320, overflowY: "auto" }}>
+            {real.length ? real.map((e, i) => <div key={i} className="ev"><span className="t">{when(e.at)}</span><span className="a">{e.who}</span><span className="m">{e.what}{e.room ? ` · ${e.room}` : ''}</span></div>) : <div className="ev"><span className="m">Nothing yet.</span></div>}
           </div>
         </section>
-        <section className="cv-card flush">
-          <div className="cv-row" style={{ padding: "14px 16px", borderBottom: "1px solid var(--border)", justifyContent: "space-between" }}>
-            <span className="cv-h4">{real ? 'What happened' : "What they're doing"}</span>{real ? <Pill icon="ScrollText">From the audit log</Pill> : <Pill icon="FlaskConical">Simulated</Pill>}
-          </div>
-          <div className="cv-feed" aria-live="polite">
-            {real
-              ? (real.length ? real.map((e, i) => <div key={i} className="ev"><span className="t">{when(e.at)}</span><span className="a">{e.who}</span><span className="m">{e.what}{e.room ? ` · ${e.room}` : ''}</span></div>) : <div className="ev"><span className="m">Nothing yet.</span></div>)
-              : feed.map((e) => <div key={e.id} className="ev"><span className="t">{e.t}</span><span className="a">{e.a}</span><span className="m">{e.m}</span></div>)}
-          </div>
-        </section>
-      </div>
-      <Callout icon="Ban">Eleven things no agent may do, ever. Two of them: create a material account mapping without a named person, and book a saving that hasn't passed every gate. Automated changes carry the same proof burden as human ones.</Callout>
+      )}
     </div>
   );
 }

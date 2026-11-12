@@ -107,3 +107,4 @@ h1, .cv-h4 { letter-spacing: -0.012em; }
 .cv-theme button { height: 24px; padding: 0 9px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--fg-2); font: 600 var(--text-xs)/1 var(--font-sans); cursor: pointer; }
 .cv-theme button.on { background: var(--surface); color: var(--fg-1); }
 .cv-theme button:focus-visible { outline: none; box-shadow: var(--ring); }
+@media (max-width: 480px) { .cv-theme button { padding: 0 6px; } } /* fits the phone header without a sideways scroll */
