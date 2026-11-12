@@ -5,6 +5,7 @@ import * as React from 'react';
 import { Icon, Button } from '../kit';
 import { LOCS, NOW, SEED } from '../../lib/data/seed';
 import * as M from '../../lib/data/model';
+import { findingBlocked } from '../../lib/data/findings';
 
 /* Coversight demo core: the current room's data (loaded from lib/data),
    money helpers, claim chips, derivation drawer, approval modal and shared
@@ -363,8 +364,33 @@ function cvApproval(id) {
   };
 }
 
-function ApprovalModal({ id, onClose, onConfirm }) {
+/** A price approval checked against the room's saved fences: size of the move, and weeks since the last one on that dish. */
+function fenceBreach(id, eng) {
+  const m = /^price:([\w-]+):([\d.]+)$/.exec(id || "");
+  if (!m) return null;
+  const item = CV_MENU.find((x) => x.key === m[1]);
+  if (!item) return null;
+  const f = eng?.actions?.[CV_D.id]?.fences?.f ?? { maxPrice: 8, priceGap: 6 };
+  const pct = ((+m[2] - item.price) / item.price) * 100;
+  if (Math.abs(pct) > f.maxPrice + 1e-9) return `A ${pct.toFixed(1)}% move is past your fence of ${f.maxPrice}% for a single price change. Change the fence on Fences & alerts, or pick a smaller step.`;
+  const last = (eng?.tasks || []).filter((t) => t.roomId === CV_D.id && t.approvalId.startsWith(`price:${m[1]}:`) && t.approvalId !== id && t.status !== "cancelled")
+    .map((t) => new Date(t.createdAt).getTime()).sort((a, b) => b - a)[0];
+  if (last && Date.now() - last < f.priceGap * 7 * 864e5) return `The ${item.name.toLowerCase()} was repriced ${Math.round((Date.now() - last) / 864e5)} days ago. Your fence allows one move every ${f.priceGap} weeks.`;
+  return null;
+}
+
+/** A price change whose margin rests on a cost we only estimated is refused, whichever screen asked for it. */
+function inputBlock(id) {
+  const m = /^price:([\w-]+):([\d.]+)$/.exec(id || "");
+  if (!m) return null;
+  const c = CV_D.candidates.find((x) => x.kind === "price" && x.item === m[1]) || { kind: "price", item: m[1] };
+  return findingBlocked(c, CV_D.room);
+}
+
+function ApprovalModal({ id, onClose, onConfirm, eng }) {
   const a = cvApproval(id);
+  const blockedBy = inputBlock(id);
+  const breach = fenceBreach(id, eng);
   const [step, setStep] = React.useState("review");
   React.useEffect(() => {
     const k = (e) => { if (e.key === "Escape") onClose(); };
@@ -406,11 +432,13 @@ function ApprovalModal({ id, onClose, onConfirm }) {
               </div>
               <Callout icon="Timer">{a.window}</Callout>
               <Callout icon="Undo2">{a.revert}</Callout>
+              {blockedBy && <Callout tone="bad" icon="TriangleAlert">{blockedBy}</Callout>}
+              {breach && <Callout tone="bad" icon="Fence">{breach}</Callout>}
             </div>
             <div className="ft">
               <Button variant="ghost" onClick={onClose}>Not now</Button>
               <Button variant="secondary" onClick={onClose}>Edit first</Button>
-              <Button icon="Check" onClick={() => { setStep("done"); onConfirm && onConfirm(id); }}>Approve</Button>
+              <Button icon="Check" disabled={!!breach || !!blockedBy} onClick={() => { setStep("done"); onConfirm && onConfirm(id); }}>Approve</Button>
             </div>
           </>
         ) : (

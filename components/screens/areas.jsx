@@ -5,6 +5,10 @@ import * as React from 'react';
 import { Button, Icon, Tabs } from '../kit';
 import { CV_CLAIM, CV_D, CV_ROOM, Callout, Claim, Money, Pill, PageHead, cvMoney, cvScale, useCv, SampleNote } from './core';
 import { EXCEPTION_TYPES, controlLimits } from '../../lib/data/model';
+import { weeklySeries } from '../../lib/data/readers';
+import { TEST_LEVER, coverageOf } from '../../lib/data/coverage';
+import { engine, useEngine, useSaved } from '../engine';
+import { DenseControls, DenseKitchen, DenseChannels } from './dense-sections';
 
 /* Operating areas (V3, from the "map of restaurant inefficiencies" sheets).
  * Every area runs the same closed loop (detect → understand → act → verify),
@@ -75,6 +79,23 @@ function Diagnose({ data, manager, fix, verify }) {
 const EXC_LABELS = ['Jul 27', 'Aug 3', 'Aug 10', 'Aug 17', 'Aug 24', 'Aug 31', 'Sep 7', 'Sep 14', 'Sep 21', 'Sep 28', 'Oct 5', 'Oct 12', 'Oct 19'];
 /** Room exceptions as a share of sales, last 13 weeks of the room's history (this week from the register). */
 const exceptionSeries = () => CV_D.hist.rows.slice(-13).map((r) => r.excPct);
+/** On a room's own Toast data: voids, comps and discounts as a share of sales, from the export's 12 weeks. */
+function ownExceptionSeries() {
+  const v = CV_D.room.levers?.voidWeeks;
+  if (!CV_D.room.fromToast || !v?.length) return null;
+  const dollars = weeklySeries(CV_D.room, 'exceptionDollars');
+  const weeks = [...new Set(v.map((x) => x.week))].sort((a, b) => a - b);
+  const series = weeks.map((w) => { const rows = v.filter((x) => x.week === w); const sales = rows.reduce((t, x) => t + x.sales, 0); return sales ? (rows.reduce((t, x) => t + x.exceptions, 0) / sales) * 100 : 0; });
+  const labels = dollars.map((p) => new Date(`${p.weekEnd}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }));
+  return { series, labels };
+}
+
+function talkingPoints(k, meta, T) {
+  return {
+    subject: `${CV_ROOM.short}: ${meta.short} with ${k.name}`,
+    body: `Talking points for a conversation with ${k.name} (a reason to talk, not an accusation):\n\n• The policy: ${meta.label.toLowerCase()} need a reason and a manager OK.\n• The numbers: over the last 28 days, ${k.name}'s ${meta.note} ran at ${(k[`${meta.k}Rate`] * 100).toFixed(2)}% of their sales, against the room's ${(T.base * 100).toFixed(2)}%.\n• The limit for their volume: ${(k[`${meta.k}Ucl`] * 100).toFixed(2)}%.\n• Ask what's driving it (a regular, a menu issue, training) before anything else.\n\nFrom Coversight.`,
+  };
+}
 
 function ControlChart({ series, mean, ucl, lcl, unit = '%', labels }) {
   const W = 560, H = 190, P = { l: 34, r: 16, t: 14, b: 26 };
@@ -106,7 +127,10 @@ function CvControls() {
   const meta = EXCEPTION_TYPES.find((t) => t.k === type);
   const k = T.signals[0];
   const times = k ? k[`${type}Rate`] / T.base : 0;
-  const series = exceptionSeries();
+  const own = ownExceptionSeries();
+  const eng = useEngine();
+  const series = own ? own.series : exceptionSeries();
+  const labels = own ? own.labels : EXC_LABELS;
   const lim = controlLimits(series);
   const last = series[series.length - 1];
   const people = [...S.people].sort((a, b) => b[`${type}Rate`] / b[`${type}Ucl`] - a[`${type}Rate`] / a[`${type}Ucl`]);
@@ -118,8 +142,8 @@ function CvControls() {
       <LoopStrip stage={S.signalCount ? 'act' : 'understand'} notes={{ detect: 'Per-person limits on every exception', understand: S.signalCount ? `${S.signalCount} signal${S.signalCount === 1 ? '' : 's'} above a limit` : 'Everyone inside their limits', act: k ? (type === 'comps' ? 'Coach the comp policy' : 'Reason code on post-send voids') : 'Nothing to act on', verify: 'Control chart, 1 false alarm a quarter' }} />
       <div className="cv-grid g-hero">
         <section className="cv-card">
-          <div className="cv-card-head"><span className="cv-h4">Room exceptions as a share of sales, 13 weeks</span><Claim k="obs" /></div>
-          <ControlChart series={series} mean={lim.mean} ucl={lim.ucl} lcl={lim.lcl} labels={EXC_LABELS} />
+          <div className="cv-card-head"><span className="cv-h4">Room exceptions as a share of sales, {series.length} weeks{own ? ' (your Toast data)' : ''}</span><Claim k="obs" /></div>
+          <ControlChart series={series} mean={lim.mean} ucl={lim.ucl} lcl={lim.lcl} labels={labels} />
           <span className="cv-small cv-muted">{last > lim.ucl ? <>The room is <b>above</b> its upper limit at <b className="cv-num">{last.toFixed(1)}%</b> last week.</> : <>The room is inside its limits: <b className="cv-num">{last.toFixed(1)}%</b> last week, {cvMoney(Math.round(S.weekTotal))} of {cvMoney(Math.round(CV_D.week.net))}.</>} {S.signalCount ? 'The signal is in individual people, below.' : 'Nothing to chase at the room level.'}</span>
         </section>
         <section className="cv-card">
@@ -132,7 +156,7 @@ function CvControls() {
           )}
           <Callout icon="Info">We don&apos;t count this as a saving. It&apos;s observed leakage; only a change that holds, measured against the baseline, becomes bookable.</Callout>
           {k && type === 'postVoid' && <div className="cv-row"><Button icon="ShieldCheck" onClick={() => cv.approve('void-reason')}>Review the void rule</Button></div>}
-          {k && type === 'comps' && <div className="cv-row"><Button icon="MessageSquare" onClick={() => cv.toast(`Talking points for ${k.name} sent to ${CV_ROOM.gm}: the policy, the numbers, and the limit.`)}>Send talking points to the GM</Button></div>}
+          {k && type !== 'postVoid' && (() => { const tp = talkingPoints(k, meta, T); return <div className="cv-row"><a className="btn btn-primary btn-sm" href={`mailto:?subject=${encodeURIComponent(tp.subject)}&body=${encodeURIComponent(tp.body)}`} onClick={() => { if (eng.mode === 'server') engine.draftEmail({ kind: 'gm-note', subject: tp.subject, body: tp.body }).catch(() => null); }}><Icon name="MessageSquare" size={14} /> Email talking points to the GM</a></div>; })()}
         </section>
       </div>
       <section className="cv-card flush">
@@ -168,6 +192,7 @@ function CvControls() {
           <div className="cv-row"><Button variant="secondary" icon="FileCheck" onClick={() => cv.go('packet', { id: 'wc-comps' })}>Open the comp-policy packet</Button></div>
         </section>
       </div>
+      <DenseControls />
     </div>
   );
 }
@@ -196,6 +221,11 @@ function TicketChart({ t }) {
 function CvKitchen() {
   const cv = useCv();
   const t = CV_D.room.tickets;
+  const own = !!t.own;
+  const [ideas, setIdeas] = useSaved('ideas', []);
+  const idea = { id: 'kitchen-bottleneck', title: `Rebalance the ${t.bottleneck} station at the Saturday peak`, why: 'Waits on a waitlist to show whether a faster kitchen seats anyone new.' };
+  const hasIdea = ideas.some((x) => x.id === idea.id);
+  const peakHour = t.sat.indexOf(Math.max(...t.sat.filter((v) => v != null)));
   const kds = CV_D.feeds.find((f) => f.name === 'Kitchen display');
   const late = t.fri.filter((v) => v > t.target).length + t.sat.filter((v) => v > t.target).length;
   const peak = Math.max(...t.sat);
@@ -204,9 +234,9 @@ function CvKitchen() {
     <div className="cv-page wide">
       <PageHead over={`Kitchen · ticket times · ${CV_ROOM.name}`} q="Where does the line slow down, and does it cost anything?"
         sub="Ticket time at the pass by hour and station. A slow kitchen only costs money when it costs a table: when the room is full and someone is waiting." />
-      <SampleNote what="Ticket times by station" />
+      {own ? <Callout icon="ChefHat">From your Toast kitchen timings through {CV_D.room.fromToast?.end}: every ticket, measured at the station that fulfilled it.</Callout> : <SampleNote what="Ticket times by station" />}
       <LoopStrip stage={stale ? 'detect' : 'understand'} notes={{ detect: `${late} dinner hours over target`, understand: `${t.bottleneck}, Fri and Sat peak`, act: 'Waits on measured ticket times', verify: 'Needs ticket-level export' }} />
-      {stale && <Callout tone="warn" icon="Clock">The kitchen display hasn&apos;t exported since Oct 21, so these are the last good weeks. {kds.note}</Callout>}
+      {stale && !own && <Callout tone="warn" icon="Clock">The kitchen display hasn&apos;t exported since Oct 21, so these are the last good weeks. {kds.note}</Callout>}
       <div className="cv-grid g-hero">
         <section className="cv-card">
           <div className="cv-card-head"><span className="cv-h4">Ticket time at the pass, Friday and Saturday dinner</span><Claim k="est" /></div>
@@ -216,7 +246,7 @@ function CvKitchen() {
             <span><i className="ring" style={{ borderColor: 'var(--cat-1)' }} />Saturday</span>
             <span><i className="line" style={{ background: 'var(--money-down)' }} />{t.target}-minute target</span>
           </div>
-          <span className="cv-small cv-muted">Saturday peaks at <b className="cv-num">{peak.toFixed(1)} min</b> at 8 pm. These are hourly averages from the kitchen display, so they can be estimated, not measured.</span>
+          <span className="cv-small cv-muted">Saturday peaks at <b className="cv-num">{peak.toFixed(1)} min</b> at {peakHour + 5} pm. {own ? 'Measured from every ticket in your Toast kitchen timings.' : 'These are hourly averages from the kitchen display, so they can be estimated, not measured.'}</span>
         </section>
         <section className="cv-card">
           <div className="cv-card-head"><span className="cv-h4">Where late tickets wait</span><Claim k="est" /></div>
@@ -229,7 +259,7 @@ function CvKitchen() {
               </div>
             ))}
           </div>
-          <span className="cv-xs cv-faint">Share of tickets over {t.target} minutes, by the station that finished last.</span>
+          <span className="cv-xs cv-faint">{own ? 'Share of all tickets, by the station that fulfilled them.' : `Share of tickets over ${t.target} minutes, by the station that finished last.`}</span>
           <div className="cv-row" style={{ alignItems: 'baseline' }}>
             <span className="cv-fig md">$0</span><Claim k="none" />
             <span className="cv-small cv-muted">claimable this week</span>
@@ -238,7 +268,7 @@ function CvKitchen() {
         </section>
       </div>
       <div className="cv-grid g2">
-        <Diagnose data={['Kitchen display', 'Toast', 'Waitlist']} manager={t.manager} fix={t.fix}
+        <Diagnose data={['Kitchen display', 'Toast', 'Waitlist']} manager={own ? `${t.bottleneck} carries ${t.stations[0]?.[1] ?? 0}% of tickets, and Saturday peaks at ${peak.toFixed(1)} minutes around ${peakHour + 5} pm against a ${t.target}-minute target.` : t.manager} fix={own ? `Move one prep task off ${t.bottleneck} before the Saturday peak, or split its busiest dish across two stations.` : t.fix}
           verify="With ticket-level export on, the test compares ticket times on changed nights against matched nights. With a waitlist, faster turns at full room become claimable." />
         <section className="cv-card">
           <span className="cv-h4">Two connections unlock this lever</span>
@@ -248,10 +278,17 @@ function CvKitchen() {
           </div>
           <div className="cv-row">
             <Button icon="Plug" onClick={() => cv.go('sources')}>Fix the connections</Button>
-            <Button variant="secondary" onClick={() => cv.toast('Added to next week as a test idea. It ranks at $0 until the waitlist is connected.')}>Add as a test idea</Button>
+            {hasIdea ? <Pill tone="good" icon="Check">Saved as a test idea</Pill> : <Button variant="secondary" onClick={() => { setIdeas((list) => [...list, { ...idea, at: new Date().toISOString() }], `Test idea saved: ${idea.title}`); cv.toast('Saved as a test idea. It ranks at $0 until a waitlist is connected.'); }}>Add as a test idea</Button>}
           </div>
+          {ideas.length > 0 && (
+            <div className="cv-col" style={{ gap: 6 }}>
+              <span className="cv-over">Saved test ideas</span>
+              {ideas.map((x) => <div key={x.id} className="cv-row nowrap" style={{ gap: 8 }}><Icon name="Lightbulb" size={14} /><span className="cv-small" style={{ flex: 1 }}>{x.title}</span><Button size="sm" variant="ghost" onClick={() => setIdeas((list) => list.filter((y) => y.id !== x.id), `Test idea removed: ${x.title}`)}>Remove</Button></div>)}
+            </div>
+          )}
         </section>
       </div>
+      <DenseKitchen />
     </div>
   );
 }
@@ -262,11 +299,13 @@ function CvInventory() {
   const U = CV_D.usage;
   const top = [...U.flagged].sort((a, b) => b.dollars - a.dollars)[0];
   const max = Math.max(0.12, ...U.rows.map((r) => r.pct)) * 1.15;
-  const salmonTest = CV_D.proofs.find((p) => p.id === 'salmon-plate');
+  const salmonTest = CV_D.room.fromToast ? null : CV_D.proofs.find((p) => p.id === 'salmon-plate');
   return (
     <div className="cv-page wide">
       <PageHead over={`Inventory & waste · theoretical vs actual · ${CV_ROOM.name}`} q="Are we using more than we sell?"
         sub="What the plates and pours you sold should have used, against what actually left the walk-in and the bar. Logged waste explains part of any gap; the rest is over-portioning, spoilage or something rung in wrong." />
+      {CV_D.room.fromToast && !CV_D.inputs.counts && <Callout tone="warn" icon="Package"><span>Toast doesn&apos;t count stock, so these counts are still the sample&apos;s. Your plates sold are real (from Toast), but a gap needs your own count. <button className="cv-link" onClick={() => cv.go('inputs', { kind: 'counts' })}>Enter a count</button> · <button className="cv-link" onClick={() => cv.go('inputs', { kind: 'waste' })}>Log waste</button></span></Callout>}
+      {CV_D.inputs.counts && <Callout icon="ClipboardList">Counts entered by hand {CV_D.inputs.counts.date}: {CV_D.inputs.counts.n} item{CV_D.inputs.counts.n === 1 ? '' : 's'}{CV_D.inputs.waste ? `, plus ${CV_D.inputs.waste.n} waste entries` : ''}. Expected use comes from {CV_D.room.fromToast ? 'your Toast plates sold' : 'the plates sold'} and your recipes.</Callout>}
       <LoopStrip stage={U.flagged.length ? 'detect' : 'understand'} notes={{ detect: `${U.flagged.length} items past tolerance`, understand: U.wasteWeek > 0 ? 'Waste log explains part of it' : 'Needs a spot count to separate causes', act: 'Portion scale, prep pars, pour spouts', verify: 'Usage gap vs the count baseline' }} />
       <div className="cv-grid g-hero">
         <section className="cv-card">
@@ -340,6 +379,7 @@ function CvChannels() {
     <div className="cv-page wide">
       <PageHead over={`Delivery & channels · ${CV_ROOM.name}`} q="Does every channel make money?"
         sub="The same plate earns very different money depending on how it leaves the building. Contribution per channel after food, commission, packaging and refunds, before labour." />
+      {CV_D.room.fromToast && <Callout icon="Info"><span>Sales, orders and refunds by channel are from your Toast data through {CV_D.room.fromToast.end}. Commission rates and packaging are standard assumptions until you enter your delivery statements. <button className="cv-link" onClick={() => cv.go('inputs', { kind: 'channels' })}>Enter statements</button>{C.channels.some((c) => c.none) ? ` · No sales in your data on: ${C.channels.filter((c) => c.none).map((c) => c.name).join(', ')}.` : ''}</span></Callout>}
       <LoopStrip stage="act" notes={{ detect: 'Channel margin from statements', understand: `DoorDash keeps ${Math.round(dd.per100)}¢ of each dollar`, act: '10% delivery markup, ready to review', verify: '6-week test, takeout as control' }} />
       {Math.abs(offBy) > CV_D.week.net * 0.03 && <Callout tone="warn" icon="TriangleAlert">Channel sales add up to {cvMoney(Math.round(C.total))}, {cvMoney(Math.round(Math.abs(offBy)))} {offBy > 0 ? 'more' : 'less'} than the register&apos;s net sales this week. Hand-entered channel figures are shown as entered; check them against your delivery statements.</Callout>}
       <div className="cv-grid g-hero">
@@ -389,6 +429,7 @@ function CvChannels() {
         manager={`Delivery orders keep about $${dd.per100.toFixed(0)} of every $100 after the apps take their cut, against $${dine.per100.toFixed(0)} dine-in. We're charging the same price for a plate that earns about half as much, and refunds for missing items add another ${cvMoney(C.deliveryRefunds)} a week.`}
         fix="Raise delivery prices 10% on DoorDash and Uber Eats. Separately, add a bag check at expo for orders with modifiers, where most missing-item refunds start."
         verify="A 6-week test with takeout as the control channel. Delivery contribution per week is compared before and after; the lower bound books." />
+      <DenseChannels />
     </div>
   );
 }
@@ -402,34 +443,67 @@ const CV_STAGE_PILL = {
   none: ['neutral', 'CircleMinus', 'Not covered'],
 };
 
+/** Four dots, one per loop step: filled when this room supports it. */
+function StepDots({ steps }) {
+  return (
+    <span className="cv-row nowrap" style={{ gap: 3 }} role="img" aria-label={CV_LOOP.map((s) => `${s.label} ${steps[s.k]?.ok ? 'yes' : 'no'}`).join(', ')}>
+      {CV_LOOP.map((s) => <span key={s.k} title={`${s.label}: ${steps[s.k]?.why ?? '—'}`} style={{ width: 18, height: 6, borderRadius: 3, background: steps[s.k]?.ok ? 'var(--accent)' : 'var(--border-strong)', opacity: steps[s.k]?.ok ? 1 : 0.5 }} />)}
+    </span>
+  );
+}
+
 function CvCoverage() {
   const cv = useCv();
-  const AREAS = CV_D.areas;
-  const at = (k) => AREAS.filter((a) => CV_STAGE_IDX[a.stage] >= CV_STAGE_IDX[k]).length;
+  const eng = useEngine();
+  const real = (eng.mode === 'server' && eng.org && !eng.org.sample) || !!CV_D.room.fromToast;
+  /* Verified and running tests: the room's own windows once it runs on its own data; the sample's written proofs otherwise. */
+  const mine = (eng.windows || []).filter((w) => w.roomId === CV_D.id);
+  const evidence = real
+    ? { verified: mine.filter((w) => w.status === 'verified').map((w) => TEST_LEVER[w.lever]), testing: mine.filter((w) => w.status === 'running' || w.status === 'waiting').map((w) => TEST_LEVER[w.lever]) }
+    : { verified: CV_D.proofs.filter((p) => p.outcome === 'verified').map((p) => p.lever), testing: CV_D.proofs.filter((p) => p.outcome === 'testing').map((p) => p.lever) };
+  const banked = mine.filter((w) => w.status === 'verified');
+  /* A written note only shows when it agrees with what the data supports; otherwise the computed reason does. */
+  const AREAS = coverageOf(CV_D, evidence).map((a) => {
+    if (!a.steps.detect) return a;
+    const note = real || a.reached !== a.stage ? (a.steps[a.reached]?.why ?? a.gap) : a.note;
+    if (real && a.id === 'labour') {
+      const wk = banked.filter((w) => TEST_LEVER[w.lever] === 'Labour').reduce((t, w) => t + w.bookedCents, 0) / 100;
+      return { ...a, note, fig: wk ? `${cvMoney(wk)}/wk banked` : '$0 banked', claim: wk ? 'book' : 'none' };
+    }
+    return { ...a, note };
+  });
+  const [detail, setDetail] = React.useState(false);
+  const at = (k) => AREAS.filter((a) => a.steps[k]?.ok).length;
   const counts = { detect: at('detect'), understand: at('understand'), act: at('act'), verify: at('verify') };
+  const unavailable = AREAS.filter((a) => a.kind === 'unavailable');
   const annual = Math.round((CV_D.week.net * 52) / 1000) * 1000;
   return (
     <div className="cv-page wide">
       <PageHead over={`Coverage map · ${CV_ROOM.name}`} q="Where is this restaurant losing money, and how far along is each fix?"
-        sub="Twelve operating areas, one closed loop. Every area shows the data it reads, the chart that finds the problem, and the one figure this room's data supports, with how strong that figure is." />
+        sub="Each area reaches a step only when this room's feeds, findings and tests support it, not because it's on a roadmap. A missing feed shows as unavailable, never as zero." />
       <ol className="cv-loop big" aria-label="Areas at each step of the loop">
         {CV_LOOP.map((s) => (
           <li key={s.k} className="on">
             <span className="n"><Icon name={s.icon} size={16} /></span>
             <span className="cv-col" style={{ gap: 1 }}>
-              <span className="cv-row" style={{ gap: 8, alignItems: 'baseline' }}><b>{s.label}</b><span className="cv-fig md">{counts[s.k]}</span><span className="cv-xs cv-faint">of 12</span></span>
+              <span className="cv-row" style={{ gap: 8, alignItems: 'baseline' }}><b>{s.label}</b><span className="cv-fig md">{counts[s.k]}</span><span className="cv-xs cv-faint">of {AREAS.length}</span></span>
               <span className="cv-xs cv-muted">{s.sub}</span>
             </span>
           </li>
         ))}
       </ol>
+      {unavailable.length > 0 && <Callout tone="warn" icon="Unplug">{unavailable.length} area{unavailable.length === 1 ? ' is' : 's are'} unavailable, not clear: {unavailable.map((a) => `${a.area.toLowerCase()} (needs ${a.missing.join(' and ')})`).join('; ')}. Nothing there is counted as zero.</Callout>}
+      <div className="cv-row" style={{ justifyContent: 'space-between' }}>
+        <span className="cv-small cv-muted">{detail ? 'Every step, with the reason it is or isn’t reached.' : 'One line per area: how far it gets and what unblocks the next step.'}</span>
+        <Tabs value={detail ? 'detail' : 'overview'} onChange={(v) => setDetail(v === "detail")} tabs={[{ value: 'overview', label: 'Overview' }, { value: 'detail', label: 'Detail' }]} />
+      </div>
       <section className="cv-card flush">
         <div className="cv-tablewrap" tabIndex={0} role="group" aria-label="Scrollable table">
           <table className="cv-table cv-areas">
-            <thead><tr><th>Area</th><th>What leaks</th><th>Data it reads</th><th>How it&apos;s shown</th><th>At {CV_ROOM.short}</th><th className="r">What the data supports</th></tr></thead>
+            <thead><tr><th>Area</th>{detail && <th>What leaks</th>}<th>Data it reads</th><th>At {CV_ROOM.short}</th><th>{detail ? 'Each step' : 'Next'}</th><th className="r">What the data supports</th></tr></thead>
             <tbody>
               {AREAS.map((a) => {
-                const [tone, icon, label] = CV_STAGE_PILL[a.stage];
+                const [tone, icon, label] = a.kind === 'unavailable' ? ['warn', 'Unplug', 'Unavailable'] : a.kind === 'clear' ? ['good', 'Check', 'Looked: nothing found'] : CV_STAGE_PILL[a.reached];
                 const href = a.screen === 'build' ? null : a.screen;
                 return (
                   <tr key={a.id} className={href ? 'cv-tr' : ''} onClick={href ? () => cv.go(href) : undefined} style={href ? { cursor: 'pointer' } : undefined}>
@@ -439,19 +513,33 @@ function CvCoverage() {
                         {href ? <button className="cv-link" style={{ fontWeight: 600, textAlign: 'left' }} onClick={(e) => { e.stopPropagation(); cv.go(href); }}>{a.area}</button> : <span style={{ fontWeight: 600 }}>{a.area}</span>}
                       </div>
                     </td>
-                    <td className="cv-small cv-muted" style={{ minWidth: 180 }}>{a.examples}</td>
-                    <td><div className="cv-row" style={{ gap: 4 }}>{a.data.length ? a.data.map((d) => <FeedChip key={d} name={d} />) : <span className="cv-xs cv-faint">—</span>}</div></td>
-                    <td className="cv-small" style={{ minWidth: 160 }}>{a.view}</td>
+                    {detail && <td className="cv-small cv-muted" style={{ minWidth: 180 }}>{a.examples}</td>}
+                    <td><div className="cv-row" style={{ gap: 4 }}>{a.data.length ? a.data.map((d) => <FeedChip key={d} name={d} />) : <span className="cv-xs cv-faint">—</span>}</div>{a.helps?.length > 0 && <span className="cv-xs cv-faint">Sharper with {a.helps.join(', ')}</span>}</td>
                     <td style={{ minWidth: 170 }}>
                       <div className="cv-col" style={{ gap: 4 }}>
                         <Pill tone={tone} icon={icon}>{label}</Pill>
-                        <span className="cv-xs cv-faint">{a.note}</span>
+                        {a.steps.detect && <StepDots steps={a.steps} />}
+                        <span className="cv-xs cv-faint">{a.kind === 'unbuilt' || a.kind === 'out' ? a.why : a.note}</span>
                       </div>
+                    </td>
+                    <td style={{ minWidth: 200 }}>
+                      {detail && a.steps.detect ? (
+                        <ul className="cv-col" style={{ gap: 2, margin: 0, padding: 0, listStyle: 'none' }}>
+                          {CV_LOOP.map((s) => <li key={s.k} className="cv-xs"><b>{s.label}:</b> <span className={a.steps[s.k].ok ? '' : 'cv-faint'}>{a.steps[s.k].why}</span></li>)}
+                        </ul>
+                      ) : (
+                        <div className="cv-col" style={{ gap: 4 }}>
+                          {a.gap && <span className="cv-xs cv-muted">{a.gap}</span>}
+                          {a.next && <button className="cv-link cv-small" onClick={(e) => { e.stopPropagation(); cv.go(a.next.go); }}>{a.next.label} <Icon name="ArrowRight" size={12} /></button>}
+                        </div>
+                      )}
                     </td>
                     <td className="r">
                       <div className="cv-col" style={{ gap: 4, alignItems: 'flex-end' }}>
-                        <span className="cv-num" style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{a.fig}</span>
-                        {a.claim !== 'none' && <Claim k={a.claim} />}
+                        {a.kind === 'unavailable' ? <span className="cv-small cv-faint">No figure without {a.missing[0]}</span> : <>
+                          <span className="cv-num" style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{a.fig}</span>
+                          {a.claim !== 'none' && <Claim k={a.claim} />}
+                        </>}
                       </div>
                     </td>
                   </tr>

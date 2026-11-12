@@ -10,7 +10,15 @@ import '@fontsource/inter/400.css';
 import '@fontsource/inter/500.css';
 import '@fontsource/inter/600.css';
 import '@fontsource/inter/700.css';
+import '@fontsource/ibm-plex-sans/400.css';
+import '@fontsource/ibm-plex-sans/500.css';
+import '@fontsource/ibm-plex-sans/600.css';
+import '@fontsource/ibm-plex-sans/700.css';
+import '@fontsource/ibm-plex-mono/400.css';
+import '@fontsource/ibm-plex-mono/500.css';
+import '@fontsource/ibm-plex-mono/600.css';
 import './globals.css';
+import './theme.css';
 
 import { Shell } from '../components/shell';
 
@@ -27,6 +35,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="en" suppressHydrationWarning>
       <head>
         {/* Hide the screens until the org's data has loaded (no flash of the sample). Fails open after 4 s. */}
+        {/* Apply the saved light/dark choice before paint (no flash). Auto follows the device. */}
+        <script dangerouslySetInnerHTML={{ __html: `try{var t=localStorage.getItem('cv-theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t}catch(e){}` }} />
         <script
           dangerouslySetInnerHTML={{
             __html: `if(!['/login','/reset-password','/join'].some(function(p){return location.pathname.indexOf(p)===0})){document.documentElement.classList.add('cv-pending');setTimeout(function(){document.documentElement.classList.remove('cv-pending')},4000)}`,

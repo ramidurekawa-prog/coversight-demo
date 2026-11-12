@@ -4,10 +4,12 @@ import * as React from 'react';
 
 import { Icon, Button, Tabs } from '../kit';
 import { CV_PAGES } from '../../lib/pages';
-import { useCv, cvMoney, cvFill, CV_D, CV_GROUP, CV_ROOM, CV_NOW, CV_PERSIST, cvChoosePlan, Claim, Pill, Callout, Interval, PageHead } from './core';
-import { engine, useSaved } from '../engine';
+import { useCv, cvMoney, cvFill, CV_D, CV_DS, CV_GROUP, CV_ROOM, CV_NOW, CV_PERSIST, cvChoosePlan, Claim, Pill, Callout, Interval, PageHead } from './core';
+import { engine, useEngine, useSaved } from '../engine';
 import { LoopStrip } from './areas';
 import { tmpl } from '../../lib/data/model';
+import { findingBlocked, findingStatus, findingTest } from '../../lib/data/findings';
+import { DensePortfolio } from './dense-sections';
 
 const M_fillLower = (t, tokens) => { const x = tmpl(t, tokens); return x.charAt(0).toLowerCase() + x.slice(1); };
 
@@ -58,7 +60,62 @@ const CV_PAGE_DEPS = {
 const CV_GRADE_TONE = { A: "bad", B: "warn", C: "info", D: "neutral" };
 
 /* ================================================================ First six weeks */
+/* A real group's first weeks: a checklist read from what has actually happened. */
+function StartReal() {
+  const cv = useCv();
+  const eng = useEngine();
+  const [team, setTeam] = React.useState(null);
+  const [mail, setMail] = React.useState(null);
+  React.useEffect(() => {
+    fetch('/api/team', { credentials: 'same-origin' }).then((r) => r.json()).then(setTeam).catch(() => setTeam({ people: [] }));
+    fetch('/api/outbox', { credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : null)).then(setMail).catch(() => setMail(null));
+  }, []);
+  const rooms = Object.values(CV_DS.rooms);
+  const own = rooms.filter((r) => r.fromToast).length;
+  const estimated = rooms.reduce((t, r) => t + r.menu.filter((m) => m.costEstimated).length, 0);
+  const ws = eng.windows || [];
+  const acts = eng.actions || {};
+  const fences = Object.values(acts).some((a) => a?.fences);
+  const approved = acts['']?.billing?.status === 'approved';
+  const steps = [
+    { k: 'Created the group', s: 'done', go: 'team' },
+    { k: `Loaded Toast data for every room (${own} of ${rooms.length})`, s: own === rooms.length ? 'done' : own ? 'now' : 'next', go: 'inputs' },
+    { k: estimated ? `Entered plate costs (${estimated} dishes still estimated)` : 'Entered plate costs for every dish', s: own && !estimated ? 'done' : own ? 'now' : 'next', go: 'inputs' },
+    { k: 'Invited your GMs and accountant', s: team ? (team.people.length > 1 ? 'done' : 'now') : 'next', go: 'team' },
+    { k: 'Set your fences and alerts', s: fences ? 'done' : 'next', go: 'fences' },
+    { k: 'Started the first 28-day test', s: ws.length ? 'done' : own ? 'now' : 'next', go: 'windows' },
+    { k: 'First test verified (around 4 weeks after it starts)', s: ws.some((w) => w.status === 'verified') ? 'done' : ws.length ? 'now' : 'next', go: 'proof' },
+    { k: 'Accountant approved a month', s: approved ? 'done' : 'next', go: 'accountant' },
+    { k: 'Email turned on for alerts and invites', s: mail?.provider ? 'done' : 'next', go: 'system' },
+  ];
+  const done = steps.filter((x) => x.s === 'done').length;
+  return (
+    <div className="cv-page">
+      <PageHead over={`First six weeks · ${eng.org?.name ?? ''}`} q="What happens between signing up and the first proven dollar?"
+        sub="Read from what has actually happened in your group. Each step links to where it's done." />
+      <div className="progress"><span style={{ width: `${(done / steps.length) * 100}%` }} /></div>
+      <span className="cv-small cv-muted">{done} of {steps.length} done</span>
+      <section className="cv-card">
+        {steps.map((x) => (
+          <div key={x.k} className="cv-row nowrap" style={{ gap: 10, padding: '8px 0', borderTop: '1px solid var(--border)' }}>
+            <Icon name={x.s === 'done' ? 'CircleCheck' : x.s === 'now' ? 'CircleDot' : 'Circle'} size={18} className={x.s === 'done' ? 'ok' : ''} />
+            <span className="cv-small" style={{ flex: 1, fontWeight: x.s === 'now' ? 700 : 400 }}>{x.k}</span>
+            {x.s !== 'done' && <Button size="sm" variant={x.s === 'now' ? 'primary' : 'ghost'} onClick={() => cv.go(x.go)}>Go</Button>}
+          </div>
+        ))}
+      </section>
+      <Callout icon="Info">The first weeks usually cost more than they save: tests take 28 days to close, and only closed tests can be billed.</Callout>
+    </div>
+  );
+}
+
 function CvStart() {
+  const eng = useEngine();
+  if (eng.mode === 'server' && eng.org && !eng.org.sample) return <StartReal />;
+  return <CvStartSample />;
+}
+
+function CvStartSample() {
   const cv = useCv();
   const steps = [
     { when: "Jul 6", k: "Connected Toast, 7shifts and your invoice inbox", s: "done" },
@@ -123,19 +180,31 @@ function CvStart() {
 function CvPortfolio() {
   const cv = useCv();
   const G = CV_GROUP;
-  const CV_ROOMS = G.rows;
-  const banked = G.banked;
+  const eng = useEngine();
+  const real = eng.mode === "server" && eng.org && !eng.org.sample;
+  /* A real group: banked and tests come from its own test windows, freshness from its own Toast data. */
+  const age = (end) => Math.round((Date.now() - Date.parse(`${end}T23:59:59Z`)) / 864e5);
+  const CV_ROOMS = real ? G.rows.map((r) => {
+    const ws = (eng.windows || []).filter((w) => w.roomId === r.id);
+    const t = r.d.room.fromToast;
+    const stale = t ? (age(t.end) > 8 ? 1 : 0) : 0;
+    return { ...r, banked: Math.round(ws.filter((w) => w.status === "verified").reduce((x, w) => x + w.bookedCents / 100, 0)), tests: ws.filter((w) => w.status === "running" || w.status === "waiting").length, alarms: ws.filter((w) => w.status === "reversed").length, stale,
+      note: t ? `Own Toast data to ${t.end}${stale ? `, ${age(t.end)} days old` : ""}` : "Sample numbers until its Toast data is loaded" };
+  }) : G.rows;
+  const banked = real ? CV_ROOMS.reduce((x, r) => x + r.banked, 0) : G.banked;
   const earned = G.earned;
   const weakest = [...CV_ROOMS].sort((a, b) => a.banked - b.banked || a.earned - b.earned)[0];
   const attention = CV_ROOMS.filter((r) => r.alarms || r.stale).length;
+  const nRooms = CV_ROOMS.length;
+  const words = ["", "one", "both", "all three", "all four", "all five", "all six"];
   return (
     <div className="cv-page wide">
-      <PageHead over={`Rosewood Restaurant Group · ${CV_NOW.week}`} q="How are all three rooms doing this week?"
+      <PageHead over={`${eng.org?.name ?? "Rosewood Restaurant Group"} · ${real ? "this week" : CV_NOW.week}`} q={nRooms === 1 ? "How is the room doing this week?" : `How are ${words[nRooms] || `all ${nRooms}`} rooms doing this week?`}
         sub="One line per room, so an owner with several rooms sees where to spend this week's attention." />
       <div className="cv-grid g3">
-        <div className="cv-card" style={{ gap: 6 }}><div className="cv-row" style={{ justifyContent: "space-between" }}><span className="cv-xs cv-faint">Banked this week, all rooms</span><Claim k="book" /></div><span className="cv-fig lg cv-up">{cvMoney(banked)}</span><span className="cv-xs cv-faint">{G.paused ? `${cvMoney(G.paused)} paused this week while a guardrail is amber` : "Nothing paused"}</span></div>
+        <div className="cv-card" style={{ gap: 6 }}><div className="cv-row" style={{ justifyContent: "space-between" }}><span className="cv-xs cv-faint">Banked this week, all rooms</span><Claim k="book" /></div><span className="cv-fig lg cv-up">{cvMoney(banked)}</span><span className="cv-xs cv-faint">{real ? "Verified tests, at their lower bound" : G.paused ? `${cvMoney(G.paused)} paused this week while a guardrail is amber` : "Nothing paused"}</span></div>
         <div className="cv-card" style={{ gap: 6 }}><div className="cv-row" style={{ justifyContent: "space-between" }}><span className="cv-xs cv-faint">Earned this week, all rooms</span><Claim k="obs" /></div><span className="cv-fig lg">{cvMoney(earned)}</span><span className="cv-xs cv-faint">Contribution margin from your registers</span></div>
-        <div className="cv-card" style={{ gap: 6 }}><span className="cv-xs cv-faint">Needs your attention</span><span className="cv-fig lg">{attention}</span><span className="cv-xs cv-faint">{G.alarms} alarm{G.alarms === 1 ? "" : "s"} · {G.stale} stale feed{G.stale === 1 ? "" : "s"} across {CV_ROOMS.filter((r) => r.stale).length} rooms</span></div>
+        <div className="cv-card" style={{ gap: 6 }}><span className="cv-xs cv-faint">Needs your attention</span><span className="cv-fig lg">{attention}</span><span className="cv-xs cv-faint">{real ? `${CV_ROOMS.reduce((x, r) => x + r.alarms, 0)} reversed · ${CV_ROOMS.filter((r) => r.stale).length} room${CV_ROOMS.filter((r) => r.stale).length === 1 ? "" : "s"} with stale Toast data` : `${G.alarms} alarm${G.alarms === 1 ? "" : "s"} · ${G.stale} stale feed${G.stale === 1 ? "" : "s"} across ${CV_ROOMS.filter((r) => r.stale).length} rooms`}</span></div>
       </div>
       <section className="cv-card flush">
         <div className="cv-tablewrap" tabIndex={0} role="group" aria-label="Scrollable table">
@@ -147,9 +216,9 @@ function CvPortfolio() {
                   <td style={{ fontWeight: 600 }}>{r.d.profile.name}</td>
                   <td className="r">{cvMoney(r.banked)}</td>
                   <td className="r">{cvMoney(Math.round(r.earned))}</td>
-                  <td>{r.alarms ? <Pill tone="warn" icon="Siren">{r.alarms} alarm</Pill> : <Pill tone="good" icon="ShieldCheck">Quiet</Pill>}</td>
+                  <td>{r.alarms ? <Pill tone="warn" icon="Siren">{r.alarms} {real ? "reversed" : "alarm"}</Pill> : <Pill tone="good" icon="ShieldCheck">Quiet</Pill>}</td>
                   <td className="cv-num">{r.tests}</td>
-                  <td>{r.stale ? <Pill tone="warn" icon="Clock">{r.stale} stale</Pill> : <Pill tone="good" icon="CircleCheck">Healthy</Pill>}</td>
+                  <td>{r.stale ? <Pill tone="warn" icon="Clock">{real ? "Stale" : `${r.stale} stale`}</Pill> : real && !r.d.room.fromToast ? <Pill icon="FlaskConical">Sample</Pill> : <Pill tone="good" icon="CircleCheck">Healthy</Pill>}</td>
                   <td className="cv-small cv-muted">{r.note}</td>
                 </tr>
               ))}
@@ -157,15 +226,34 @@ function CvPortfolio() {
           </table>
         </div>
       </section>
-      <Callout icon="Lightbulb">{weakest.name} earns the least and has {weakest.banked ? `only ${cvMoney(weakest.banked)}` : "nothing"} banked. {weakest.d.queue[0] ? <> This week&apos;s best use of your time there: {M_fillLower(weakest.d.queue[0].title, weakest.d.tokens)}.</> : null}</Callout>
+      {!real && <Callout icon="Lightbulb">{weakest.name} earns the least and has {weakest.banked ? `only ${cvMoney(weakest.banked)}` : "nothing"} banked. {weakest.d.queue[0] ? <> This week&apos;s best use of your time there: {M_fillLower(weakest.d.queue[0].title, weakest.d.tokens)}.</> : null}</Callout>}
       <Callout icon="MousePointerClick">Click a room to open its week. Every screen follows the room you pick.</Callout>
+      <DensePortfolio />
     </div>
   );
 }
 
 /* ================================================================ Weekly meeting */
+function meetingSummary(log, at) {
+  const when = new Date(at || Date.now()).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+  return { subject: `${CV_ROOM.name}: weekly meeting, ${when}`, body: `Weekly meeting at ${CV_ROOM.name}, ${when}.\n\n${log.map((l) => `• ${l}`).join('\n')}\n\nFrom Coversight.` };
+}
+
+function MeetingSend({ log, at }) {
+  const cv = useCv();
+  const eng = useEngine();
+  const m = meetingSummary(log, at);
+  return (
+    <div className="cv-row" style={{ gap: 8 }}>
+      <a className="btn btn-secondary btn-sm" href={`mailto:?subject=${encodeURIComponent(m.subject)}&body=${encodeURIComponent(m.body)}`} onClick={() => { if (eng.mode === 'server') engine.draftEmail({ kind: 'gm-note', subject: m.subject, body: m.body }).catch(() => null); cv.toast('Opening the summary in your email.'); }}><Icon name="Mail" size={14} /> Email the summary</a>
+    </div>
+  );
+}
+
 function CvMeeting() {
   const cv = useCv();
+  const eng = useEngine();
+  const real = eng.mode === 'server' && eng.org && !eng.org.sample;
   const CV_AGENDA = CV_D.meeting.map((a) => ({ ...a, body: cvFill(a.body) }));
   const [i, setI] = React.useState(-1);
   const [left, setLeft] = React.useState(0);
@@ -220,22 +308,23 @@ function CvMeeting() {
         <section className="cv-card">
           <span className="cv-h4">Logged from this meeting</span>
           <ul className="cv-ul">{log.map((l) => <li key={l}><Icon name="Check" size={15} />{l}</li>)}</ul>
-          <span className="cv-small cv-muted">Sent to Maria Reyes and {CV_ROOM.gm}. The plan is committed, and the decision is on Thursday's queue.</span>
-          <Button size="sm" variant="secondary" onClick={() => { setI(-1); setLog([]); setDecision(null); }}>Reset the demo</Button>
+          <span className="cv-small cv-muted">Saved with the time. Send it to whoever wasn&apos;t in the room.</span>
+          <MeetingSend log={log} />
+          <Button size="sm" variant="ghost" onClick={() => { setI(-1); setLog([]); setDecision(null); }}>{real ? 'Close' : 'Reset the demo'}</Button>
         </section>
       )}
       {i < 0 && last && (
         <section className="cv-card">
           <span className="cv-h4">Last meeting · {new Date(last.at).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</span>
           <ul className="cv-ul">{last.log.map((l) => <li key={l}><Icon name="Check" size={15} />{l}</li>)}</ul>
-          <div className="cv-row"><Button size="sm" variant="ghost" icon="Undo2" onClick={() => setLast(null, "Meeting record cleared")}>Clear the record</Button></div>
+          <div className="cv-row"><MeetingSend log={last.log} at={last.at} /><Button size="sm" variant="ghost" icon="Undo2" onClick={() => setLast(null, "Meeting record cleared")}>Clear the record</Button></div>
         </section>
       )}
-      <div className="cv-grid g3">
+      {!real && <div className="cv-grid g3">
         {[["Meetings held", "7 of last 8"], ["Average length", "14 min"], ["Decisions made per meeting", "1.3"]].map(([k, v]) => (
           <div key={k} className="cv-card" style={{ gap: 4 }}><span className="cv-xs cv-faint">{k}</span><span className="cv-fig md">{v}</span></div>
         ))}
-      </div>
+      </div>}
     </div>
   );
 }
@@ -283,11 +372,30 @@ function CvFinding({ params }) {
   const [dismissed, setDismissed] = useSaved("findings", {});
   const until = dismissed[c.id] && dismissed[c.id] > new Date().toISOString() ? dismissed[c.id] : null;
   const { chosen } = cvChoosePlan(cands, d.room.managerHours);
+  const eng = useEngine();
+  const test = findingTest(c);
+  const st = findingStatus(c, eng.windows, d.id);
+  const blocked = findingBlocked(c, d.room);
+  const [starting, setStarting] = React.useState(false);
+  const STATE = {
+    testing: { pill: <Pill tone="info" icon="Timer">Being tested</Pill>, verify: st.window ? `Test running since ${String(st.window.startedAt ?? "").slice(0, 10)}` : "Test running" },
+    verified: { pill: <Pill tone="good" icon="BadgeCheck">Verified</Pill>, verify: "Verified by its test" },
+    reversed: { pill: <Pill tone="warn" icon="Undo2">Reversed</Pill>, verify: "Verified, then it slipped back" },
+    ended: { pill: <Pill icon="Hourglass">Last test ended unproven</Pill>, verify: "The last test didn't prove it" },
+  }[st.state];
+  const verifyNote = c.prevent ? "Prevented cost: never counted" : st.state === "untestable" ? "No metric for this is read from your data yet" : STATE ? STATE.verify : `${Math.round(c.p * 100)}% chance it verifies`;
+  const start = async () => {
+    setStarting(true);
+    const r = await engine.startWindow(test.lever, { roomId: d.id, dish: test.dish });
+    setStarting(false);
+    cv.toast(r.ok ? "Test started. The baseline is frozen; each new week of data is a checkpoint." : r.error);
+  };
   return (
     <div className="cv-page">
       <button className="cv-link" onClick={() => cv.go("plan")}><Icon name="ArrowLeft" size={14} />The plan</button>
-      <PageHead over={`Finding · ${c.lever} · ${d.profile.name}`} q={c.title} right={chosen.has(c.id) ? <Pill tone="good" icon="Check">Chosen this week</Pill> : <Pill icon="Clock">Not chosen this week</Pill>} />
-      <LoopStrip stage={chosen.has(c.id) ? "act" : "understand"} notes={{ detect: ev ? ev.detector : "Found in your data", understand: c.claim === "obs" ? "Read straight from your systems" : "Modelled from your own history", act: chosen.has(c.id) ? "In this week's plan" : "Waiting for manager time", verify: c.prevent ? "Prevented cost: never counted" : `${Math.round(c.p * 100)}% chance it verifies` }} />
+      <PageHead over={`Finding · ${c.lever} · ${d.profile.name}`} q={c.title} right={STATE ? STATE.pill : chosen.has(c.id) ? <Pill tone="good" icon="Check">Chosen this week</Pill> : <Pill icon="Clock">Not chosen this week</Pill>} />
+      <LoopStrip stage={STATE ? "verify" : chosen.has(c.id) ? "act" : "understand"} notes={{ detect: ev ? ev.detector : "Found in your data", understand: c.claim === "obs" ? "Read straight from your systems" : "Modelled from your own history", act: STATE ? "Done" : chosen.has(c.id) ? "In this week's plan" : "Waiting for manager time", verify: verifyNote }} />
+      {blocked && <Callout tone="warn" icon="TriangleAlert">{blocked} Until then this figure is shown for context only, and Coversight won't put it in front of you as a change to make.</Callout>}
       <div className="cv-grid g-hero">
         <section className="cv-card">
           <div className="cv-card-head"><span className="cv-over">Expected effect</span><Claim k={c.claim} /></div>
@@ -320,8 +428,12 @@ function CvFinding({ params }) {
         </div>
       ) : <Callout icon="Info">{c.claim === "obs" && c.value === 0 ? "Worth $0 on purpose: the data that would make it measurable isn't connected yet." : "Evidence for this finding comes from the schedule and the matched services behind it."}</Callout>}
       <div className="cv-row">
-        {c.kind === "price" && <Button onClick={() => cv.approve(`price:${c.item}:${c.to}`)}>Review the price change</Button>}
-        {c.kind === "markup" && <Button onClick={() => cv.approve("delivery-markup")}>Review the markup</Button>}
+        {blocked ? <Button onClick={() => cv.go("inputs", { kind: "recipes" })}>Enter recipe costs</Button> : <>
+          {c.kind === "price" && <Button onClick={() => cv.approve(`price:${c.item}:${c.to}`)}>Review the price change</Button>}
+          {c.kind === "markup" && <Button onClick={() => cv.approve("delivery-markup")}>Review the markup</Button>}
+        </>}
+        {test && (st.state === "testing" ? <Button variant="secondary" iconRight="ArrowRight" onClick={() => cv.go("windows")}>See the test</Button>
+          : !blocked && st.state !== "verified" && <Button variant="secondary" icon="FlaskConical" disabled={starting} onClick={start}>{st.state === "none" ? "Start a 28-day test" : "Test it again"}</Button>)}
         {until ? (
           <>
             <Pill icon="EyeOff">Dismissed until {new Date(until).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</Pill>
@@ -331,6 +443,7 @@ function CvFinding({ params }) {
           <Button variant="secondary" onClick={() => { setDismissed((m) => ({ ...m, [c.id]: new Date(Date.now() + 90 * 864e5).toISOString() }), `${c.title || c.id}: not for us`); cv.toast("Dismissed for 90 days. It's off the plan, and the ranker will learn from it."); }}>Not for us</Button>
         )}
       </div>
+      {!test && !c.prevent && <span className="cv-xs cv-faint">Nothing in your data measures this lever week by week yet, so it can be done but not verified, and it's never billed.</span>}
     </div>
   );
 }
@@ -352,10 +465,10 @@ function CvFences() {
       </div>
     </div>
   );
-  const tog = (k, label, sub) => (
-    <label className="cv-row nowrap" style={{ justifyContent: "space-between", gap: 12, cursor: "pointer" }}>
+  const tog = (k, label, sub, off) => (
+    <label className="cv-row nowrap" style={{ justifyContent: "space-between", gap: 12, cursor: off ? "not-allowed" : "pointer", opacity: off ? 0.6 : 1 }}>
       <span className="cv-col" style={{ gap: 2 }}><span className="cv-small">{label}</span>{sub && <span className="cv-xs cv-faint">{sub}</span>}</span>
-      <input id={`a-${k}`} type="checkbox" checked={al[k]} onChange={(e) => setAl({ ...al, [k]: e.target.checked })} style={{ width: 18, height: 18, accentColor: "var(--primary)" }} />
+      <input id={`a-${k}`} type="checkbox" checked={off ? false : al[k]} disabled={!!off} onChange={(e) => setAl({ ...al, [k]: e.target.checked })} style={{ width: 18, height: 18, accentColor: "var(--primary)" }} />
     </label>
   );
   return (
@@ -384,14 +497,14 @@ function CvFences() {
         </section>
         <section className="cv-card">
           <span className="cv-h4">How we reach you</span>
-          {tog("push", "Push to the app", "Service suggestions and guardrail breaches")}
-          {tog("sms", "Text message", "Guardrail breaches only")}
-          {tog("email", "Email", "Weekly summary")}
+          {tog("push", "In the app (the bell)", "Test results, reversed savings, changes that don't show up in Toast")}
+          {tog("sms", "Text message", "Not available yet: needs a texting provider", true)}
+          {tog("email", "Email", "The same alerts, to everyone who manages this room (sent once email is set up)")}
         </section>
         <section className="cv-card">
           <span className="cv-h4">Keeping it quiet</span>
-          {tog("onePerService", "At most one message per service", "Alert fatigue is what kills engagement")}
-          {tog("quiet", "Silent when nothing crosses a limit", "Control charts target about one false alarm a quarter")}
+          {tog("onePerService", "At most one email per person every 4 hours", "Alert fatigue is what kills engagement; the rest wait in the bell")}
+          {tog("quiet", "Quiet hours, 10 pm to 7 am", "Email waits until morning")}
           <Callout icon="Users">The GM gets service and labour messages. The owner gets alarms and the weekly summary. The controller gets period packages only.</Callout>
         </section>
       </div>
@@ -401,7 +514,111 @@ function CvFences() {
 }
 
 /* ================================================================ Billing */
+const $c = (c) => cvMoney(c / 100, { cents: true });
+const monthName = (p) => new Date(`${p}-01T00:00:00Z`).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+
+/* A real group's invoices: this month so far, past months, finalize, pricing. */
+function BillingReal() {
+  const cv = useCv();
+  const eng = useEngine();
+  const isOwner = eng.viewer?.role === 'owner';
+  const [b, setB] = React.useState(null);
+  const [err, setErr] = React.useState(null);
+  const [busy, setBusy] = React.useState(null);
+  const [price, setPrice] = React.useState(null);
+  const [, savePricing] = useSaved('pricing', null, { group: true });
+  const load = React.useCallback(() => fetch('/api/billing', { credentials: 'same-origin' }).then(async (r) => { const j = await r.json(); if (!r.ok) throw new Error(j.error); setB(j); setPrice({ room: j.pricing.perRoomMonthlyCents / 100, fee: j.pricing.feePct }); }).catch((e) => setErr(e.message)), []);
+  React.useEffect(() => { load(); }, [load]);
+  const post = async (path, period, label) => {
+    setBusy(period); setErr(null);
+    const r = await fetch(path, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ period }) });
+    const j = await r.json().catch(() => ({}));
+    setBusy(null);
+    if (!r.ok) { setErr(j.error); return; }
+    setB((x) => ({ ...x, invoices: j.invoices }));
+    cv.toast(label);
+  };
+  if (err && !b) return <Callout tone="warn" icon="CircleX">{err}</Callout>;
+  if (!b) return <span className="cv-small cv-muted">Loading invoices…</span>;
+  const cur = b.invoices.find((i) => i.period === b.current);
+  const past = b.invoices.filter((i) => i.period !== b.current);
+  const Lines = ({ inv }) => (
+    <div className="cv-diff">
+      <div className="r h" style={{ gridTemplateColumns: 'minmax(0, 1fr) 140px' }}><span>Line</span><span style={{ textAlign: 'right' }}>Amount</span></div>
+      {inv.lines.map((l) => <div key={l.label} className="r" style={{ gridTemplateColumns: 'minmax(0, 1fr) 140px' }}><span>{l.label}</span><span className="now" style={{ textAlign: 'right' }}>{$c(l.cents)}</span></div>)}
+      <div className="r" style={{ gridTemplateColumns: 'minmax(0, 1fr) 140px', background: 'var(--surface-sunken)' }}><span style={{ fontWeight: 700 }}>Total</span><span className="now" style={{ textAlign: 'right' }}>{$c(inv.totalCents)}</span></div>
+    </div>
+  );
+  return (
+    <>
+      {err && <Callout tone="warn" icon="CircleX">{err}</Callout>}
+      <div className="cv-grid g-hero">
+        {cur && (
+          <section className="cv-card">
+            <div className="cv-card-head"><span className="cv-h4">{monthName(cur.period)} so far</span><Pill icon="Hourglass">Draft · recalculated live</Pill></div>
+            <Lines inv={cur} />
+            <span className="cv-small cv-muted">Reconciled savings so far {$c(cur.reconciledCents)}: only tests that passed their 28 days, at the cautious end of what they proved, for the days they stayed proven.</span>
+            {cur.accruals.length > 0 && <ul className="cv-ul">{cur.accruals.map((a) => <li key={a.windowId}><Icon name="BadgeCheck" size={14} />{a.title}: {a.days} days, {$c(a.cents)}</li>)}</ul>}
+          </section>
+        )}
+        <section className="cv-card">
+          <span className="cv-h4">Pricing</span>
+          {price && (
+            <div className="cv-col" style={{ gap: 8 }}>
+              <label className="cv-row" style={{ gap: 8 }}><span className="cv-small" style={{ width: 160 }}>Per room, per month</span>$<input className="input" type="number" min="0" step="1" style={{ width: 110 }} value={price.room} disabled={!isOwner} onChange={(e) => setPrice({ ...price, room: e.target.value })} aria-label="Price per room per month" /></label>
+              <label className="cv-row" style={{ gap: 8 }}><span className="cv-small" style={{ width: 160 }}>Fee on reconciled savings</span><input className="input" type="number" min="0" max="50" step="0.5" style={{ width: 110 }} value={price.fee} disabled={!isOwner} onChange={(e) => setPrice({ ...price, fee: e.target.value })} aria-label="Fee percent" />%</label>
+              {isOwner && <span><Button size="sm" variant="secondary" onClick={() => { savePricing({ perRoomMonthlyCents: Math.round(Number(price.room) * 100), feePct: Number(price.fee) }, 'Pricing changed'); setTimeout(load, 700); cv.toast('Pricing saved. Drafts recalculate; finalized invoices never change.'); }}>Save pricing</Button></span>}
+              <span className="cv-xs cv-faint">Set at onboarding. Finalized invoices keep the pricing they were issued with.</span>
+            </div>
+          )}
+          {b.stripe ? <Callout icon="CreditCard">Finalized invoices go to Stripe, which emails a pay link.</Callout> : <Callout icon="Info">Stripe isn&apos;t connected, so invoices live here. Add STRIPE_SECRET_KEY in Vercel to send them with a pay link.</Callout>}
+        </section>
+      </div>
+      <section className="cv-card flush">
+        <div className="cv-tablewrap" tabIndex={0} role="group" aria-label="Invoices">
+          <table className="cv-table">
+            <thead><tr><th>Month</th><th className="r">Reconciled savings</th><th className="r">Invoice</th><th className="r">You kept, net</th><th>Status</th><th /></tr></thead>
+            <tbody>
+              {past.length === 0 && <tr><td colSpan={6} className="cv-small cv-muted">No past months yet. Each month is drafted on the 2nd and finalized once your accountant approves the package.</td></tr>}
+              {past.map((i) => (
+                <tr key={i.id}>
+                  <td style={{ fontWeight: 600 }}>{monthName(i.period)}</td>
+                  <td className="r">{$c(i.reconciledCents)}</td>
+                  <td className="r">{$c(i.totalCents)}</td>
+                  <td className={`r ${i.reconciledCents - i.totalCents >= 0 ? 'cv-up' : 'cv-down'}`}>{cvMoney((i.reconciledCents - i.totalCents) / 100, { cents: true, sign: true })}</td>
+                  <td>{i.status === 'final' ? <Pill tone="good" icon="BadgeCheck">{i.stripeUrl ? <a href={i.stripeUrl} target="_blank" rel="noreferrer">Final · pay link</a> : 'Final'}</Pill> : <Pill icon="Hourglass">Draft</Pill>}</td>
+                  <td>{i.status !== 'final' && isOwner && (
+                    <span className="cv-row nowrap" style={{ gap: 6 }}>
+                      <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => post('/api/billing/draft', i.period, 'Recalculated.')}>Recalculate</Button>
+                      <Button size="sm" disabled={!!busy} onClick={() => post('/api/billing/finalize', i.period, `${monthName(i.period)} finalized.`)}>Finalize</Button>
+                    </span>
+                  )}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+      <Callout icon="Info">A month finalizes only after your accountant approves its package on the Accountant screen; an open dispute holds it. If a verified saving is later reversed, the fee on any days billed after the reversal comes back as a credit on the next invoice.</Callout>
+    </>
+  );
+}
+
 function CvBilling() {
+  const eng = useEngine();
+  if (eng.mode === 'server' && eng.org && !eng.org.sample && eng.viewer?.role !== 'gm') {
+    return (
+      <div className="cv-page">
+        <PageHead over={`Billing · ${eng.org.name}`} q="What did we charge, and on what?"
+          sub="The subscription, plus a fee on reconciled savings only: tests that passed, at their cautious lower bound. Never on an estimate." />
+        <BillingReal />
+      </div>
+    );
+  }
+  return <CvBillingSample />;
+}
+
+function CvBillingSample() {
   const fee = 0.15;
   const months = [["July", 430], ["August", 867], ["September", 1863]];
   const sub = 349 * 3;
@@ -411,7 +628,7 @@ function CvBilling() {
     <div className="cv-page">
       <PageHead over="Billing · Rosewood Restaurant Group" q="What did we charge, and on what?"
         sub="The fee is charged on reconciled savings: the lesser of our measured lower bound and what your books show. Never on an estimate, never on a point estimate." />
-      <Callout tone="warn" icon="FlaskConical">Example terms for the mockup: $349 per room per month, plus 15% of reconciled savings. Swap in your real pricing.</Callout>
+      <Callout tone="warn" icon="FlaskConical">The sample group&apos;s billing story: $349 per room per month, plus 15% of reconciled savings. Your own group&apos;s invoices are computed from its own verified tests.</Callout>
       <div className="cv-grid g-hero">
         <section className="cv-card">
           <div className="cv-card-head"><span className="cv-h4">September invoice</span><Pill tone="good" icon="BadgeCheck">Package approved Oct 27</Pill></div>

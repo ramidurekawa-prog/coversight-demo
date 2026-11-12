@@ -3,9 +3,11 @@
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 
+import { findingBlocked } from '../lib/data/findings.js';
+import { deriveRoom } from '../lib/data/model.js';
 import { checkExpect, expectFor, stepsFor } from '../lib/data/writebacks.js';
 import type { Db } from './db/client';
-import { auditLog, rooms, tasks } from './db/schema';
+import { actions, auditLog, rooms, tasks } from './db/schema';
 import { loadDataset } from './dataset';
 import { InputError } from './org';
 import { startWindow } from './proof';
@@ -23,6 +25,33 @@ const body = z.object({
   diff: z.array(z.tuple([cell, cell, cell])).max(12),
 });
 
+/**
+ * A price change is checked here, not only on screen: refused when the dish's
+ * cost is only estimated, when the move is past the room's price fence, or
+ * when the dish moved inside the fence's gap. No screen or API call skips it.
+ */
+async function refusePrice(db: Db, orgId: string, roomId: string, approvalId: string) {
+  const m = /^price:([\w-]+):([\d.]+)$/.exec(approvalId);
+  if (!m) return;
+  const loaded = await loadDataset(db, orgId);
+  const room = loaded?.ds.rooms[roomId];
+  const item = room?.menu.find((x: { key: string }) => x.key === m[1]);
+  if (!room || !item) throw new InputError(`no dish '${m[1]}' in this room`);
+  const cand = deriveRoom(loaded!.ds, roomId).candidates.find((c: { kind: string; item?: string }) => c.kind === 'price' && c.item === m[1]);
+  const why = findingBlocked(cand ?? { kind: 'price', item: m[1] }, room);
+  if (why) throw new InputError(why);
+  const [fr] = await db.select({ value: actions.value }).from(actions)
+    .where(and(eq(actions.orgId, orgId), eq(actions.roomId, roomId), eq(actions.key, 'fences'))).orderBy(desc(actions.at)).limit(1);
+  const f = (fr?.value as { f?: { maxPrice?: number; priceGap?: number } } | null)?.f ?? {};
+  const maxPrice = f.maxPrice ?? 8, gap = f.priceGap ?? 6;
+  const pct = ((+m[2] - item.price) / item.price) * 100;
+  if (Math.abs(pct) > maxPrice + 1e-9) throw new InputError(`A ${pct.toFixed(1)}% move is past this room's fence of ${maxPrice}%.`);
+  const last = (await db.select({ at: tasks.createdAt, approvalId: tasks.approvalId }).from(tasks)
+    .where(and(eq(tasks.orgId, orgId), eq(tasks.roomId, roomId), inArray(tasks.status, ['open', 'done', 'verified', 'mismatch']))).orderBy(desc(tasks.createdAt)))
+    .find((t) => t.approvalId.startsWith(`price:${m[1]}:`));
+  if (last && Date.now() - last.at.getTime() < gap * 7 * 864e5) throw new InputError(`This dish was repriced ${Math.round((Date.now() - last.at.getTime()) / 864e5)} days ago; the fence allows one move every ${gap} weeks.`);
+}
+
 export async function createTask(db: Db, v: V, input: unknown) {
   const p = body.safeParse(input);
   if (!p.success) throw new InputError(`invalid task: ${p.error.issues[0]?.path.join('.')} ${p.error.issues[0]?.message}`);
@@ -33,6 +62,7 @@ export async function createTask(db: Db, v: V, input: unknown) {
   // One open task per approval per room: approving twice doesn't duplicate the work.
   const [dup] = await db.select().from(tasks).where(and(eq(tasks.orgId, v.orgId), eq(tasks.roomId, roomId), eq(tasks.approvalId, approvalId), inArray(tasks.status, ['open', 'done'])));
   if (dup) return dup;
+  await refusePrice(db, v.orgId, roomId, approvalId);
   const [row] = await db.insert(tasks).values({ orgId: v.orgId, roomId, approvalId, title, system, steps: stepsFor(system, diff), expect: expectFor(approvalId), createdBy: v.userId }).returning();
   await db.insert(auditLog).values({ orgId: v.orgId, userId: v.userId, action: 'task.created', detail: { id: row!.id, roomId, approvalId } });
   return row!;

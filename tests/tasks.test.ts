@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { readToastExports } from '../lib/data/toast.js';
 import { stepsFor } from '../lib/data/writebacks.js';
 import type { Db } from '../server/db/client';
-import { auditLog, tasks, testWindows, users } from '../server/db/schema';
+import { actions, auditLog, tasks, testWindows, users } from '../server/db/schema';
 import { commitInput, createSampleOrg } from '../server/org';
 import { createTask, listTasks, updateTask, verifyTasks } from '../server/tasks';
 import { runJob } from '../server/jobs';
@@ -46,6 +46,20 @@ describe('guided write-back tasks', () => {
     const manual = await createTask(db, owner(), { roomId: 'oakland', approvalId: 'void-reason', title: 'Require a reason code', system: 'Toast', diff: [['Void after send', 'Server can void', 'Manager PIN + reason code']] });
     expect(manual.expect).toEqual({ type: 'manual' });
     expect((await listTasks(db, orgId)).length).toBe(2);
+  });
+
+  it('enforces price limits on the server, whichever screen asked', async () => {
+    // The sample's salmon rests on stale recipe costs: refused until they're entered.
+    await expect(createTask(db, owner(), { ...priceTask, approvalId: 'price:salmon:30' })).rejects.toThrow(/recipe costs/);
+    // Past the default 8% fence.
+    await expect(createTask(db, owner(), { ...priceTask, approvalId: 'price:ribeye:48' })).rejects.toThrow(/fence of 8%/);
+    // A tighter saved fence applies.
+    await db.insert(actions).values({ orgId, roomId: 'oakland', key: 'fences', value: { version: 4, f: { minDinner: 4, minAny: 3, cutBy: '8:30 pm', lockHours: 24, maxPrice: 3, priceGap: 6, maxPar: 15 }, al: {} }, summary: '', userId: 'u1' });
+    await expect(createTask(db, owner(), priceTask)).rejects.toThrow(/fence of 3%/);
+    await expect(createTask(db, owner(), { ...priceTask, approvalId: 'price:ribeye:43' })).resolves.toMatchObject({ status: 'open' });
+    // One move per dish inside the gap.
+    await expect(createTask(db, owner(), { ...priceTask, approvalId: 'price:ribeye:42.5' })).rejects.toThrow(/repriced 0 days ago/);
+    await expect(createTask(db, owner(), { ...priceTask, approvalId: 'price:nope:5' })).rejects.toThrow(/no dish/);
   });
 
   it('refuses bad input and other people’s rooms', async () => {

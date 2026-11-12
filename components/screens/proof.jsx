@@ -4,29 +4,47 @@ import * as React from 'react';
 
 import { Icon, Button, Tabs } from '../kit';
 import { PlatformHealth, ToastConnectionLine } from './live';
-import { useSaved } from '../engine';
+import { useEngine, useSaved } from '../engine';
+import { bookedBetween, utcDay } from '../../lib/data/billing';
+import { compareRooms, PEER_COHORT_MIN } from '../../lib/data/compare';
 import { useCv, cvMoney, CV_D, CV_DS, CV_GROUP, CV_ROOM, CV_DAYS_TO_DATE, CV_LOCS, CV_PROOF, CV_OUTCOME, Claim, Money, Pill, Outcome, Callout, Interval, PageHead, cvScale, SampleNote } from './core';
 
 /* Coversight — proof surfaces: Proof, Verification packet, Accountant, Savings ledger,
    Comparison, Sources, System. */
 
 /* ================================================================ Proof */
+const roomTabs = () => [{ value: "all", label: "All rooms" }, ...CV_LOCS.filter((l) => l.id !== "all").map((l) => ({ value: l.id, label: l.short }))];
+const WIN_OUTCOME = { running: "testing", waiting: "data", verified: "verified", rejected: "inconclusive", reversed: "reversed" };
+
+/** A real group's tests as proof rows (stopped tests aren't claims). */
+function windowRows(windows) {
+  return (windows || []).filter((w) => w.status !== "stopped").map((w) => ({
+    id: w.id, real: true, title: w.title, loc: w.roomId, lever: w.lever.replace("_", " "), outcome: WIN_OUTCOME[w.status] || "testing",
+    bookable: w.status === "verified" ? w.bookedCents / 100 : 0, lo: w.lowCents != null && w.checkpoints?.length >= 2 ? Math.max(0, w.lowCents) / 100 : null, hi: w.pointCents != null && w.checkpoints?.length >= 2 ? w.pointCents / 100 : null,
+    method: w.status === "waiting" ? "waiting for the next week of Toast data" : w.status === "rejected" ? "didn’t move enough, for long enough, to count" : w.status === "reversed" ? "a guardrail broke after it verified" : `day ${w.day} of 28`,
+    held: w.status === "verified" ? `since ${new Date(w.closedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : w.status === "running" ? `${w.checkpoints?.length ?? 0} of 4 checkpoints` : "",
+  }));
+}
+
 function CvProof() {
   const cv = useCv();
+  const eng = useEngine();
+  const own = eng.mode === "server" && eng.org && !eng.org.sample;
   const [scope, setScope] = React.useState(cv.loc === "all" ? "all" : cv.loc);
   React.useEffect(() => setScope(cv.loc === "all" ? "all" : cv.loc), [cv.loc]);
-  const rows = CV_PROOF.filter((p) => scope === "all" || p.loc === scope);
+  const rows = (own ? windowRows(eng.windows) : CV_PROOF).filter((p) => scope === "all" || p.loc === scope);
   const count = (ks) => rows.filter((r) => ks.includes(r.outcome)).length;
   // A paused claim (guardrail amber) accrues nothing this week, so it is not bookable now.
   const bookable = rows.reduce((s, r) => s + (r.paused ? 0 : r.bookable), 0);
   return (
     <div className="cv-page wide">
       <PageHead over="Proof" q="What have we actually proven?"
-        sub="Every claimed dollar with its controls, interval, gates and how long it lasts. The ones that failed stay on screen with the reason, because a ledger that only goes up isn't a ledger."
+        sub={own ? "Every test this group has run: what it proved, at its cautious lower bound, and the ones that didn't, with the reason. Only Verified rows can be billed." : "Every claimed dollar with its controls, interval, gates and how long it lasts. The ones that failed stay on screen with the reason, because a ledger that only goes up isn't a ledger."}
         right={<>
-          <Tabs value={scope} onChange={setScope} tabs={[{ value: "all", label: "All rooms" }, { value: "oakland", label: "Oakland" }, { value: "berkeley", label: "Berkeley" }, { value: "walnut", label: "Walnut Creek" }]} />
-      <SampleNote what="The verification history" why="Banked dollars come from tests that ran for weeks on the sample group. A real restaurant starts at $0 banked, and its first result lands after its first test window closes." />
+          <Tabs value={scope} onChange={setScope} tabs={roomTabs()} />
+      {!own && <SampleNote what="The verification history" why="Banked dollars come from tests that ran for weeks on the sample group. A real restaurant starts at $0 banked, and its first result lands after its first test window closes." />}
         </>} />
+      {own && rows.length === 0 && <Callout icon="Timer">No tests yet. Start one from Today or Test windows; its result lands here when it closes at day 28.</Callout>}
       <div className="cv-life">
         {[["Verified", ["verified", "limited"]], ["In testing", ["testing"]], ["Data failure", ["data"]], ["Reversed", ["reversed"]], ["Inconclusive", ["inconclusive"]], ["Directional only", ["directional"]]].map(([k, ks]) => (
           <div key={k}><span className="n">{count(ks)}</span><span className="k">{k}</span></div>
@@ -53,7 +71,7 @@ function CvProof() {
                       <span className="cv-xs cv-faint" style={{ lineHeight: 1.45 }}>{p.lever} · {p.reason || p.limitation || p.checkpoint || p.method}</span>
                     </div>
                   </td>
-                  <td>{CV_LOCS.find((l) => l.id === p.loc).short}</td>
+                  <td>{CV_LOCS.find((l) => l.id === p.loc)?.short ?? p.loc}</td>
                   <td><Outcome k={p.outcome} /></td>
                   <td className="r">{p.outcome === "reversed" ? <span className="cv-down">−{cvMoney(p.removed)} removed</span> : p.paused ? <span className="cv-faint">{cvMoney(p.bookable)} paused</span> : cvMoney(p.bookable)}</td>
                   <td className="r">{p.lo != null ? `${cvMoney(p.lo)} – ${cvMoney(p.hi)}` : "—"}</td>
@@ -94,9 +112,57 @@ function cvGates(p) {
   if (p.outcome === "directional") { set(6, "interval crosses zero", "no"); }
   return base;
 }
+function downloadJson(name, obj) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" }));
+  a.download = name;
+  a.click();
+}
+
+/* A real test window's packet: the gates it actually passed, from its own record. */
+function RealPacket({ w }) {
+  const cv = useCv();
+  const n = w.checkpoints?.length ?? 0;
+  const gates = [
+    ["Baseline frozen before the change", `${w.baseline} at start, data to ${w.startedAt}`, "ok"],
+    ["Watched the full window", `day ${w.day} of 28 · ${n} of 4 checkpoints`, w.day >= 28 && n >= 4 ? "ok" : "warn"],
+    ["Source data current", w.status === "waiting" ? "no new week of data for over 9 days" : "a new week of data each week", w.status === "waiting" ? "no" : "ok"],
+    ["Interval excludes zero", w.lowCents != null && n >= 2 ? `lower bound ${cvMoney(w.lowCents / 100, { cents: true })}/wk` : "not computed yet", w.lowCents > 0 ? "ok" : n >= 2 ? "no" : "warn"],
+    ["Guardrails held", w.status === "reversed" ? "a guardrail broke after it verified" : "average check and turn time inside limits", w.status === "reversed" ? "no" : "ok"],
+    ["Matched controls subtracted", "not yet: before/after against the frozen baseline", "warn"],
+    ["Booked at the lower bound only", w.status === "verified" ? `${cvMoney(w.bookedCents / 100, { cents: true })}/wk` : "$0 until it verifies", w.status === "verified" ? "ok" : "warn"],
+  ];
+  const outcome = { running: "testing", waiting: "data", verified: "verified", rejected: "inconclusive", reversed: "reversed", stopped: "inconclusive" }[w.status] || "testing";
+  return (
+    <div className="cv-page">
+      <button className="cv-link" onClick={() => cv.go("proof")}><Icon name="ArrowLeft" size={14} />All proof</button>
+      <PageHead over={`Verification packet · ${CV_LOCS.find((l) => l.id === w.roomId)?.name ?? w.roomId}`} q={w.title}
+        right={<><Outcome k={outcome} /><Button variant="secondary" size="sm" icon="Download" onClick={() => { downloadJson(`coversight-packet-${w.id.slice(0, 8)}.json`, { format: "coversight-packet/v1", exportedAt: new Date().toISOString(), window: w, gates: gates.map(([gate, detail, state]) => ({ gate, detail, state })), estimator: "lib/data/pilot.js measureEffect: two-sided 90% Student-t lower bound, never below $0" }); cv.toast("Packet downloaded: the window, every checkpoint, and the gates."); }}>Export</Button></>} />
+      <section className="cv-card">
+        <dl className="cv-kv">
+          <dt>Metric</dt><dd style={{ fontFamily: "var(--font-sans)" }}>{w.metric} · {w.direction === "down" ? "down is better" : "up is better"}</dd>
+          <dt>Checkpoints</dt><dd>{n ? w.checkpoints.map((c) => `day ${c.day}: ${c.observed}`).join(" · ") : "none yet"}</dd>
+          {w.pointCents != null && n >= 2 && <><dt>Measured, a week</dt><dd>{cvMoney(w.pointCents / 100, { cents: true })} point · {cvMoney(Math.max(0, w.lowCents) / 100, { cents: true })} lower bound</dd></>}
+        </dl>
+      </section>
+      <section className="cv-card flush">
+        <div className="cv-tablewrap"><table className="cv-table"><tbody>
+          {gates.map(([g, d, st]) => <tr key={g}><td style={{ fontWeight: 600 }}>{g}</td><td className="cv-small cv-muted">{d}</td><td><Icon name={st === "ok" ? "CircleCheck" : st === "no" ? "CircleX" : "CircleDot"} size={16} className={st === "ok" ? "ok" : st === "no" ? "no" : ""} /></td></tr>)}
+        </tbody></table></div>
+      </section>
+    </div>
+  );
+}
+
 function CvPacket({ params }) {
   const cv = useCv();
-  const p = CV_PROOF.find((r) => r.id === (params && params.id)) || CV_PROOF[0];
+  const eng = useEngine();
+  const id = params && params.id;
+  if (id && !CV_PROOF.some((r) => r.id === id) && /^[0-9a-f-]{36}$/.test(id)) {
+    const w = (eng.windows || []).find((x) => x.id === id);
+    return w ? <RealPacket w={w} /> : <div className="cv-page"><span className="cv-small cv-muted">{eng.mode === "pending" || eng.mode === "server" ? "Loading the packet…" : "This packet belongs to a real test and needs the server."}</span></div>;
+  }
+  const p = CV_PROOF.find((r) => r.id === id) || CV_PROOF[0];
   const gates = cvGates(p);
   const passed = gates.filter((g) => g[2] === "ok").length;
   const loc = CV_LOCS.find((l) => l.id === p.loc);
@@ -104,7 +170,7 @@ function CvPacket({ params }) {
     <div className="cv-page">
       <button className="cv-link" onClick={() => cv.go("proof")}><Icon name="ArrowLeft" size={14} />All proof</button>
       <PageHead over={`Verification packet · ${loc.name} · ${p.lever}`} q={p.title}
-        right={<><Outcome k={p.outcome} /><Button variant="secondary" size="sm" icon="Download" onClick={() => cv.toast("Packet exported as a re-runnable bundle.")}>Export</Button></>} />
+        right={<><Outcome k={p.outcome} /><Button variant="secondary" size="sm" icon="Download" onClick={() => { downloadJson(`coversight-packet-${p.id}.json`, { format: "coversight-packet/v1", exportedAt: new Date().toISOString(), sample: true, packet: p, gates: gates.map(([gate, detail, state]) => ({ gate, detail, state })) }); cv.toast("Packet downloaded."); }}>Export</Button></>} />
       <div className="cv-grid g-hero">
         <section className="cv-card">
           <div className="cv-card-head"><span className="cv-over">What can be claimed</span><Claim k={p.bookable ? "book" : "none"} /></div>
@@ -176,7 +242,106 @@ const CV_RECON = [
   { claim: "Purchasing lever mapping", room: "Oakland", acct: "5010 or 5020?", op: 0, rec: 0, status: "Mapping exception", tone: "warn", icon: "TriangleAlert" },
   { claim: "Cut one Friday dinner server (August)", room: "Berkeley", acct: "6010 Hourly labour, FOH", op: -555, rec: -555, status: "Restated, credit issued", tone: "bad", icon: "Undo2" },
 ];
+const LEVER_NAMES = { overtime: 'Overtime', labour: 'Labour overstaff', void_comp: 'Voids & comps', menu_margin: 'Menu margin', mix: 'Mix shift', turns: 'Table turns' };
+const DEFAULT_GL = { overtime: '6020 Wages, overtime', labour: '6010 Wages, hourly', void_comp: '4100 Sales, comps and voids', menu_margin: '4000 Food sales', mix: '4000 Food sales', turns: '4000 Food sales' };
+const c$ = (c) => cvMoney(c / 100, { cents: true });
+const mName = (p) => new Date(`${p}-01T00:00:00Z`).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+
+/* A real group's period package: what each verified test contributes, where it lands in the books, approve or dispute. */
+function AccountantReal() {
+  const cv = useCv();
+  const eng = useEngine();
+  const [b, setB] = React.useState(null);
+  const [period, setPeriod] = React.useState(null);
+  const [err, setErr] = React.useState(null);
+  const [pkg, setPkg] = useSaved('billing', { status: 'open' }, { group: true });
+  const [gl, setGl] = useSaved('glmap', {}, { group: true });
+  const [draftGl, setDraftGl] = React.useState({});
+  const [disputing, setDisputing] = React.useState(false);
+  const [note, setNote] = React.useState('');
+  React.useEffect(() => {
+    fetch('/api/billing', { credentials: 'same-origin' }).then(async (r) => { const j = await r.json(); if (!r.ok) throw new Error(j.error); setB(j); const prev = j.invoices.find((i) => i.period !== j.current); setPeriod(prev?.period ?? j.current); }).catch((e) => setErr(e.message));
+  }, []);
+  if (err) return <Callout tone="warn" icon="CircleX">{err}</Callout>;
+  if (!b || !period) return <span className="cv-small cv-muted">Loading the package…</span>;
+  const inv = b.invoices.find((i) => i.period === period);
+  const forThis = !pkg.period || pkg.period === period;
+  const state = disputing ? 'dispute' : forThis ? pkg.status : 'open';
+  const levers = [...new Set((eng.windows || []).filter((w) => w.status === 'verified' || w.status === 'reversed').map((w) => w.lever))];
+  const winOf = (id) => (eng.windows || []).find((w) => w.id === id);
+  const csv = () => {
+    const rows = [['Period', 'Test', 'Room', 'Account', 'Days', 'Reconciled'], ...(inv?.accruals || []).map((a) => [period, a.title, a.roomId, gl[winOf(a.windowId)?.lever]?.account ?? '', a.days, (a.cents / 100).toFixed(2)]), ...(inv?.lines || []).map((l) => [period, l.label, '', '', '', (l.cents / 100).toFixed(2)])];
+    const text = rows.map((r) => r.map((c) => (/[",\n]/.test(String(c)) ? `"${String(c).replace(/"/g, '""')}"` : c)).join(',')).join('\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([text], { type: 'text/csv' }));
+    a.download = `coversight-package-${period}.csv`;
+    a.click();
+  };
+  return (
+    <>
+      <div className="cv-row" style={{ gap: 8 }}>
+        <span className="cv-small" style={{ fontWeight: 600 }}>Period</span>
+        <select className="input" style={{ width: 'auto' }} value={period} onChange={(e) => { setPeriod(e.target.value); setDisputing(false); }} aria-label="Period">
+          {b.invoices.map((i) => <option key={i.period} value={i.period}>{mName(i.period)}{i.status === 'final' ? ' · invoiced' : ''}</option>)}
+        </select>
+        <span style={{ flex: 1 }} />
+        {state === 'open' && inv?.status !== 'final' && <><Button variant="secondary" onClick={() => { setNote(''); setDisputing(true); }}>Dispute a line</Button><Button icon="Check" onClick={() => { setPkg({ status: 'approved', period, at: new Date().toISOString() }, `${mName(period)} package approved`); cv.toast(`${mName(period)} approved. The owner can now finalize the invoice.`); }}>Approve package</Button></>}
+        {state === 'approved' && <Pill tone="good" icon="BadgeCheck">Approved {pkg.at ? new Date(pkg.at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''}</Pill>}
+        {state === 'disputed' && <Pill tone="warn" icon="MessageSquareWarning">Dispute open</Pill>}
+        {(state === 'approved' || state === 'disputed') && inv?.status !== 'final' && <Button size="sm" variant="ghost" icon="Undo2" onClick={() => setPkg({ status: 'open', period }, `${mName(period)} package reopened`)}>Reopen</Button>}
+        <Button size="sm" variant="secondary" icon="Download" onClick={csv}>CSV</Button>
+      </div>
+      {state === 'disputed' && pkg.note && <Callout tone="warn" icon="MessageSquareWarning">Your dispute: {pkg.note}</Callout>}
+      {state === 'dispute' && (
+        <section className="cv-card">
+          <label htmlFor="cv-dispute" className="cv-small" style={{ fontWeight: 600 }}>What doesn&apos;t match your books?</label>
+          <textarea id="cv-dispute" rows={3} className="input" style={{ width: '100%', padding: 10 }} value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000} />
+          <div className="cv-row"><Button size="sm" disabled={!note.trim()} onClick={() => { setPkg({ status: 'disputed', note, period, at: new Date().toISOString() }, `Dispute on the ${mName(period)} package`); setDisputing(false); cv.toast('Dispute recorded. The invoice can’t be finalized until it’s resolved.'); }}>Send dispute</Button><Button size="sm" variant="ghost" onClick={() => setDisputing(false)}>Cancel</Button></div>
+        </section>
+      )}
+      <section className="cv-card flush">
+        <div className="cv-tablewrap" tabIndex={0} role="group" aria-label="Package lines">
+          <table className="cv-table">
+            <thead><tr><th>Verified saving</th><th>Room</th><th>Account</th><th className="r">Days</th><th className="r">Reconciled</th></tr></thead>
+            <tbody>
+              {!inv?.accruals?.length && <tr><td colSpan={5} className="cv-small cv-muted">No verified savings accrued in {mName(period)}. Only tests that passed their 28 days count, at their cautious lower bound.</td></tr>}
+              {(inv?.accruals || []).map((a) => (
+                <tr key={a.windowId}><td style={{ fontWeight: 600 }}>{a.title}</td><td>{CV_LOCS.find((l) => l.id === a.roomId)?.short ?? a.roomId}</td><td className="cv-small">{gl[winOf(a.windowId)?.lever]?.account ?? <span className="cv-faint">not mapped</span>}</td><td className="r">{a.days}</td><td className="r">{c$(a.cents)}</td></tr>
+              ))}
+              {inv && <tr><td colSpan={4} style={{ fontWeight: 700 }}>Reconciled for {mName(period)}</td><td className="r" style={{ fontWeight: 700 }}>{c$(inv.reconciledCents)}</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </section>
+      <section className="cv-card">
+        <div className="cv-card-head"><span className="cv-h4">Where savings land in your books</span><span className="cv-xs cv-faint">Only a named person confirms a mapping</span></div>
+        {levers.length === 0 ? <span className="cv-small cv-muted">Nothing to map until a test verifies.</span> : levers.map((k) => (
+          <div key={k} className="cv-row nowrap" style={{ gap: 8 }}>
+            <span className="cv-small" style={{ width: 150, fontWeight: 600 }}>{LEVER_NAMES[k] || k}</span>
+            <input className="input" style={{ flex: 1 }} value={draftGl[k] ?? gl[k]?.account ?? DEFAULT_GL[k] ?? ''} onChange={(e) => setDraftGl({ ...draftGl, [k]: e.target.value })} aria-label={`${LEVER_NAMES[k] || k} account`} />
+            {gl[k] && !draftGl[k] ? <Pill tone="good" icon="CircleCheck">Confirmed {new Date(gl[k].at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</Pill> : <Button size="sm" icon="Check" onClick={() => { const account = (draftGl[k] ?? DEFAULT_GL[k] ?? '').trim(); if (!account) return; setGl((m) => ({ ...m, [k]: { account, by: eng.viewer?.anonymous ? 'Guest' : 'you', at: new Date().toISOString() } }), `${LEVER_NAMES[k]} mapped to ${account}`); setDraftGl((d) => { const n = { ...d }; delete n[k]; return n; }); cv.toast('Mapping confirmed.'); }}>Confirm</Button>}
+          </div>
+        ))}
+      </section>
+    </>
+  );
+}
+
 function CvAccountant() {
+  const eng = useEngine();
+  if (eng.mode === 'server' && eng.org && !eng.org.sample && eng.viewer?.role !== 'gm') {
+    return (
+      <div className="cv-page wide">
+        <PageHead over={`For the group controller · ${eng.org.name}`} q="The period package"
+          sub="Every verified saving in the month, at its cautious lower bound, where it lands in your books, and the approval the invoice waits on. Download it as CSV for your close." />
+        <AccountantReal />
+      </div>
+    );
+  }
+  return <CvAccountantSample />;
+}
+
+function CvAccountantSample() {
   const cv = useCv();
   const [pkg, setPkg] = useSaved("billing", { status: "open" }, { group: true });
   const [disputing, setDisputing] = React.useState(false);
@@ -294,7 +459,71 @@ function LedgerChart({ series }) {
     </svg>
   );
 }
+/* A real group's ledger: every figure is the same daily accrual of verified
+   lower bounds (lib/data/billing.js bookedBetween), over a different span. */
+function LedgerReal() {
+  const cv = useCv();
+  const eng = useEngine();
+  const [cad, setCad] = React.useState('week');
+  const scope = cv.loc;
+  const ws = (eng.windows || []).filter((w) => (w.status === 'verified' || w.status === 'reversed') && (scope === 'all' || w.roomId === scope))
+    .map((w) => ({ ...w, bookedCentsBeforeReversal: Math.max(0, w.lowCents ?? 0) }));
+  const now = new Date();
+  const today = utcDay(now) + 1; // through today
+  const y = now.getUTCFullYear(), m = now.getUTCMonth();
+  const dayN = (yy, mm, dd) => Date.UTC(yy, mm, dd) / 864e5;
+  const span = (from) => ws.reduce((t, w) => t + bookedBetween(w, from, today).cents, 0) / 100;
+  const live = ws.filter((w) => w.status === 'verified');
+  const perDay = live.reduce((t, w) => t + w.bookedCents / 7, 0) / 100;
+  const qStart = dayN(y, Math.floor(m / 3) * 3, 1);
+  const name = scope === 'all' ? eng.org?.name : CV_ROOM.name;
+  const monthName = now.toLocaleDateString('en-US', { month: 'long', timeZone: 'UTC' });
+  const CAD = {
+    day: { fig: cvMoney(perDay, { cents: true }), say: live.length ? `Today ${live.length === 1 ? 'one verified change is' : `${live.length} verified changes are`} holding: ${cvMoney(perDay, { cents: true })}.` : 'Nothing is verified and holding yet.', math: 'Σ (weekly lower bound ÷ 7) for every verified change', note: 'An accrual of a rate already proven, not a new measurement.' },
+    week: { fig: cvMoney(span(today - 7), { cents: true }), say: `The last 7 days: ${cvMoney(span(today - 7), { cents: true })}.`, math: 'Σ of the last seven daily accruals', note: 'A new rate is only born when a 28-day test closes.' },
+    month: { fig: cvMoney(span(dayN(y, m, 1)), { cents: true }), say: `${monthName} so far: ${cvMoney(span(dayN(y, m, 1)), { cents: true })}.`, math: 'Σ of the month’s daily accruals, never weekly × 4.33', note: 'This is the reconciled savings the month’s invoice is built on.' },
+    quarter: { fig: cvMoney(span(qStart), { cents: true }), say: `This quarter: ${cvMoney(span(qStart), { cents: true })}, counted day by day from each change's verification.`, math: 'Σ of each day this quarter a change was accruing', note: 'Reversed changes stop accruing the day they were reversed.' },
+    year: { fig: cvMoney(span(dayN(y, 0, 1)), { cents: true }), say: `${y} to date: ${cvMoney(span(dayN(y, 0, 1)), { cents: true })}.`, math: 'Σ of every day this year a verified change held', note: 'Checked monthly against your books by your accountant.' },
+  };
+  const c = CAD[cad];
+  return (
+    <div className="cv-page wide">
+      <PageHead over={`Savings ledger · ${name}`} q="What has this been worth, at every zoom level?"
+        sub="Measured once, over 28 days. Everything after that is bookkeeping on that one measurement: the day is the week spread out, the month is its days added up." />
+      <div className="cv-grid g-hero">
+        <section className="cv-card">
+          <div className="cv-card-head">
+            <Tabs value={cad} onChange={setCad} tabs={['day', 'week', 'month', 'quarter', 'year'].map((k) => ({ value: k, label: k[0].toUpperCase() + k.slice(1) }))} />
+            <Claim k="book" />
+          </div>
+          <span className="cv-fig xl cv-up">{c.fig}</span>
+          <p className="cv-h4" style={{ fontWeight: 600 }}>{c.say}</p>
+          <div className="cv-formula" style={{ fontSize: 'var(--text-xs)' }}>{c.math}</div>
+          <span className="cv-small cv-muted">{c.note}</span>
+        </section>
+        <section className="cv-card">
+          <span className="cv-h4">What&apos;s accruing</span>
+          {ws.length === 0 ? <span className="cv-small cv-muted">Nothing yet. The ledger starts when a test verifies.</span> : ws.map((w) => (
+            <div key={w.id} className="cv-row nowrap" style={{ gap: 8 }}>
+              <Pill tone={w.status === 'verified' ? 'good' : 'bad'} icon={w.status === 'verified' ? 'BadgeCheck' : 'Undo2'}>{w.status === 'verified' ? 'Holding' : 'Reversed'}</Pill>
+              <span className="cv-small" style={{ flex: 1 }}>{w.title}</span>
+              <span className="cv-small cv-num">{w.status === 'verified' ? `${cvMoney(w.bookedCents / 100, { cents: true })}/wk` : 'stopped accruing'}</span>
+            </div>
+          ))}
+          <button className="cv-link" onClick={() => cv.go('billing')}>See the invoices <Icon name="ArrowRight" size={14} /></button>
+        </section>
+      </div>
+    </div>
+  );
+}
+
 function CvLedger() {
+  const eng = useEngine();
+  if (eng.mode === 'server' && eng.org && !eng.org.sample) return <LedgerReal />;
+  return <CvLedgerSample />;
+}
+
+function CvLedgerSample() {
   const cv = useCv();
   const [cad, setCad] = React.useState("week");
   const scope = cv.loc;
@@ -370,44 +599,75 @@ function CvLedger() {
 }
 
 /* ================================================================ Comparison */
-const CV_SHAPES = [
-  { loc: "Oakland", draw: (x, y) => <circle cx={x} cy={y} r="6" fill="var(--cat-1)" /> },
-  { loc: "Berkeley", draw: (x, y) => <rect x={x - 5.5} y={y - 5.5} width="11" height="11" fill="var(--cat-2)" /> },
-  { loc: "Walnut Creek", draw: (x, y) => <path d={`M${x} ${y - 7} L${x + 7} ${y + 5} L${x - 7} ${y + 5} Z`} fill="var(--cat-3)" /> },
+/* One shape per room, by position, so colour is never the only cue. */
+const CV_SHAPE_DRAW = [
+  (x, y, c) => <circle cx={x} cy={y} r="6" fill={c} />,
+  (x, y, c) => <rect x={x - 5.5} y={y - 5.5} width="11" height="11" fill={c} />,
+  (x, y, c) => <path d={`M${x} ${y - 7} L${x + 7} ${y + 5} L${x - 7} ${y + 5} Z`} fill={c} />,
+  (x, y, c) => <path d={`M${x} ${y - 7} L${x + 7} ${y} L${x} ${y + 7} L${x - 7} ${y} Z`} fill={c} />,
+  (x, y, c) => <circle cx={x} cy={y} r="5" fill="none" stroke={c} strokeWidth="2.5" />,
+  (x, y, c) => <rect x={x - 5} y={y - 5} width="10" height="10" fill="none" stroke={c} strokeWidth="2.5" />,
 ];
+const cvShape = (i, x, y) => CV_SHAPE_DRAW[i % CV_SHAPE_DRAW.length](x, y, `var(--cat-${(i % 3) + 1})`);
+
 function CvComparison() {
-  const CV_CMP = CV_GROUP.cmp;
+  const cv = useCv();
+  const [weeks, setWeeks] = React.useState(8);
+  const c = compareRooms(CV_GROUP.rooms.map((d) => ({ id: d.id, name: d.profile.short, history: d.room.history })), { weeks });
+  const nameOf = Object.fromEntries(c.rooms.map((r) => [r.id, r.name]));
   return (
     <div className="cv-page">
-      <PageHead over="Comparison" q="Which of my rooms runs best?"
-        sub="Your three rooms, compared with each other. Peer benchmarks unlock when there are 40 comparable rooms in the network. Until then, we won't pretend to compare you with rooms like yours." />
-      <div className="cv-legend" style={{ fontSize: "var(--text-sm)" }}>
-        {CV_SHAPES.map((s, i) => <span key={s.loc}><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">{s.draw(8, 8)}</svg>{CV_LOCS[i].name}</span>)}
-      </div>
-      <section className="cv-card flush">
-        {CV_CMP.map((m, idx) => {
-          const lo = Math.min(...m.v), hi = Math.max(...m.v), pad = (hi - lo) * 0.25 || 1;
-          const x = cvScale(lo - pad, hi + pad, 20, 380);
-          const best = m.better === "neutral" ? -1 : m.better === "low" ? m.v.indexOf(lo) : m.v.indexOf(hi);
-          return (
-            <div key={m.k} style={{ display: "grid", gridTemplateColumns: "minmax(0, 220px) minmax(0, 1fr) minmax(0, 260px)", gap: 16, alignItems: "center", padding: "14px 18px", borderTop: idx ? "1px solid var(--border)" : 0 }} className="cv-cmp-row">
-              <div className="cv-col" style={{ gap: 2 }}><span style={{ fontWeight: 600 }}>{m.k}</span><span className="cv-xs cv-faint">{m.better === "neutral" ? "Context, not a score" : m.better === "low" ? "Lower is better" : "Higher is better"}</span></div>
-              <svg className="cv-chart" viewBox="0 0 400 30" style={{ height: 30 }} aria-hidden="true">
-                <line x1="20" x2="380" y1="15" y2="15" className="axis" />
-                {m.v.map((v, i) => <g key={i}>{CV_SHAPES[i].draw(x(v), 15)}</g>)}
-              </svg>
-              <div className="cv-row nowrap" style={{ justifyContent: "flex-end", gap: 14 }}>
-                {m.v.map((v, i) => (
-                  <span key={i} className="cv-num cv-small" style={{ minWidth: 64, textAlign: "right", fontWeight: i === best ? 700 : 400 }}>
-                    {i === best && <Icon name="Crown" size={12} style={{ marginRight: 4, color: "var(--accent)", verticalAlign: -1 }} />}{m.f(v)}
-                  </span>
-                ))}
+      <PageHead over="Comparison" q="Which of my rooms runs best, and by how much?"
+        sub="Your own rooms, compared on rates (share of sales, per cover) so size doesn't decide it. A room is called ahead only when the gap is bigger than its normal week-to-week swing." />
+      {!c.ok ? <Callout icon="Info">{c.reason} Once a second room has data, its rates line up here.</Callout> : <>
+        <div className="cv-row" style={{ justifyContent: 'space-between' }}>
+          <div className="cv-legend" style={{ fontSize: "var(--text-sm)" }}>
+            {c.rooms.map((r, i) => <span key={r.id}><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">{cvShape(i, 8, 8)}</svg>{r.name}{r.weeks < weeks ? ` (${r.weeks} wk)` : ''}</span>)}
+          </div>
+          <Tabs value={String(weeks)} onChange={(v) => setWeeks(+v)} tabs={[{ value: '4', label: '4 weeks' }, { value: '8', label: '8 weeks' }, { value: '13', label: '13 weeks' }]} />
+        </div>
+        {c.top ? (
+          <Callout icon="Lightbulb">
+            The clearest gap over the last {weeks} weeks: <b>{c.top.label.toLowerCase()}</b> at {c.top.best.name} averages {c.top.f(c.top.best.mean)}, against {c.top.f(c.top.worst.mean)} at {c.top.worst.name}. That's {Number.isFinite(c.top.z) ? `${c.top.z.toFixed(1)}×` : 'well past'} their normal weekly swing, so it's a real difference worth asking about, not a lucky week.
+            {c.top.screen && <> <button className="cv-link" onClick={() => cv.go(c.top.screen)}>Look into it <Icon name="ArrowRight" size={12} /></button></>}
+          </Callout>
+        ) : <Callout tone="good" icon="Scale">No gap between rooms is bigger than their normal week-to-week swing over the last {weeks} weeks. On these rates, the rooms are level.</Callout>}
+        {c.unlike && <Callout icon="Ruler">The busiest room serves {c.sizeRatio.toFixed(1)}× the covers of the quietest. Totals are shown for context only; the scores use rates, which don't reward size.</Callout>}
+        <section className="cv-card flush">
+          {c.rows.map((m, idx) => {
+            const all = m.per.flatMap((p) => (p.lo != null ? [p.lo, p.hi] : []));
+            const lo = Math.min(...all), hi = Math.max(...all), pad = (hi - lo) * 0.15 || 1;
+            const x = cvScale(lo - pad, hi + pad, 20, 380);
+            return (
+              <div key={m.k} style={{ display: "grid", gridTemplateColumns: "minmax(0, 220px) minmax(0, 1fr) minmax(0, 280px)", gap: 16, alignItems: "center", padding: "14px 18px", borderTop: idx ? "1px solid var(--border)" : 0 }} className="cv-cmp-row">
+                <div className="cv-col" style={{ gap: 2 }}>
+                  <span style={{ fontWeight: 600 }}>{m.label}</span>
+                  <span className="cv-xs cv-faint">{m.verdict === 'context' ? 'Context, not a score' : m.verdict === 'missing' ? 'Not every room has this' : m.verdict === 'clear' ? `${nameOf[m.leader]} ahead, beyond weekly swing` : `Level: within weekly swing (${m.better === 'low' ? 'lower' : 'higher'} is better)`}</span>
+                </div>
+                <svg className="cv-chart" viewBox="0 0 400 30" style={{ height: 30 }} role="img" aria-label={m.per.map((p) => `${p.name} ${p.mean != null ? m.f(p.mean) : 'no data'}`).join(', ')}>
+                  <line x1="20" x2="380" y1="15" y2="15" className="axis" />
+                  {m.per.map((p, i) => p.mean != null && <g key={p.id}>
+                    <line x1={x(p.lo)} x2={x(p.hi)} y1={15} y2={15} stroke={`var(--cat-${(i % 3) + 1})`} strokeWidth="4" strokeOpacity="0.3" strokeLinecap="round" />
+                    {cvShape(i, x(p.mean), 15)}
+                  </g>)}
+                </svg>
+                <div className="cv-row nowrap" style={{ justifyContent: "flex-end", gap: 14 }}>
+                  {m.per.map((p) => (
+                    <span key={p.id} className="cv-num cv-small" style={{ minWidth: 64, textAlign: "right", fontWeight: p.id === m.leader ? 700 : 400 }}>
+                      {p.id === m.leader && <Icon name="Crown" size={12} style={{ marginRight: 4, color: "var(--accent)", verticalAlign: -1 }} />}{p.mean != null ? m.f(p.mean) : '—'}
+                    </span>
+                  ))}
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </section>
+        <span className="cv-xs cv-faint">Each dot is the room's average over the weeks shown; the faint bar is its range. "Ahead" means the gap to the next room beats the larger of the two rooms' week-to-week standard deviation.</span>
+      </>}
+      <section className="cv-card">
+        <div className="cv-card-head"><span className="cv-h4">Against restaurants like yours</span><Pill icon="Lock">Not available</Pill></div>
+        <p className="cv-small cv-muted" style={{ lineHeight: 1.55 }}>A peer benchmark needs at least {PEER_COHORT_MIN} comparable rooms (format, size, region), so that no single restaurant can be picked out of it. Coversight doesn't have that cohort, so it shows no outside benchmark at all rather than an invented one.</p>
       </section>
-      <Callout icon="Lightbulb">Walnut Creek gets the most out of each manager-hour, because its two labour changes both verified. Berkeley's only verified change reversed, so its figure is $0, and the ranker now weights Friday cuts at Berkeley lower.</Callout>
     </div>
   );
 }
@@ -415,7 +675,9 @@ function CvComparison() {
 /* ================================================================ Sources */
 function CvSources() {
   const cv = useCv();
-  const CV_FEEDS = CV_D.feeds;
+  /* A Toast export more than 8 days old is stale, whatever else is true. */
+  const age = (end) => Math.round((Date.now() - Date.parse(`${end}T23:59:59Z`)) / 864e5);
+  const CV_FEEDS = CV_D.feeds.map((f) => (f.dataEnd && age(f.dataEnd) > 8 ? { ...f, state: 'stale', note: `The newest week is ${age(f.dataEnd)} days old. Tests pause until the next export is uploaded.` } : f));
   const fixes = CV_FEEDS.filter((f) => f.risk > 0);
   const total = CV_FEEDS.reduce((s, f) => s + f.risk, 0);
   const tone = { healthy: ["good", "CircleCheck", "Healthy"], stale: ["warn", "Clock", "Stale"], partial: ["warn", "CircleDot", "Partial"], off: ["neutral", "CircleMinus", "Not connected"] };
@@ -441,13 +703,14 @@ function CvSources() {
               <div className="cv-row" style={{ justifyContent: "flex-end" }}>
                 {f.risk > 0 && <span className="cv-num cv-exp" style={{ fontWeight: 600 }}>{cvMoney(f.risk)}/wk at risk</span>}
                 {f.manual && <Pill tone="info" icon="PencilLine">Manual</Pill>}
-                {f.fix && (f.state !== "healthy" || f.input) && <Button size="sm" variant={f.risk ? "primary" : "secondary"} onClick={() => (f.input ? cv.go("inputs", { kind: f.input }) : cv.toast(`${f.name}: ${f.fix.toLowerCase()} started.`))}>{f.fix}</Button>}
+                {f.fix && f.input && <Button size="sm" variant={f.risk || f.state === "stale" ? "primary" : "secondary"} onClick={() => cv.go("inputs", f.input === "toast" ? undefined : { kind: f.input })}>{f.fix}</Button>}
+                {f.fix && !f.input && <Button size="sm" variant="secondary" onClick={() => cv.go("connect")}>How to connect</Button>}
               </div>
             </div>
           );
         })}
       </section>
-      <Callout icon="Info">There's no overall completeness score here on purpose. Today's 76% is a weighted average of twelve constants. It isn't 76% of records or 76% confidence, and a feed that stopped three weeks ago still reads healthy.</Callout>
+      <Callout icon="Info">There&apos;s no overall completeness score here on purpose: a single percentage hides a feed that stopped three weeks ago. Each feed says when it last brought in data.</Callout>
     </div>
   );
 }
@@ -493,7 +756,14 @@ const LEVER_NEED = {
 const cvLevers = () => Object.entries(CV_D.room.autonomy).map(([k, [now, earned]]) => ({ k, now, earned, need: LEVER_NEED[k] }));
 function CvSystem() {
   const CV_LEVERS = cvLevers();
-  const [levels, setLevels] = React.useState(() => Object.fromEntries(CV_LEVERS.map((l) => [l.k, l.now])));
+  const eng = useEngine();
+  const [levels, saveLevels] = useSaved('autonomy', Object.fromEntries(CV_LEVERS.map((l) => [l.k, l.now])));
+  const setLevels = (fn) => saveLevels(fn, 'Autonomy changed');
+  const [real, setReal] = React.useState(null);
+  React.useEffect(() => {
+    if (eng.mode !== 'server') return;
+    fetch('/api/activity', { credentials: 'same-origin' }).then((r) => r.json()).then((b) => setReal(b.activity || [])).catch(() => setReal([]));
+  }, [eng.mode]);
   const [feed, setFeed] = React.useState(() => CV_EVENTS.slice(0, 4).map((e, i) => ({ id: i, t: `7:1${4 - i} pm`, a: e[0], m: e[1] })));
   React.useEffect(() => {
     let n = 4;
@@ -506,12 +776,14 @@ function CvSystem() {
     }, 3800);
     return () => clearInterval(iv);
   }, []);
+  const when = (d) => new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   const LV = ["Observes", "Recommends", "Drafts", "Executes within a fence", "Holds the line"];
   return (
     <div className="cv-page wide">
       <PageHead over="System" q="Who is doing what, and how much rope do they have?"
         sub="Autonomy is granted per lever and per room, never globally. Each level is earned by evidence, and any guardrail breach drops that lever back to recommending." />
       <PlatformHealth />
+      <Callout icon="Info">Autonomy is saved per room, but in practice every lever is at most <b>Recommends</b> today: Coversight can&apos;t write to Toast or 7shifts yet, so an approval becomes a guided task (Today) rather than a change made for you.</Callout>
       <section className="cv-card">
         <div className="cv-card-head"><span className="cv-h4">Autonomy at {CV_ROOM.name}</span><span className="cv-small cv-faint">A0 observes · A1 recommends · A2 drafts · A3 executes within a fence · A4 holds the line</span></div>
         <div className="cv-col" style={{ gap: 14 }}>
@@ -546,10 +818,12 @@ function CvSystem() {
         </section>
         <section className="cv-card flush">
           <div className="cv-row" style={{ padding: "14px 16px", borderBottom: "1px solid var(--border)", justifyContent: "space-between" }}>
-            <span className="cv-h4">What they're doing</span><Pill icon="FlaskConical">Simulated</Pill>
+            <span className="cv-h4">{real ? 'What happened' : "What they're doing"}</span>{real ? <Pill icon="ScrollText">From the audit log</Pill> : <Pill icon="FlaskConical">Simulated</Pill>}
           </div>
           <div className="cv-feed" aria-live="polite">
-            {feed.map((e) => <div key={e.id} className="ev"><span className="t">{e.t}</span><span className="a">{e.a}</span><span className="m">{e.m}</span></div>)}
+            {real
+              ? (real.length ? real.map((e, i) => <div key={i} className="ev"><span className="t">{when(e.at)}</span><span className="a">{e.who}</span><span className="m">{e.what}{e.room ? ` · ${e.room}` : ''}</span></div>) : <div className="ev"><span className="m">Nothing yet.</span></div>)
+              : feed.map((e) => <div key={e.id} className="ev"><span className="t">{e.t}</span><span className="a">{e.a}</span><span className="m">{e.m}</span></div>)}
           </div>
         </section>
       </div>

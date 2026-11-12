@@ -8,6 +8,7 @@ import { leverReport } from '../../lib/data/levers.js';
 import { windowState, METHOD_LABEL, MAGNITUDE_FLOOR_PCT, WORKER_JOBS, statusz, TOAST_ERRORS } from '../../lib/data/pilot.js';
 import { LEVER_METRIC } from '../../lib/data/readers.js';
 import { engine, useEngine } from '../engine';
+import { ToastImport } from './toast-import';
 
 /* Coversight — the live platform, as it runs in a pilot today: connecting a
    restaurant's own Toast, a test window run by the daily proof loop with the
@@ -42,7 +43,139 @@ function checkCredentials(form) {
   };
 }
 
+/* Server mode: data exports today, plus real Toast credentials checked against Toast and stored sealed. */
+async function jpost(url, body) {
+  const r = await fetch(url, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || `Request failed (${r.status})`);
+  return j;
+}
+
+const SYNC_LABEL = { off: ['Waiting for the first run', 'neutral', 'Hourglass'], backfilling: ['Backfilling 13 weeks', 'warn', 'Loader'], live: ['Live · nightly', 'good', 'CircleCheck'], failing: ['Sync failing', 'bad', 'CircleX'] };
+const syncAgo = (t) => { if (!t) return 'never'; const m = Math.round((Date.now() - Date.parse(t)) / 6e4); return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`; };
+
+/** Lane 1 status: what the hourly sync holds per room, and "Sync now". */
+function SyncPanel({ st, rooms, canRun, busy, onRun }) {
+  const sync = st.sync ?? { state: 'off', rooms: {} };
+  const [label, tone, icon] = SYNC_LABEL[sync.state] ?? SYNC_LABEL.off;
+  return (
+    <div className="cv-col" style={{ gap: 10, borderTop: '1px solid var(--border)', paddingTop: 12 }} data-lane="pos">
+      <div className="cv-row" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+        <div className="cv-col" style={{ gap: 2 }}>
+          <span className="cv-h4">Live sync</span>
+          <span className="cv-xs cv-faint">Orders, checks, voids, discounts, refunds, time entries and wages, one business day at a time. Last run {syncAgo(sync.at)}.</span>
+        </div>
+        <Pill tone={tone} icon={icon}>{label}</Pill>
+      </div>
+      <div className="cv-tablewrap" tabIndex={0} role="group" aria-label="Sync by room">
+        <table className="cv-table">
+          <thead><tr><th>Restaurant</th><th>History held</th><th className="r">Newest day</th><th className="r">Orders last run</th><th className="r">Shifts last run</th></tr></thead>
+          <tbody>{st.restaurants.map((r) => {
+            const d = sync.rooms?.[r.roomId];
+            const pct = d ? Math.round((d.days / (d.days + d.missing || 1)) * 100) : 0;
+            return (
+              <tr key={r.guid}>
+                <td>{r.name} <span className="cv-xs cv-faint">→ {rooms.find((x) => x.id === r.roomId)?.short ?? r.roomId}</span></td>
+                <td style={{ minWidth: 160 }}>{d ? <span className="cv-col" style={{ gap: 3 }}><span className="cv-xs">{d.days} of {d.days + d.missing} days</span><span style={{ height: 6, background: 'var(--surface-sunken)', borderRadius: 3, overflow: 'hidden' }}><span style={{ display: 'block', height: '100%', width: `${pct}%`, background: 'var(--accent)' }} /></span></span> : <span className="cv-xs cv-faint">Not pulled yet</span>}</td>
+                <td className="r cv-num">{d?.newest ?? '—'}</td><td className="r cv-num">{d ? d.orders.toLocaleString('en-US') : '—'}</td><td className="r cv-num">{d ? d.shifts.toLocaleString('en-US') : '—'}</td>
+              </tr>
+            );
+          })}</tbody>
+        </table>
+      </div>
+      <span className="cv-xs cv-faint">The first runs pull 13 weeks, newest first, about five weeks per run. After that each nightly run (or Sync now) re-reads today and the two days before, so late voids, tips and clock-outs are caught. Kitchen ticket times aren&apos;t in Toast&apos;s standard API: add KitchenTimings.csv from the exports above.</span>
+      {canRun && <span><Button size="sm" icon="RefreshCw" disabled={!!busy} onClick={onRun}>{busy === 'sync' ? 'Syncing with Toast…' : 'Sync now'}</Button></span>}
+    </div>
+  );
+}
+
+function CvConnectReal() {
+  const cv = useCv();
+  const eng = useEngine();
+  const isOwner = eng.viewer?.role === 'owner';
+  const rooms = CV_LOCS.filter((l) => l.id !== 'all');
+  const [st, setSt] = React.useState(undefined);
+  const [canStore, setCanStore] = React.useState(true);
+  const [form, setForm] = React.useState({ host: 'ws-api.toasttab.com', clientId: '', secret: '', restaurants: [{ guid: '', roomId: rooms[0]?.id ?? '' }] });
+  const [check, setCheck] = React.useState(null);
+  const [busy, setBusy] = React.useState(null);
+  const [err, setErr] = React.useState(null);
+  React.useEffect(() => { fetch('/api/toast', { credentials: 'same-origin' }).then((r) => r.json()).then((j) => { setSt(j.connection); setCanStore(j.canStore); }).catch(() => setSt(null)); }, []);
+  const set = (k, v) => { setForm((f) => ({ ...f, [k]: v })); setCheck(null); };
+  const setR = (i, k, v) => set('restaurants', form.restaurants.map((x, j) => (j === i ? { ...x, [k]: v.trim ? v.trim() : v } : x)));
+  const act = async (name, fn) => { setBusy(name); setErr(null); try { await fn(); } catch (e) { setErr(e.message); } finally { setBusy(null); } };
+  return (
+    <div className="cv-page">
+      <PageHead over={`Connect your POS · ${eng.org?.name ?? ''}`} q="How does our Toast data get in?"
+        sub="Two ways in, both read by the same code: the live Toast API sync (every night once credentials are stored, or Sync now), and Toast's data exports, uploaded whenever you like." />
+      <ToastImport compact />
+      <section className="cv-card" aria-labelledby="toast-api">
+        <div className="cv-card-head">
+          <div className="cv-col" style={{ gap: 2 }}><span className="cv-h4" id="toast-api">Toast API credentials</span><span className="cv-xs cv-faint">Checked against Toast for real and stored sealed. The secret never leaves the server and is never exported.</span></div>
+          {st ? <Pill tone={st.status === 'connected' ? 'good' : 'bad'} icon={st.status === 'connected' ? 'CircleCheck' : 'CircleX'}>{st.status === 'connected' ? 'Credentials work' : 'Failing'}</Pill> : <Pill icon="CircleMinus">Not connected</Pill>}
+        </div>
+        {!canStore && <Callout tone="warn" icon="Lock">The server has no CREDENTIALS_KEY yet, so it won&apos;t store credentials. Add a random 32+ character CREDENTIALS_KEY in Vercel first.</Callout>}
+        {err && <Callout tone="bad" icon="CircleX">{err}</Callout>}
+        {st ? (
+          <>
+            <dl className="cv-kv">
+              <dt>API host</dt><dd>{st.host}</dd>
+              <dt>Client ID</dt><dd>{st.clientId}</dd>
+              <dt>Restaurants</dt><dd style={{ fontFamily: 'var(--font-sans)' }}>{st.restaurants.map((r) => `${r.name} → ${rooms.find((x) => x.id === r.roomId)?.short ?? r.roomId}`).join(' · ')}</dd>
+              <dt>Last checked</dt><dd>{new Date(st.checkedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</dd>
+            </dl>
+            {st.lastError && <Callout tone="bad" icon="CircleX">{st.lastError}</Callout>}
+            <SyncPanel st={st} rooms={rooms} canRun={eng.viewer?.role !== 'gm'} busy={busy} onRun={() => act('sync', async () => {
+              const j = await jpost('/api/jobs', { job: 'sync' });
+              const t = await fetch('/api/toast', { credentials: 'same-origin' }).then((r) => r.json());
+              setSt(t.connection);
+              await engine.hydrate();
+              cv.toast(j.result?.ok ? 'Synced. Every figure now reads the newest Toast data.' : `Sync failed: ${j.result?.detail?.error ?? 'see the error above'}`);
+            })} />
+            <div className="cv-row" style={{ gap: 8 }}>
+              <Button size="sm" variant="secondary" icon="RefreshCw" disabled={!!busy || eng.viewer?.role === 'gm'} onClick={() => act('recheck', async () => { const j = await jpost('/api/toast/recheck'); setSt(j.connection); cv.toast(j.connection.status === 'connected' ? 'Toast accepted the credentials.' : 'Toast refused them. See the error.'); })}>{busy === 'recheck' ? 'Checking…' : 'Check again'}</Button>
+              {isOwner && <Button size="sm" variant="ghost" icon="CircleMinus" disabled={!!busy} onClick={() => act('off', async () => { await jpost('/api/toast/disconnect'); setSt(null); cv.toast('Disconnected. The stored credentials were deleted.'); })}>Disconnect</Button>}
+            </div>
+          </>
+        ) : st === null && (
+          <>
+            <ol className="cv-col" style={{ gap: 4, margin: 0, paddingLeft: 18 }}>{HOW_TO.map((h) => <li key={h} className="cv-small">{h}</li>)}</ol>
+            <div className="cv-col" style={{ gap: 8 }}>
+              <label className="cv-col" style={{ gap: 4 }}><span className="cv-small">API hostname</span><input className="input" value={form.host} onChange={(e) => set('host', e.target.value)} disabled={!isOwner} /></label>
+              <label className="cv-col" style={{ gap: 4 }}><span className="cv-small">Client ID</span><input className="input" value={form.clientId} onChange={(e) => set('clientId', e.target.value)} disabled={!isOwner} autoComplete="off" /></label>
+              <label className="cv-col" style={{ gap: 4 }}><span className="cv-small">Client secret</span><input className="input" type="password" value={form.secret} onChange={(e) => set('secret', e.target.value)} disabled={!isOwner} autoComplete="new-password" /></label>
+              <span className="cv-small">Restaurants (GUID → room)</span>
+              {form.restaurants.map((r, i) => (
+                <span key={i} className="cv-row nowrap" style={{ gap: 6 }}>
+                  <input className="input" style={{ flex: 1 }} placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" value={r.guid} onChange={(e) => setR(i, 'guid', e.target.value)} disabled={!isOwner} aria-label={`Restaurant ${i + 1} GUID`} />
+                  <select className="input" style={{ width: 'auto' }} value={r.roomId} onChange={(e) => setR(i, 'roomId', e.target.value)} disabled={!isOwner} aria-label={`Restaurant ${i + 1} room`}>{rooms.map((x) => <option key={x.id} value={x.id}>{x.short}</option>)}</select>
+                  {check?.restaurants?.[i] && <Icon name={check.restaurants[i].ok ? 'CircleCheck' : 'CircleX'} size={16} />}
+                </span>
+              ))}
+              {isOwner && form.restaurants.length < rooms.length && <span><Button size="sm" variant="ghost" icon="Plus" onClick={() => set('restaurants', [...form.restaurants, { guid: '', roomId: rooms[form.restaurants.length]?.id ?? rooms[0].id }])}>Add a restaurant</Button></span>}
+              {check && !check.ok && <Callout tone="bad" icon="CircleX">{check.error || check.restaurants?.find((x) => !x.ok)?.error}</Callout>}
+              {check?.ok && <Callout tone="good" icon="CircleCheck">Toast accepted these and can read {check.restaurants.map((x) => x.name).join(', ')}.</Callout>}
+              {isOwner ? (
+                <div className="cv-row" style={{ gap: 8 }}>
+                  <Button variant="secondary" disabled={!!busy || !form.clientId || !form.secret} onClick={() => act('check', async () => setCheck(await jpost('/api/toast/check', form)))}>{busy === 'check' ? 'Checking with Toast…' : 'Check'}</Button>
+                  <Button disabled={!!busy || !check?.ok || !canStore} onClick={() => act('connect', async () => { const j = await jpost('/api/toast/connect', form); if (j.connected) { setSt(j.status); setForm((f) => ({ ...f, secret: '' })); cv.toast('Stored, sealed. Toast accepted the credentials.'); } else setCheck(j.check); })}>{busy === 'connect' ? 'Storing…' : 'Store the credentials'}</Button>
+                </div>
+              ) : <Callout icon="Lock">Only an owner can connect Toast.</Callout>}
+            </div>
+          </>
+        )}
+      </section>
+    </div>
+  );
+}
+
 function CvConnect() {
+  const eng = useEngine();
+  if (eng.mode === 'server') return <CvConnectReal />;
+  return <CvConnectDemo />;
+}
+
+function CvConnectDemo() {
   const cv = useCv();
   const canManage = cv.role === 'owner';
   const [mode, setMode] = React.useState('status'); // status | form
@@ -75,7 +208,7 @@ function CvConnect() {
       setForm((f) => ({ ...f, secret: '' }));
       setMode('status');
       setBusy(null);
-      cv.toast('Connected. The first sync (13 weeks of history) starts within 15 minutes.');
+      cv.toast('Simulated: on the live platform the first sync (13 weeks of history) would start within 15 minutes.');
     }, 800);
   };
   const firstSync = () => {
@@ -87,7 +220,7 @@ function CvConnect() {
     return { checks: s.checks + b.checks, shifts: s.shifts + b.shifts, weeks: b.weeks };
   }, { checks: 0, shifts: 0, weeks: 0 });
   const failing = conn.state === 'failing';
-  const headline = !conn.connected ? 'Not connected' : failing ? 'Sync failing' : conn.state === 'pending' ? 'Connected — first sync pending' : 'Syncing every 15 minutes';
+  const headline = !conn.connected ? 'Not connected' : failing ? 'Sync failing' : conn.state === 'pending' ? 'Connected — first sync pending' : 'Healthy (simulated: this is the sample walkthrough, no Toast calls are made)';
 
   return (
     <div className="cv-page">
@@ -495,13 +628,104 @@ function CvWindows() {
 }
 
 /* ================================================================ Platform health (on System) */
+/* The real scheduled jobs (server mode): last run of each, Run now, recent runs, and the email outbox. */
+const ago = (d) => {
+  if (!d) return 'never';
+  const m = Math.round((Date.now() - new Date(d).getTime()) / 6e4);
+  return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 48 * 60 ? `${Math.round(m / 60)} h ago` : new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+};
+const runSummary = (r) => {
+  if (!r) return '';
+  if (r.ok === false) return `failed: ${r.detail?.error ?? 'error'}`;
+  const d = r.detail || {};
+  if (r.job === 'detection') return `${d.rooms ?? 0} rooms re-graded${d.tasks?.verified?.length ? ` · ${d.tasks.verified.length} price change confirmed` : ''}`;
+  if (r.job === 'proof') return `${d.windows ?? 0} open tests · ${d.recorded ?? 0} checkpoints recorded${d.closed?.length ? ` · ${d.closed.length} closed` : ''}`;
+  if (r.job === 'reverify') return `${d.checked ?? 0} verified checked${d.reversed?.length ? ` · ${d.reversed.length} reversed` : ''}`;
+  if (r.job === 'billing') return d.skipped ? `skipped (${d.skipped})` : `${d.period} drafted`;
+  if (r.job === 'cleanup') return `${d.guests ?? 0} old guests removed`;
+  return '';
+};
+const OUT_TONE = { sent: 'good', queued: 'info', held: 'info', draft: 'neutral', skipped: 'warn', failed: 'bad' };
+
+function JobsPanel() {
+  const cv = useCv();
+  const [st, setSt] = React.useState(null);
+  const [out, setOut] = React.useState(null);
+  const [health, setHealth] = React.useState(null);
+  const [busy, setBusy] = React.useState(null);
+  const [err, setErr] = React.useState(null);
+  const get = (u) => fetch(u, { credentials: 'same-origin' }).then(async (r) => { const b = await r.json().catch(() => ({})); if (!r.ok) throw new Error(b.error || r.status); return b; });
+  React.useEffect(() => {
+    get('/api/jobs').then(setSt).catch((e) => setErr(e.message));
+    get('/api/outbox').then(setOut).catch(() => setOut(null));
+    fetch('/api/health').then((r) => r.json().then((b) => setHealth({ ok: r.ok, ...b }))).catch(() => setHealth({ ok: false }));
+  }, []);
+  const run = async (job) => {
+    setBusy(job); setErr(null);
+    try {
+      const r = await fetch('/api/jobs', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ job }) });
+      const b = await r.json();
+      if (!r.ok) throw new Error(b.error);
+      setSt(b.status);
+      cv.toast(b.result.ok ? `Ran ${job}: ${runSummary({ job, ok: true, detail: b.result.detail })}.` : `${job} failed: ${b.result.detail?.error}`);
+      engine.refreshWindows(); engine.refreshNotes();
+    } catch (e) { setErr(e.message); } finally { setBusy(null); }
+  };
+  return (
+    <section className="cv-card" aria-labelledby="jobs-head">
+      <div className="cv-card-head">
+        <div className="cv-col" style={{ gap: 2 }}><span className="cv-h4" id="jobs-head">Scheduled jobs</span><span className="cv-xs cv-faint">Run by Vercel on a schedule for every group; an owner or admin can run one now for this group.</span></div>
+        {health && <Pill tone={health.ok ? 'good' : 'bad'} icon={health.ok ? 'CircleCheck' : 'CircleX'}>{health.ok ? 'Database reachable' : 'Database unreachable'}</Pill>}
+      </div>
+      {err && <Callout tone="warn" icon="CircleX">{err}</Callout>}
+      {st && (
+        <div className="cv-tablewrap"><table className="cv-table">
+          <thead><tr><th>Job</th><th>Runs</th><th>Last run</th><th /></tr></thead>
+          <tbody>
+            {st.jobs.map((j) => (
+              <tr key={j.job}>
+                <td><div className="cv-col" style={{ gap: 2 }}><span style={{ fontWeight: 600 }}>{j.job}</span><span className="cv-xs cv-faint">{j.what}</span></div></td>
+                <td className="cv-small">{j.schedule}</td>
+                <td className="cv-small">{j.last ? <span className={j.last.ok === false ? 'cv-down' : ''}>{ago(j.last.startedAt)}{j.last.trigger === 'manual' ? ' (run now)' : ''}<br /><span className="cv-xs cv-faint">{runSummary(j.last)}</span></span> : <span className="cv-faint">not yet</span>}</td>
+                <td>{j.job !== 'cleanup' && <Button size="sm" variant="secondary" icon="Play" disabled={!!busy} onClick={() => run(j.job)}>{busy === j.job ? 'Running…' : 'Run now'}</Button>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table></div>
+      )}
+      {out && (
+        <div className="cv-col" style={{ gap: 6 }}>
+          <div className="cv-row" style={{ justifyContent: 'space-between' }}>
+            <span className="cv-over">Email outbox</span>
+            <Pill tone={out.provider ? 'good' : 'warn'} icon="Mail">{out.provider ? 'Sending through Resend' : 'No email provider yet: kept, not sent'}</Pill>
+          </div>
+          {out.outbox.length === 0 ? <span className="cv-small cv-muted">No emails yet. Alerts email only rooms whose Fences &amp; alerts have email on.</span> : (
+            <div className="cv-tablewrap"><table className="cv-table">
+              <thead><tr><th>When</th><th>To</th><th>Subject</th><th>Status</th></tr></thead>
+              <tbody>{out.outbox.slice(0, 15).map((m) => (
+                <tr key={m.id}><td className="cv-small">{ago(m.createdAt)}</td><td className="cv-small">{m.toAddress || 'draft (no address)'}</td><td className="cv-small">{m.subject}</td><td><Pill tone={OUT_TONE[m.status] || 'neutral'}>{m.status}</Pill></td></tr>
+              ))}</tbody>
+            </table></div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function PlatformHealth() {
+  const eng = useEngine();
+  if (eng.mode === 'server') return <JobsPanel />;
+  return <PlatformHealthDemo />;
+}
+
+function PlatformHealthDemo() {
   const [workerOk, setWorkerOk] = React.useState(true);
   const body = statusz({ workerOk, rooms: ROOM_IDS.length, failing: 0 });
   return (
     <section className="cv-card">
       <div className="cv-card-head">
-        <div className="cv-col" style={{ gap: 2 }}><span className="cv-h4">Platform health</span><span className="cv-xs cv-faint">What the live platform's worker runs, and what an uptime monitor sees on /statusz every 5 minutes</span></div>
+        <div className="cv-col" style={{ gap: 2 }}><span className="cv-h4">Platform health</span><span className="cv-xs cv-faint">Demo: what the jobs look like when the server is set up (this preview runs in your browser only)</span></div>
         <div className="cv-row" style={{ gap: 8 }}>
           <Pill tone={workerOk ? 'good' : 'bad'} icon={workerOk ? 'CircleCheck' : 'CircleX'}>{workerOk ? '200 OK' : '503'}</Pill>
           <Button size="sm" variant="ghost" icon={workerOk ? 'CirclePause' : 'Play'} onClick={() => setWorkerOk(!workerOk)}>{workerOk ? 'Stop the worker' : 'Restart it'}</Button>
@@ -551,6 +775,65 @@ function exportBundle() {
 }
 
 function CvData() {
+  const eng = useEngine();
+  if (eng.mode === 'server') return <CvDataReal />;
+  return <CvDataDemo />;
+}
+
+/* The real thing: download everything this group owns, or delete the group. */
+function CvDataReal() {
+  const cv = useCv();
+  const eng = useEngine();
+  const isOwner = eng.viewer?.role === 'owner';
+  const name = eng.org?.name || '';
+  const [typed, setTyped] = React.useState('');
+  const [busy, setBusy] = React.useState(null);
+  const [err, setErr] = React.useState(null);
+  const download = () => {
+    setBusy('export');
+    const a = document.createElement('a');
+    a.href = '/api/export';
+    a.click();
+    setTimeout(() => setBusy(null), 1500);
+    cv.toast('Export started: everything this group holds, as plain JSON.');
+  };
+  const del = async () => {
+    setBusy('delete'); setErr(null);
+    const r = await fetch('/api/org/delete', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ confirm: typed }) });
+    const b = await r.json().catch(() => ({}));
+    if (!r.ok) { setErr(b.error || 'Couldn’t delete.'); setBusy(null); return; }
+    window.location.assign('/');
+  };
+  return (
+    <div className="cv-page">
+      <PageHead over={`Your data · ${name}`} q="Can I take my data with me, or have it deleted?"
+        sub="Yes, both, any time, by an owner. The export is every table that belongs to this group; delete removes all of it in one step." />
+      <div className="cv-grid g2">
+        <section className="cv-card">
+          <div className="cv-card-head"><span className="cv-h4">Download all your data</span><Pill icon="FileOutput">coversight-export/v2</Pill></div>
+          <ul className="cv-ul">
+            {['Rooms and their data (menus, team, history, your Toast summaries)', 'Everything entered by hand, including undone entries', 'Decisions, approvals, tasks and test windows with every checkpoint', 'Notifications, emails sent or drafted, and the full audit log', 'People in the group and their roles'].map((t) => <li key={t}><Icon name="Check" size={14} />{t}</li>)}
+          </ul>
+          <Button icon="Download" disabled={!isOwner || busy === 'export'} onClick={download}>Download all your data</Button>
+          <span className="cv-xs cv-faint">Never included: passwords, sessions, invite links, or anyone else&apos;s groups.</span>
+        </section>
+        <section className="cv-card">
+          <div className="cv-card-head"><span className="cv-h4">Delete the group</span><Pill tone="bad" icon="Trash2">Irreversible</Pill></div>
+          <p className="cv-small cv-muted" style={{ lineHeight: 1.55 }}>Removes everything this group owns, now. People&apos;s logins stay, because they may belong to other groups. Download your data first.</p>
+          <label className="cv-col" style={{ gap: 4 }}>
+            <span className="cv-small">Type <b>{name}</b> to confirm</span>
+            <input className="input" value={typed} onChange={(e) => setTyped(e.target.value)} disabled={!isOwner} aria-label="Group name to confirm" />
+          </label>
+          <Button variant="secondary" icon="Trash2" disabled={!isOwner || typed !== name || busy === 'delete'} onClick={del}>{busy === 'delete' ? 'Deleting…' : 'Delete the group'}</Button>
+          {err && <Callout tone="warn" icon="CircleX">{err}</Callout>}
+        </section>
+      </div>
+      {!isOwner && <Callout icon="Lock">Only an owner can export or delete. You&apos;re signed in as {eng.viewer?.role === 'gm' ? 'a GM' : 'an admin'}.</Callout>}
+    </div>
+  );
+}
+
+function CvDataDemo() {
   const cv = useCv();
   const canManage = cv.role === 'owner';
   const [typed, setTyped] = React.useState('');
@@ -612,12 +895,10 @@ function CvData() {
 /** One line on Sources linking to the connection. */
 function ToastConnectionLine() {
   const cv = useCv();
-  const p = CV_D.room.pilot;
-  return (
-    <Callout tone="good" icon="PlugZap">
-      <span>Toast connected for {CV_ROOM.name} with Standard API credentials · 13 weeks of history pulled {p.toast.backfilledAt} · syncing every 15 minutes. <button className="cv-link" onClick={() => cv.go('connect')}>Manage the connection</button></span>
-    </Callout>
-  );
+  const t = CV_D.room.fromToast;
+  if (t) return <Callout tone="good" icon="PlugZap"><span>{CV_ROOM.name} runs on its own Toast data exports through {t.end} ({t.weeks} weeks). Upload the latest each week on <button className="cv-link" onClick={() => cv.go('inputs')}>Data inputs</button>; the live API sync arrives with Toast credentials.</span></Callout>;
+  if (!CV_D.ownData) return <Callout icon="FlaskConical"><span>{CV_ROOM.name} is on sample data. Load your Toast data exports on <button className="cv-link" onClick={() => cv.go('inputs')}>Data inputs</button> to put every figure on your own numbers.</span></Callout>;
+  return <Callout icon="PencilLine"><span>{CV_ROOM.name} has data entered by hand; the rest is still sample. Load your Toast data exports on <button className="cv-link" onClick={() => cv.go('inputs')}>Data inputs</button> for sales, team and timings.</span></Callout>;
 }
 
 export { CvConnect, CvWindows, CvData, PlatformHealth, ToastConnectionLine };
@@ -636,14 +917,18 @@ const gradeIcon = (g) => ({ A: 'BadgeCheck', 'A−': 'CircleCheck', Clear: 'Circ
 
 function CvLevers() {
   const cv = useCv();
-  const roomId = cv.loc === 'all' ? 'oakland' : cv.loc;
+  const eng = useEngine();
+  const roomId = cv.loc === 'all' ? CV_D.id : cv.loc;
   const room = CV_DS.rooms[roomId];
-  const levers = React.useMemo(() => leverReport(room), [room]);
+  const levers = React.useMemo(() => leverReport(room, roomId === CV_D.id ? CV_D : undefined), [room, roomId]);
   const [open, setOpen] = React.useState(null);
+  const own = !!room.fromToast;
+  const testOf = (key) => (eng.windows || []).find((w) => w.roomId === roomId && w.lever === key && (w.status === 'running' || w.status === 'waiting' || w.status === 'verified'));
+  const start = async (key) => { const r = await engine.startWindow(key, { roomId }); cv.toast(r.ok ? 'Test started. Baseline frozen; each new week of data is a checkpoint.' : r.error); };
   return (
     <div className="cv-page wide">
-      <PageHead over={`Levers · ${locOf(roomId).name}`} q="Is every lever running on measurement?"
-        sub="Each of the six Toast-fed levers, graded on five bars: it reads the room's own data, no number in its dollars is made up, a 28-day test could prove it, there's an untouched comparison to subtract, and a verified test books dollars. Every figure is computed in your browser from this room's sample observations."
+      <PageHead over={`Levers · ${locOf(roomId)?.name ?? CV_ROOM.name}`} q="Is every lever running on measurement?"
+        sub={`Each of the six Toast-fed levers, graded on five bars: it reads the room's own data, no number in its dollars is made up, a 28-day test could prove it, there's an untouched comparison to subtract, and a verified test books dollars. ${own ? `Every figure reads this room's own Toast data through ${room.fromToast.end}.` : 'Every figure here is computed from this room’s sample observations until its Toast data is loaded.'}`}
         right={cv.loc === 'all' && <Pill icon="Building2">Showing Oakland; pick a room in the top bar</Pill>} />
       <section className="cv-card flush">
         <div className="cv-tablewrap" tabIndex={0} role="group" aria-label="Scrollable table">
@@ -671,6 +956,12 @@ function CvLevers() {
                         <b>Test power:</b> {l.mde === null ? 'not enough spread to say' : `a 28-day test proves effects of ${l.mde.toFixed(2)} ${l.unit} or more; this one expects ${Math.abs(l.expectedUnits ?? 0).toFixed(2)}`}.{' '}
                         <b>Controls:</b> {l.controlNote}.
                         {l.conf && <> <b>Confidence:</b> {Math.round(l.conf.stability * 100)}% of weeks held × sample {Math.round(l.conf.sample * 100)}%{l.conf.estimatedShare ? `, ${Math.round(l.conf.estimatedShare * 100)}% inferred` : ''}.</>}
+                        {eng.mode === 'server' && (() => {
+                          const w = testOf(l.key);
+                          if (w) return <span className="cv-row" style={{ gap: 6, marginTop: 6 }}><Pill tone={w.status === 'verified' ? 'good' : 'info'} icon="Timer">{w.status === 'verified' ? 'Verified' : `Testing · day ${w.day} of 28`}</Pill><button className="cv-link" onClick={() => cv.go('windows')}>See the test</button></span>;
+                          if (l.key === 'menu_margin') return <span className="cv-row" style={{ marginTop: 6 }}><button className="cv-link" onClick={() => cv.go('windows')}>Pick a dish to test on Test windows</button></span>;
+                          return l.weekly > 0 ? <span className="cv-row" style={{ marginTop: 6 }}><Button size="sm" icon="Play" onClick={(e) => { e.stopPropagation(); start(l.key); }}>Start a 28-day test</Button></span> : null;
+                        })()}
                       </td>
                     </tr>
                   )}
@@ -694,9 +985,10 @@ function CvLevers() {
         <section className="cv-card">
           <span className="cv-h4">Still not 100%</span>
           <ul className="cv-ul">
-            <li><Icon name="ChefHat" size={15} />Ticket times: Toast's Standard API has no kitchen timings. Blocked until partner access.</li>
+            <li><Icon name="ChefHat" size={15} />Ticket times: {own && room.fromToast.files?.includes('kitchen') ? 'measured from your Toast kitchen timings, but not a lever until a waitlist shows who was turned away.' : 'need the KitchenTimings export (Toast’s Standard API has no kitchen timings).'}</li>
             <li><Icon name="Shuffle" size={15} />Mix: the whole menu moves together, so there's no untouched comparison; a test is a before/after.</li>
-            <li><Icon name="FlaskConical" size={15} />All of this runs on sample observations. It becomes real when a restaurant's own Toast data is behind it.</li>
+            <li><Icon name="GitCompareArrows" size={15} />Matched controls aren&apos;t subtracted in real tests yet, so every real test is a before/after against its frozen baseline.</li>
+            {!own && <li><Icon name="FlaskConical" size={15} />This room runs on sample observations. Load its Toast data exports to put every lever on its own numbers.</li>}
           </ul>
         </section>
       </div>

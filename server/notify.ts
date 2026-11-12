@@ -4,7 +4,7 @@
 // Resend when RESEND_API_KEY and MAIL_FROM are set; otherwise each email is
 // kept as "skipped: no provider", visible on the System screen, so turning
 // email on later is one setting and nothing is lost silently.
-import { and, desc, eq, inArray, isNull, notExists, or, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNull, notExists, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import type { Db } from './db/client';
@@ -51,6 +51,11 @@ export async function notify(db: Db, n: Note) {
   const al = await alertsFor(db, n.orgId, n.roomId ?? null);
   if (al.email) {
     for (const r of await recipients(db, n.orgId, n.roomId ?? null)) {
+      if (al.onePerService && n.roomId) {
+        const [recent] = await db.select({ id: outbox.id }).from(outbox).innerJoin(notifications, eq(notifications.id, outbox.notificationId))
+          .where(and(eq(outbox.toUserId, r.userId), eq(notifications.roomId, n.roomId), gt(outbox.createdAt, new Date(Date.now() - 4 * 36e5)))).limit(1);
+        if (recent) continue; // it's in the bell; no second email within 4 hours
+      }
       await db.insert(outbox).values({
         orgId: n.orgId, notificationId: row.id, channel: 'email', kind: n.kind, toAddress: r.email, toUserId: r.userId,
         subject: `Coversight: ${row.title}`, body: `${row.body}${row.link ? `\n\nOpen in Coversight: ${appUrl(row.link)}` : ''}`, status: al.quiet && isQuiet() ? 'held' : 'queued',

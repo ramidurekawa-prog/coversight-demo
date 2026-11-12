@@ -5,13 +5,15 @@ import * as React from 'react';
 import { Tabs } from '../kit';
 import { CV_D, CV_DS, CV_GROUP, CV_ROOM, Callout, Claim, PageHead, cvMoney, cvScale } from './core';
 import { controlLimits } from '../../lib/data/model';
+import { DenseTrends } from './dense-sections';
 
 /* Trends: 52 weeks of the room's own history. The week of Oct 19 is the live
  * week (it moves with hand-entered data); earlier weeks are history. Control
  * limits come from the first 39 weeks, so the last quarter is judged against
  * a baseline it didn't shape. */
 
-const ROOM_COLORS = { oakland: 'var(--cat-1)', berkeley: 'var(--cat-2)', walnut: 'var(--cat-3)' };
+/** A colour per room, in the group's own order (any room ids, any count). */
+const roomColor = (i) => `var(--cat-${(i % 3) + 1})`; // three category colours in the design system; a 4th room repeats with its label
 
 function LineChart({ series, labels, fmt, limits, matched, height = 210, ariaLabel }) {
   const W = 1000, H = height, P = { l: 56, r: 12, t: 12, b: 28 };
@@ -63,11 +65,11 @@ function CvTrends() {
   const excLim = controlLimits(exc, 39);
   const outPrime = prime.slice(39).filter((v) => v > primeLim.ucl || v < primeLim.lcl).length;
   const ly = H[0];
-  const groupEarned = CV_GROUP.rooms.map((d) => ({ key: d.id, color: ROOM_COLORS[d.id], label: d.profile.short, vals: d.hist.rows.map((r) => r.earned / d.profile.seats) }));
+  const groupEarned = CV_GROUP.rooms.map((d, i) => ({ key: d.id, color: roomColor(i), label: d.profile.short, vals: d.hist.rows.map((r) => r.earned / d.profile.seats) }));
   return (
     <div className="cv-page wide">
-      <PageHead over={`Trends · ${CV_ROOM.name} · 52 weeks, Oct 27 2025 to Oct 19 2026`} q="Is this room getting better or worse, and is any of it unusual?"
-        sub="A year of weekly history. Seasonality is expected; what matters is a week outside its control limits, judged against a baseline the recent weeks didn't shape."
+      <PageHead over={`Trends · ${CV_ROOM.name} · ${CV_D.hist.rows.length} weeks, ${CV_D.hist.rows[0]?.label ?? ''} to ${CV_D.hist.rows[CV_D.hist.rows.length - 1]?.label ?? ''}`} q="Is this room getting better or worse, and is any of it unusual?"
+        sub={CV_D.room.fromToast ? `Your Toast data covers the last ${CV_D.room.fromToast.weeks} weeks (to ${CV_D.room.fromToast.end}); earlier weeks are still the sample's until a longer export is loaded. A week outside its control limits is what matters.` : "A year of weekly history. Seasonality is expected; what matters is a week outside its control limits, judged against a baseline the recent weeks didn't shape."}
         right={<Tabs value={view} onChange={setView} tabs={[{ value: 'room', label: CV_ROOM.short }, { value: 'group', label: 'All rooms' }]} />} />
       <div className="cv-grid g4">
         {[
@@ -125,6 +127,7 @@ function CvTrends() {
         </section>
       )}
       <Callout icon="Info">History here is the sample group&apos;s, generated with the same seasonality every year: a December peak, a January dip, Thanksgiving and Christmas weeks. Hand-entered data changes the live week only; past weeks are closed.</Callout>
+      <DenseTrends />
     </div>
   );
 }

@@ -3,7 +3,12 @@
 import * as React from 'react';
 
 import { Icon, Button, Tabs } from '../kit';
+import { engine, useEngine } from '../engine';
+import { tonightPlan } from './week';
+import { weeklySeries } from '../../lib/data/readers';
+import { measuredFillPct } from '../../lib/data/levers';
 import { useCv, cvMoney, CV_D, CV_ROOM, CV_LOCS, CV_MENU, CV_CM_WEIGHTED, cvPriceMove, cvPriceMoveInterval, CV_INVOICES, CV_PRICE_LEG, CV_MIX_LEG, CV_PROOF, Claim, Money, Pill, Outcome, Callout, Interval, PageHead, cvApproval, cvScale, SampleNote } from './core';
+import { DenseMenu, DenseLabour, DenseThroughput } from './dense-sections';
 
 /* Coversight — the four levers: Menu, Labour, Throughput, Purchasing. */
 
@@ -54,7 +59,8 @@ function CvMenu() {
   return (
     <div className="cv-page wide">
       <PageHead over={`Menu · ${CV_ROOM.name} · ${CV_MENU.length} dishes`} q="What should this dish cost, and what happens if I change it?"
-        sub="One surface for margin, mix and pricing. Price response comes from your own price history, and the simulator refuses when there isn't enough of it." />
+        sub={`One surface for margin, mix and pricing. Price response comes from your own price history, and the simulator refuses when there isn't enough of it.${CV_D.room.fromToast ? ` Prices and plates sold are from your Toast data through ${CV_D.room.fromToast.end}.` : ''}`} />
+      {CV_MENU.some((m) => m.costEstimated) && <Callout tone="warn" icon="Calculator"><span>{CV_MENU.filter((m) => m.costEstimated).length} dishes have no plate cost yet, so their margins (and any price move on them) are <b>estimates</b> at your food-cost rate. <button className="cv-link" onClick={() => cv.go('inputs', { kind: 'recipes' })}>Enter plate costs</button></span></Callout>}
       <div className="cv-grid g-hero">
         <section className="cv-card">
           <div className="cv-card-head">
@@ -74,7 +80,7 @@ function CvMenu() {
               <span className="cv-over">Price simulator</span>
               <span className="cv-h4">{item.name}</span>
             </div>
-            <Claim k="mod" />
+            <Claim k={item.costEstimated ? "est" : "mod"} />
           </div>
           <dl className="cv-kv">
             <dt>Price now</dt><dd>{cvMoney(item.price, { cents: true })}</dd>
@@ -114,7 +120,7 @@ function CvMenu() {
                 const up = cvPriceMove(m, m.price + 1);
                 return (
                   <tr key={m.key} className={`cv-tr ${sel === m.key ? "sel" : ""}`} onClick={() => setSel(m.key)}>
-                    <td><span style={{ fontWeight: 600 }}>{m.name}</span> <span className="cv-xs cv-faint">{m.balancing ? "balancing line" : m.cat}</span></td>
+                    <td><span style={{ fontWeight: 600 }}>{m.name}</span> <span className="cv-xs cv-faint">{m.balancing ? "balancing line" : m.cat}</span>{m.costEstimated && <> <Pill tone="warn" icon="Calculator">cost estimated</Pill></>}</td>
                     <td className="r">{cvMoney(m.price, { cents: true })}</td>
                     <td className="r">{cvMoney(m.cost, { cents: true })}</td>
                     <td className={`r ${m.cost / m.price > 0.38 ? "cv-exp" : ""}`}>{Math.round((m.cost / m.price) * 100)}%</td>
@@ -135,6 +141,7 @@ function CvMenu() {
         <Callout icon="Flame">The hottest plate at {CV_ROOM.short} is the {hottest.name.toLowerCase()} at {Math.round((hottest.cost / hottest.price) * 100)}% food cost. Plate costs come from your recipe-cost upload; refresh them on the data inputs screen and every margin here recomputes.</Callout>
       )}
       <Callout icon="Calculator">The "sides and add-ons" line closes the menu to the register: it's whatever the {CV_MENU.length - 1} named dishes don't account for in this week's sales and food cost, so the totals here always match Earned.</Callout>
+      <DenseMenu />
     </div>
   );
 }
@@ -164,6 +171,10 @@ function LabourChart({ d }) {
   );
 }
 function CvLabour() {
+  if (CV_D.room.fromToast) return <LabourOwn />;
+  return <CvLabourSample />;
+}
+function CvLabourSample() {
   const cv = useCv();
   const [day, setDay] = React.useState("sat");
   const L = CV_D.room.labour;
@@ -226,11 +237,99 @@ function CvLabour() {
           </table>
         </div>
       </section>
+      <DenseLabour />
+    </div>
+  );
+}
+
+/* A room on its own Toast data: staffing per hour from its own clock-ins and covers. */
+const DAY_ORDER = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const hourLbl = (h) => `${((h + 11) % 12) + 1} ${h < 12 ? 'am' : 'pm'}`;
+function LabourOwn() {
+  const cv = useCv();
+  const eng = useEngine();
+  const room = CV_D.room;
+  const plans = Object.fromEntries(DAY_ORDER.map((d) => [d, tonightPlan(room, d)]));
+  const days = DAY_ORDER.filter((d) => plans[d]);
+  const [day, setDay] = React.useState(days.find((d) => plans[d].cutFrom != null) || days[0]);
+  const plan = plans[day];
+  const idleWk = weeklySeries(room, 'idleServerHours').slice(-1)[0]?.value ?? 0;
+  const shortWk = Object.values(plans).filter(Boolean).reduce((t, p) => t + p.hours.reduce((x, h) => x + Math.max(0, h.need - Math.round(h.servers)), 0), 0);
+  const otWk = weeklySeries(room, 'otMinutes').slice(-1)[0]?.value ?? 0;
+  const tests = (eng.windows || []).filter((w) => w.roomId === CV_D.id && (w.lever === 'labour' || w.lever === 'overtime'));
+  const approvalId = plan?.cutFrom != null ? `cut:${day}:${plan.cutFrom}` : null;
+  const task = approvalId && (eng.tasks || []).find((t) => t.roomId === CV_D.id && t.approvalId === approvalId && t.status !== 'cancelled');
+  return (
+    <div className="cv-page wide">
+      <PageHead over={`Labour · ${CV_ROOM.name} · ${room.staff.length} people, ${cvMoney(Math.round(CV_D.week.labour))} this week`} q="How many people does each hour need, and did the last change work?"
+        sub={`From your Toast clock-ins and covers through ${room.fromToast.end}, at this room's own pace. Short hours are shown beside idle ones: a schedule that only ever cuts isn't one anyone should trust.`} />
+      <div className="cv-grid g4">
+        {[['Idle server-hours, last week', `${idleWk} h`, 'cv-exp'], ['Short server-hours, typical week', `${shortWk} h`, 'cv-down'], ['Your measured service rate', plan ? plan.rate.toFixed(2) : '—', ''], ['Overtime, last week', `${Math.round(otWk / 60 * 10) / 10} h`, otWk ? 'cv-exp' : '']].map(([k, v, c]) => (
+          <div key={k} className="cv-card" style={{ gap: 6 }}><span className="cv-xs cv-faint">{k}</span><span className={`cv-fig md ${c}`}>{v}</span><Claim k="obs" /></div>
+        ))}
+      </div>
+      {!days.length ? <Callout icon="Clock">Add TimeEntries.csv to your Toast upload to see servers on the floor per hour.</Callout> : (
+        <div className="cv-grid g-hero">
+          <section className="cv-card flush">
+            <div className="cv-card-head" style={{ padding: '12px 16px' }}><span className="cv-h4">{day}: on the floor vs needed</span><Tabs value={day} onChange={setDay} tabs={days.map((d) => ({ value: d, label: d }))} /></div>
+            <div className="cv-tablewrap"><table className="cv-table">
+              <thead><tr><th>Hour</th><th className="r">Covers</th><th className="r">On the floor</th><th className="r">Needed</th><th className="r">Spare / short</th></tr></thead>
+              <tbody>{plan.hours.map((h) => { const diff = Math.round(h.servers) - h.need; return (
+                <tr key={h.hour}><td>{hourLbl(h.hour)}</td><td className="r">{h.covers}</td><td className="r">{h.servers}</td><td className="r">{h.need}</td><td className={`r ${diff > 0 ? 'cv-exp' : diff < 0 ? 'cv-down' : ''}`}>{diff > 0 ? `+${diff} spare` : diff < 0 ? `${diff} short` : '—'}</td></tr>
+              ); })}</tbody>
+            </table></div>
+          </section>
+          <section className="cv-card">
+            <span className="cv-h4">Next {day}</span>
+            {plan.cutFrom == null ? <span className="cv-small cv-muted">Every hour to close used its servers on recent {day}s. No cut.</span> : (
+              <>
+                <span className="cv-small">One fewer server from {hourLbl(plan.cutFrom)} to close: about {plan.idleHours} server-hour{plan.idleHours === 1 ? '' : 's'}, {cvMoney(plan.idleHours * plan.wage)} a week. <Claim k="mod" /></span>
+                {task ? <Pill tone="info" icon="ListChecks">Approved · steps on Today</Pill> : <Button icon="Send" onClick={async () => { const top = Math.round(plan.hours.find((h) => h.hour === plan.cutFrom).servers); await engine.createTask(approvalId, { title: `${day}: one fewer server from ${hourLbl(plan.cutFrom)} to close`, system: '7shifts', diff: [[`${day} ${hourLbl(plan.cutFrom)} to close`, `${top} servers`, `${top - 1} servers`]] }); cv.toast('Approved. The steps for 7shifts are on Today.'); }}>Approve for next {day}</Button>}
+              </>
+            )}
+            <span className="cv-xs cv-faint">To book it, run a 28-day test on Labour overstaff (Levers or Today).</span>
+          </section>
+        </div>
+      )}
+      <section className="cv-card flush">
+        <div className="cv-tablewrap"><table className="cv-table">
+          <thead><tr><th>Labour and overtime tests</th><th>Status</th><th className="r">Booked /wk</th></tr></thead>
+          <tbody>
+            {tests.length === 0 && <tr><td colSpan={3} className="cv-small cv-muted">No labour tests yet.</td></tr>}
+            {tests.map((w) => <tr key={w.id} className="cv-tr" onClick={() => cv.go('packet', { id: w.id })}><td style={{ fontWeight: 600 }}>{w.title}</td><td>{w.status === 'running' ? `day ${w.day} of 28` : w.status}</td><td className="r">{w.status === 'verified' ? cvMoney(w.bookedCents / 100, { cents: true }) : '$0'}</td></tr>)}
+          </tbody>
+        </table></div>
+      </section>
     </div>
   );
 }
 
 /* ================================================================ Throughput */
+/* What a room's own Toast export can say about throughput: turn times, how fast tables are reseated, and when covers peak. */
+function ThroughputOwn() {
+  const L = CV_D.room.levers || {};
+  const turns = L.turns || [];
+  const mean = (a) => (a.length ? a.reduce((t, x) => t + x, 0) / a.length : null);
+  const fri = mean(turns.filter((t) => t.fri).map((t) => t.min));
+  const all = mean(turns.map((t) => t.min));
+  const fill = measuredFillPct(L.reseatGaps || []);
+  const byHour = {};
+  (L.serviceHours || []).forEach((h) => { byHour[`${h.day} ${h.hour}`] = (byHour[`${h.day} ${h.hour}`] || 0) + h.covers / 4; });
+  const peak = Object.entries(byHour).sort((a, b) => b[1] - a[1])[0];
+  const hr = (h) => `${((h + 11) % 12) + 1} ${h < 12 ? 'am' : 'pm'}`;
+  return (
+    <section className="cv-card">
+      <div className="cv-card-head"><span className="cv-h4">From your Toast data through {CV_D.room.fromToast.end}</span><Claim k="obs" /></div>
+      <div className="cv-grid g4">
+        {[['Average dine-in turn', all != null ? `${all.toFixed(0)} min` : '—'], ['Friday dinner turn', fri != null ? `${fri.toFixed(0)} min` : '—'], ['Tables reseated within minutes', fill != null ? `${Math.round(fill * 100)}%` : 'needs 20+'], ['Busiest hour', peak ? `${peak[0].split(' ')[0]} ${hr(+peak[0].split(' ')[1])}, ~${Math.round(peak[1])} covers` : '—']].map(([k, v]) => (
+          <div key={k} className="cv-col" style={{ gap: 4 }}><span className="cv-xs cv-faint">{k}</span><span className="cv-fig md">{v}</span></div>
+        ))}
+      </div>
+      <span className="cv-small cv-muted">A quickly reseated table means someone was waiting for it. Without a waitlist, that's the only sign the room was full, so faster turns stay at $0 until it shows up often.</span>
+    </section>
+  );
+}
+
 function CvThroughput() {
   const cv = useCv();
   const T = CV_D.room.throughput;
@@ -239,7 +338,8 @@ function CvThroughput() {
     <div className="cv-page">
       <PageHead over={`Throughput · ${CV_ROOM.name}`} q="Is the room constrained, and is a faster turn worth anything?"
         sub="A faster turn only earns money when the room is full and people are waiting. So the first number is how often the room is actually full." />
-      <SampleNote what="The seat-use and ceiling figures" />
+      {CV_D.room.fromToast ? <ThroughputOwn /> : <SampleNote what="The seat-use and ceiling figures" />}
+      {CV_D.room.fromToast && <span className="cv-small cv-muted">Below: the 15-minute seat-use view, still on the sample room until table-level data arrives with the API sync.</span>}
       <div className="cv-grid g-hero">
         <section className="cv-card">
           <span className="cv-over">Claimable from faster turns this week</span>
@@ -280,13 +380,25 @@ function CvThroughput() {
           </table>
         </div>
       </section>
+      <DenseThroughput />
     </div>
   );
 }
 
 /* ================================================================ Purchasing */
+/** The credit-request email for one vendor's increase: the numbers from the invoices, ready to send. */
+function vendorEmail(r) {
+  const room = CV_ROOM.name;
+  return {
+    subject: `${r.item}: price increase on our last invoices`,
+    body: `Hi ${r.vendor} team,\n\nOn our recent invoices for ${room}, ${r.item} went from $${r.p0.toFixed(2)} to $${r.p1.toFixed(2)} per ${r.unit} (up ${r.pct.toFixed(1)}%). We buy about ${Math.round(r.q1)} ${r.unit} a month.\n\nCan you take us back toward the earlier price, or tell us what changed and what volume would get it there? We'd like to keep ordering from you.\n\nThanks,\n${CV_ROOM.gm || 'Purchasing'}, ${room}`,
+  };
+}
+
 function CvPurchasing() {
   const cv = useCv();
+  const eng = useEngine();
+  const [drafts, setDrafts] = React.useState(null);
   const before = CV_INVOICES.reduce((s, r) => s + r.p0 * r.q0, 0);
   const after = CV_INVOICES.reduce((s, r) => s + r.p1 * r.q1, 0);
   const rows = [...CV_INVOICES].sort((a, b) => b.priceLeg - a.priceLeg);
@@ -306,6 +418,7 @@ function CvPurchasing() {
       <PageHead over={`Purchasing · ${CV_ROOM.name} · ${CV_INVOICES.length} invoice lines from ${new Set(CV_INVOICES.map((r) => r.vendor)).size} vendors`}
         q="Did food cost rise because vendors raised prices, or because you bought differently?"
         sub="Every invoice line split into the part the vendor did and the part you did. The two add up to the total by construction, so this needs no model." />
+      {CV_D.room.fromToast && !CV_D.inputs.invoices && <Callout tone="warn" icon="FileSpreadsheet"><span>Toast doesn&apos;t carry invoices, so these lines are still the sample&apos;s, scaled to your sales. <button className="cv-link" onClick={() => cv.go('inputs', { kind: 'invoices' })}>Enter your invoice lines</button> to see your own vendors.</span></Callout>}
       <div className="cv-grid g-hero">
         <section className="cv-card">
           <div className="cv-card-head"><span className="cv-h4">Every invoice line, last 28 days vs the 28 before</span><Claim k="obs" /></div>
@@ -338,7 +451,27 @@ function CvPurchasing() {
             </div>
           ))}
           <p className="cv-small cv-muted" style={{ lineHeight: 1.5 }}>Groups like yours win back about 60% of an increase this size. Once you do, the saving is the unit-price change on the next invoices, and the same check catches the next increase.</p>
-          <Button icon="Mail" onClick={() => cv.toast(`Draft emails to ${calls.map((r) => r.vendor).join(" and ")} are in your outbox.`)}>Draft both emails</Button>
+          {!drafts ? (
+            <Button icon="Mail" onClick={async () => {
+              const ds = calls.map((r) => ({ vendor: r.vendor, ...vendorEmail(r) }));
+              setDrafts(ds);
+              if (eng.mode === 'server') {
+                await Promise.all(ds.map((d) => engine.draftEmail({ kind: 'vendor', subject: d.subject, body: d.body }).catch(() => null)));
+                cv.toast(`Drafts saved for ${ds.map((d) => d.vendor).join(' and ')}. Open each in your email to send.`);
+              } else cv.toast('Drafts ready. Open each in your email to send.');
+            }}>Draft both emails</Button>
+          ) : (
+            <div className="cv-col" style={{ gap: 8 }}>
+              {drafts.map((d) => (
+                <details key={d.vendor} className="cv-card" style={{ padding: 10 }}>
+                  <summary className="cv-small" style={{ fontWeight: 600, cursor: 'pointer' }}>{d.vendor}: {d.subject}</summary>
+                  <pre className="cv-small" style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', margin: '8px 0' }}>{d.body}</pre>
+                  <a className="btn btn-secondary btn-sm" href={`mailto:?subject=${encodeURIComponent(d.subject)}&body=${encodeURIComponent(d.body)}`}><Icon name="Mail" size={14} /> Open in your email</a>
+                </details>
+              ))}
+              <span className="cv-xs cv-faint">Coversight doesn&apos;t have your vendors&apos; addresses, so these open in your own email app to send.{eng.mode === 'server' ? ' A copy of each is kept in the outbox on System.' : ''}</span>
+            </div>
+          )}
         </section>
       </div>
       <section className="cv-card flush">

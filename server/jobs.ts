@@ -7,15 +7,19 @@ import { leverReport } from '../lib/data/levers.js';
 import { deriveRoom } from '../lib/data/model.js';
 import { dataEnd } from '../lib/data/readers.js';
 import type { Db } from './db/client';
-import { jobRuns, memberships, orgs, snapshots, users } from './db/schema';
+import { jobRuns, linkedSources, memberships, orgs, snapshots, toastConnections, users } from './db/schema';
 import { loadDataset } from './dataset';
 import { runProofLoop, runReverify } from './proof';
 import { verifyTasks } from './tasks';
 import { deliverOutbox } from './notify';
 import { runBilling } from './billing';
 import { previousPeriod } from '../lib/data/billing.js';
+import { syncToast } from './pos-sync';
+import { pullLinks } from './links';
 
 export const JOBS = {
+  sync: { schedule: 'Daily, 2:20 am Pacific (hourly on Vercel Pro: set the cron to 20 * * * *)', what: 'Pulls new Toast orders and time entries for every connected restaurant (13 weeks the first time) and rebuilds each room’s figures from them', cron: '20 10 * * *' },
+  links: { schedule: 'Daily, 1:30 am Pacific', what: 'Re-reads every linked Google Sheet and Dropbox file; tabs that pass every check are committed, the rest are flagged', cron: '30 9 * * *' },
   detection: { schedule: 'Daily, 2:00 am Pacific', what: 'Re-reads every room’s data, re-grades the six levers and re-ranks the findings', cron: '0 10 * * *' },
   proof: { schedule: 'Daily, 4:00 am Pacific', what: 'Records due checkpoints and closes test windows that reached day 28', cron: '0 12 * * *' },
   reverify: { schedule: 'Mondays, 3:00 am Pacific', what: 'Checks average check and turn time against each verified test’s guardrails; a breach reverses it', cron: '0 11 * * 1' },
@@ -56,8 +60,10 @@ async function record(db: Db, job: JobName, orgId: string | null, trigger: strin
   const [run] = await db.insert(jobRuns).values({ job, orgId, trigger }).returning({ id: jobRuns.id });
   try {
     const detail = await fn();
-    await db.update(jobRuns).set({ finishedAt: new Date(), ok: true, detail: detail as object }).where(eq(jobRuns.id, run!.id));
-    return { orgId, ok: true, detail };
+    // A job that reports its own failure (the sync: Toast refused) is recorded as failed.
+    const ok = !(detail && typeof detail === 'object' && (detail as { ok?: unknown }).ok === false);
+    await db.update(jobRuns).set({ finishedAt: new Date(), ok, detail: detail as object }).where(eq(jobRuns.id, run!.id));
+    return { orgId, ok, detail };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     await db.update(jobRuns).set({ finishedAt: new Date(), ok: false, detail: { error: message.slice(0, 500) } }).where(eq(jobRuns.id, run!.id));
@@ -66,12 +72,13 @@ async function record(db: Db, job: JobName, orgId: string | null, trigger: strin
 }
 
 /** Run a job for one org (owner's "Run now") or every org (the schedule). */
-export async function runJob(db: Db, job: JobName, { orgId, trigger = 'schedule', now = new Date() }: { orgId?: string; trigger?: string; now?: Date } = {}) {
+export async function runJob(db: Db, job: JobName, { orgId, trigger = 'schedule', now = new Date(), fetchImpl }: { orgId?: string; trigger?: string; now?: Date; fetchImpl?: typeof fetch } = {}) {
   if (job === 'cleanup') return [await record(db, job, null, trigger, () => runCleanup(db, now))];
-  const ids = orgId ? [orgId] : (await db.select({ id: orgs.id }).from(orgs)).map((o) => o.id);
+  // The sync and linked sheets run only for groups that have them; every other job, for every group.
+  const ids = orgId ? [orgId] : job === 'sync' ? (await db.select({ id: toastConnections.orgId }).from(toastConnections)).map((o) => o.id) : job === 'links' ? [...new Set((await db.select({ id: linkedSources.orgId }).from(linkedSources)).map((o) => o.id))] : (await db.select({ id: orgs.id }).from(orgs)).map((o) => o.id);
   const results = [];
   for (const id of ids) {
-    results.push(await record(db, job, id, trigger, () => (job === 'detection' ? runDetection(db, id) : job === 'proof' ? runProofLoop(db, id, now) : job === 'billing' ? runBilling(db, id, previousPeriod(now)) : runReverify(db, id))));
+    results.push(await record(db, job, id, trigger, () => (job === 'sync' ? syncToast(db, id, { now, ...(fetchImpl ? { fetchImpl } : {}) }) : job === 'links' ? pullLinks(db, id, fetchImpl ? { fetchImpl } : {}) : job === 'detection' ? runDetection(db, id) : job === 'proof' ? runProofLoop(db, id, now) : job === 'billing' ? runBilling(db, id, previousPeriod(now)) : runReverify(db, id))));
   }
   await deliverOutbox(db, { now }).catch(() => null);
   return results;

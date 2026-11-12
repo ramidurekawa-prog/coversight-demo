@@ -11,6 +11,7 @@ import { CvChannels, CvControls, CvCoverage, CvInventory, CvKitchen } from './sc
 import { CvInputs } from './screens/inputs';
 import { CvConnect, CvData, CvLevers, CvWindows } from './screens/live';
 import { CvTrends } from './screens/trends';
+import { CvDaily } from './screens/daily';
 import { CvTeam } from './screens/team';
 import { pathFor } from '../lib/pages';
 
@@ -20,6 +21,7 @@ export const SCREENS = {
   service: CvService,
   week: CvThisWeek,
   trends: CvTrends,
+  daily: CvDaily,
   inputs: CvInputs,
   portfolio: CvPortfolio,
   meeting: CvMeeting,
