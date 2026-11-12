@@ -61,12 +61,12 @@ export async function checkToast(raw: unknown, fetchImpl: typeof fetch = fetch) 
   } catch {
     return { ok: false as const, error: TOAST_MSG.host, data: p.data };
   }
-  const checked: { guid: string; roomId: string; ok: boolean; name?: string; error?: string }[] = [];
+  const checked: { guid: string; roomId: string; ok: boolean; name?: string; tz?: string; error?: string }[] = [];
   for (const r of list) {
     try {
       const res = await fetchImpl(`https://${host}/restaurants/v1/restaurants/${r.guid}`, { headers: { authorization: `Bearer ${token}`, 'Toast-Restaurant-External-ID': r.guid } });
-      const b = (await res.json().catch(() => ({}))) as { general?: { name?: string; locationName?: string } };
-      checked.push(res.ok ? { ...r, ok: true, name: b.general?.locationName || b.general?.name || r.guid } : { ...r, ok: false, error: TOAST_MSG.guid });
+      const b = (await res.json().catch(() => ({}))) as { general?: { name?: string; locationName?: string; timeZone?: string } };
+      checked.push(res.ok ? { ...r, ok: true, name: b.general?.locationName || b.general?.name || r.guid, ...(b.general?.timeZone ? { tz: b.general.timeZone } : {}) } : { ...r, ok: false, error: TOAST_MSG.guid });
     } catch {
       checked.push({ ...r, ok: false, error: TOAST_MSG.host });
     }
@@ -84,7 +84,8 @@ export async function connectToast(db: Db, v: Pick<Viewer, 'orgId' | 'userId' | 
   if (bad) throw new InputError(`no room '${bad.roomId}' in this group`);
   const row = {
     orgId: v.orgId, host: res.data.host, clientId: res.data.clientId, secretSealed: seal(res.data.secret),
-    restaurants: res.restaurants!.map(({ guid, roomId, name }) => ({ guid, roomId, name: name ?? guid })), status: 'connected', lastError: null, checkedAt: new Date(), createdBy: v.userId,
+    restaurants: res.restaurants!.map(({ guid, roomId, name, tz }) => ({ guid, roomId, name: name ?? guid, ...(tz ? { tz } : {}) })), status: 'connected', lastError: null, checkedAt: new Date(), createdBy: v.userId,
+    syncState: 'off', syncedAt: null, syncDetail: null,
   };
   await db.insert(toastConnections).values(row).onConflictDoUpdate({ target: toastConnections.orgId, set: { ...row } });
   await db.insert(auditLog).values({ orgId: v.orgId, userId: v.userId, action: 'toast.connected', detail: { host: row.host, restaurants: row.restaurants.length } });
@@ -95,7 +96,7 @@ export async function connectToast(db: Db, v: Pick<Viewer, 'orgId' | 'userId' | 
 export async function toastStatus(db: Db, orgId: string) {
   const [c] = await db.select().from(toastConnections).where(eq(toastConnections.orgId, orgId));
   if (!c) return null;
-  return { host: c.host, clientId: `${c.clientId.slice(0, 4)}…${c.clientId.slice(-2)}`, restaurants: c.restaurants, status: c.status, lastError: c.lastError, checkedAt: c.checkedAt };
+  return { host: c.host, clientId: `${c.clientId.slice(0, 4)}…${c.clientId.slice(-2)}`, restaurants: c.restaurants, status: c.status, lastError: c.lastError, checkedAt: c.checkedAt, sync: { state: c.syncState, at: c.syncedAt, rooms: c.syncDetail ?? {} } };
 }
 
 /** Re-check stored credentials against Toast (owner/admin). */

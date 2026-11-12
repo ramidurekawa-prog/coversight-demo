@@ -4,7 +4,7 @@ import { JOBS, jobStatus, runJob, type JobName } from '../../../server/jobs';
 import { AuthError, errorResponse, viewerFor } from '../../../server/session';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 120;
+export const maxDuration = 300; // the Toast sync can take a few minutes on its first runs
 
 export async function GET(req: Request) {
   try {
@@ -22,7 +22,7 @@ export async function POST(req: Request) {
     const v = await viewerFor(req.headers, db);
     if (v.role === 'gm') throw new AuthError(403, 'Only an owner or admin can run jobs.');
     const { job } = ((await req.json().catch(() => ({}))) ?? {}) as { job?: string };
-    if (!job || !(job in JOBS) || job === 'cleanup') return Response.json({ error: 'Pick detection, proof, reverify or billing.' }, { status: 400 });
+    if (!job || !(job in JOBS) || job === 'cleanup') return Response.json({ error: 'Pick sync, detection, proof, reverify or billing.' }, { status: 400 });
     const [result] = await runJob(db, job as JobName, { orgId: v.orgId, trigger: 'manual' });
     return Response.json({ result, status: await jobStatus(db, v.orgId, v.rooms) });
   } catch (err) {
