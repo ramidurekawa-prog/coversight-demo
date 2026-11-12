@@ -18,7 +18,7 @@ import { syncToast } from './pos-sync';
 import { pullLinks } from './links';
 
 export const JOBS = {
-  sync: { schedule: 'Every hour, at :20', what: 'Pulls new Toast orders and time entries for every connected restaurant (13 weeks the first time) and rebuilds each room’s figures from them', cron: '20 * * * *' },
+  sync: { schedule: 'Daily, 2:20 am Pacific (hourly on Vercel Pro: set the cron to 20 * * * *)', what: 'Pulls new Toast orders and time entries for every connected restaurant (13 weeks the first time) and rebuilds each room’s figures from them', cron: '20 10 * * *' },
   links: { schedule: 'Daily, 1:30 am Pacific', what: 'Re-reads every linked Google Sheet and Dropbox file; tabs that pass every check are committed, the rest are flagged', cron: '30 9 * * *' },
   detection: { schedule: 'Daily, 2:00 am Pacific', what: 'Re-reads every room’s data, re-grades the six levers and re-ranks the findings', cron: '0 10 * * *' },
   proof: { schedule: 'Daily, 4:00 am Pacific', what: 'Records due checkpoints and closes test windows that reached day 28', cron: '0 12 * * *' },

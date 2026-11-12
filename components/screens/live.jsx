@@ -51,7 +51,7 @@ async function jpost(url, body) {
   return j;
 }
 
-const SYNC_LABEL = { off: ['Waiting for the first run', 'neutral', 'Hourglass'], backfilling: ['Backfilling 13 weeks', 'warn', 'Loader'], live: ['Live · every hour', 'good', 'CircleCheck'], failing: ['Sync failing', 'bad', 'CircleX'] };
+const SYNC_LABEL = { off: ['Waiting for the first run', 'neutral', 'Hourglass'], backfilling: ['Backfilling 13 weeks', 'warn', 'Loader'], live: ['Live · nightly', 'good', 'CircleCheck'], failing: ['Sync failing', 'bad', 'CircleX'] };
 const syncAgo = (t) => { if (!t) return 'never'; const m = Math.round((Date.now() - Date.parse(t)) / 6e4); return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`; };
 
 /** Lane 1 status: what the hourly sync holds per room, and "Sync now". */
@@ -83,7 +83,7 @@ function SyncPanel({ st, rooms, canRun, busy, onRun }) {
           })}</tbody>
         </table>
       </div>
-      <span className="cv-xs cv-faint">The first runs pull 13 weeks, newest first, about five weeks per run. After that each run re-reads today and the two days before, so late voids, tips and clock-outs are caught. Kitchen ticket times aren&apos;t in Toast&apos;s standard API: add KitchenTimings.csv from the exports above.</span>
+      <span className="cv-xs cv-faint">The first runs pull 13 weeks, newest first, about five weeks per run. After that each nightly run (or Sync now) re-reads today and the two days before, so late voids, tips and clock-outs are caught. Kitchen ticket times aren&apos;t in Toast&apos;s standard API: add KitchenTimings.csv from the exports above.</span>
       {canRun && <span><Button size="sm" icon="RefreshCw" disabled={!!busy} onClick={onRun}>{busy === 'sync' ? 'Syncing with Toast…' : 'Sync now'}</Button></span>}
     </div>
   );
@@ -107,7 +107,7 @@ function CvConnectReal() {
   return (
     <div className="cv-page">
       <PageHead over={`Connect your POS · ${eng.org?.name ?? ''}`} q="How does our Toast data get in?"
-        sub="Two ways in, both read by the same code: the live Toast API sync (every hour once credentials are stored), and Toast's data exports, uploaded whenever you like." />
+        sub="Two ways in, both read by the same code: the live Toast API sync (every night once credentials are stored, or Sync now), and Toast's data exports, uploaded whenever you like." />
       <ToastImport compact />
       <section className="cv-card" aria-labelledby="toast-api">
         <div className="cv-card-head">

@@ -56,7 +56,7 @@ here ships to customers.
   - *Lane 1, POS:* `server/pos-sync.ts` pulls Toast's Standard API a business
     day at a time into `pos_days` (rows shaped like the exports by
     `lib/data/toast-api.js`) and rebuilds the room's `toast` input with
-    `summarizeToast()`. Hourly `sync` job; 13-week backfill over several runs.
+    `summarizeToast()`. Nightly `sync` job (hourly needs Vercel Pro: Hobby rejects sub-daily crons at deploy); 13-week backfill over several runs.
   - *Toast exports:* `lib/data/toast.js` reads Toast's data-export CSVs in the
     browser into the `toast` input kind; `server/toast-schema.ts` bounds it.
   - *Lane 2, easy imports:* `lib/data/sniff.js` reads anything dropped or
