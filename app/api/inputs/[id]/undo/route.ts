@@ -1,5 +1,6 @@
+// Undo one entry: only the one a room holds now, in one of the viewer's rooms.
 import { getDb } from '../../../../../server/db/client';
-import { loadInputs, undoInput } from '../../../../../server/org';
+import { scopedInputs, undoChecked } from '../../../../../server/page/inputs';
 import { errorResponse, viewerFor } from '../../../../../server/session';
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -7,8 +8,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     const db = getDb();
     const v = await viewerFor(req.headers, db);
     const { id } = await ctx.params;
-    await undoInput(db, { orgId: v.orgId, userId: v.userId, id });
-    return Response.json(await loadInputs(db, v.orgId));
+    await undoChecked(db, v, id);
+    return Response.json(await scopedInputs(db, v));
   } catch (err) {
     return errorResponse(err);
   }
