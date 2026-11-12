@@ -422,7 +422,29 @@ export const posDays = pgTable(
   (t) => [primaryKey({ columns: [t.orgId, t.roomId, t.day] })],
 );
 
+/**
+ * A Google Sheet or Dropbox file kept linked to a room: re-read every
+ * morning, each picked tab validated and committed like a hand upload
+ * (server/links.ts).
+ */
+export const linkedSources = pgTable(
+  'linked_sources',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+    roomId: text('room_id').notNull(),
+    url: text('url').notNull(),
+    picks: jsonb('picks').$type<{ source: string; kind: string }[]>().notNull(),
+    pulledAt: at('pulled_at'),
+    lastError: text('last_error'),
+    lastResult: jsonb('last_result'),
+    createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: at('created_at').notNull().defaultNow(),
+  },
+  (t) => [index('linked_sources_org_idx').on(t.orgId)],
+);
+
 export const orgRelations = relations(orgs, ({ many }) => ({ rooms: many(rooms), memberships: many(memberships) }));
 
-export const schema = { users, sessions, accounts, verifications, orgs, memberships, rooms, roomData, inputs, actions, auditLog, memberRole, windowStatus, testWindows, checkpoints, jobRuns, snapshots, taskStatus, tasks, notifications, notificationReads, outbox, invites, invoices, toastConnections, posDays };
+export const schema = { users, sessions, accounts, verifications, orgs, memberships, rooms, roomData, inputs, actions, auditLog, memberRole, windowStatus, testWindows, checkpoints, jobRuns, snapshots, taskStatus, tasks, notifications, notificationReads, outbox, invites, invoices, toastConnections, posDays, linkedSources };
 

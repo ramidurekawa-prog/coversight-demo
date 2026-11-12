@@ -9,6 +9,7 @@ import { KINDS, SCHEMAS, mapColumns, parseCSV, preview, templateCSV, templateRow
 import { SEED } from '../../lib/data/seed';
 import { KIND_LABEL } from '../../lib/data/apply';
 import { ToastImport } from './toast-import';
+import { BringIn } from './bring-in';
 
 const META = (k) => SCHEMAS[k] || { title: KIND_LABEL[k] || k, icon: k === 'toast' ? 'PlugZap' : 'FilePen' };
 
@@ -131,14 +132,14 @@ function Preview({ pv }) {
   );
 }
 
-function Panel({ kind }) {
+function Panel({ kind, seed }) {
   const cv = useCv();
   const eng = useEngine();
   const room = CV_DS.rooms[CV_D.id];
   const s = SCHEMAS[kind];
-  const [mode, setMode] = React.useState('grid');
+  const [mode, setMode] = React.useState(seed ? 'csv' : 'grid');
   const [rows, setRows] = React.useState(() => templateRows(kind, room).map((r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, v == null ? '' : String(v)]))));
-  const [csv, setCsv] = React.useState('');
+  const [csv, setCsv] = React.useState(seed?.csv ?? '');
   const [result, setResult] = React.useState(null);
   const [mapInfo, setMapInfo] = React.useState(null);
   const [pv, setPv] = React.useState(null);
@@ -164,6 +165,9 @@ function Panel({ kind }) {
     setPv(res.errors || !res.rows.length ? null : preview(SEED, eng.inputs, CV_D.id, kind, commitRows, opts));
   };
 
+  // Arrived from "Bring data in": check it straight away so the issues and the preview show.
+  React.useEffect(() => { if (seed) { check(); document.getElementById(`kind-${kind}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const commit = () => {
     const prior = kind === 'waste' ? eng.inputs[CV_D.id]?.waste?.rows || [] : [];
     const commitRows = [...prior, ...result.rows];
@@ -185,6 +189,7 @@ function Panel({ kind }) {
       <div className="cv-card-head">
         <div className="cv-col" style={{ gap: 4 }}>
           <span className="cv-h4">{s.title} · {CV_ROOM.name}</span>
+          {seed && <span className="cv-xs"><Icon name="FileInput" size={12} /> From {seed.source}{seed.notes ? ` · ${seed.notes}` : ''}</span>}
           <span className="cv-small cv-muted" style={{ maxWidth: '70ch' }}>{s.blurb}</span>
         </div>
         <Button variant="secondary" size="sm" icon="Download" onClick={() => download(`${kind}-${CV_D.id}-template.csv`, templateCSV(kind, room))}>Template</Button>
@@ -294,18 +299,20 @@ function OwnStart() {
 function CvInputs() {
   const eng = useEngine();
   const [kind, setKind] = React.useState('profile');
+  const [seed, setSeed] = React.useState(null);
   React.useEffect(() => {
     const read = () => { const h = window.location.hash.slice(1); if (KINDS.includes(h)) setKind(h); };
     read();
     window.addEventListener('hashchange', read);
     return () => window.removeEventListener('hashchange', read);
   }, []);
-  const pick = (k) => { setKind(k); try { window.history.replaceState(null, '', `#${k}`); } catch { /* no history */ } };
+  const pick = (k) => { setKind(k); setSeed(null); try { window.history.replaceState(null, '', `#${k}`); } catch { /* no history */ } };
   const entered = KINDS.filter((k) => CV_D.inputs[k]).length;
   return (
     <div className="cv-page wide">
       <PageHead over={`Data inputs · ${CV_ROOM.name}`} q="Bring in what isn't connected yet"
-        sub="Your restaurant's profile, recipe costs, counts, waste, invoices, channel sales and register exceptions, typed in or uploaded. Every row is checked before it lands, you see exactly which figures move, and every commit can be undone." />
+        sub="Drop a file, paste from a spreadsheet, link a Google Sheet, snap a photo, or type it in. Every row is checked before it lands, you see exactly which figures move, and every commit can be undone." />
+      <BringIn onReview={(x) => { setSeed(x); setKind(x.kind); try { window.history.replaceState(null, '', `#${x.kind}`); } catch { /* no history */ } }} />
       <ToastImport />
       <OwnStart />
       <div className="cv-row" style={{ gap: 8 }}>
@@ -315,7 +322,7 @@ function CvInputs() {
       <div className="cv-kinds">
         {KINDS.map((k) => <KindCard key={k} kind={k} on={k === kind} onPick={pick} />)}
       </div>
-      <Panel key={`${CV_D.id}-${kind}`} kind={kind} />
+      <Panel key={`${CV_D.id}-${kind}-${seed?.id ?? ''}`} kind={kind} seed={seed?.kind === kind ? seed : null} />
       <Log />
       <Callout icon="ShieldCheck">Hand-entered data is labelled wherever it's used: its feed shows "manual entry" on Sources, and a quarantined test that was waiting on it restarts its window from the day it arrived. It never re-prices a verified result.</Callout>
     </div>
