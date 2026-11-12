@@ -6,6 +6,7 @@ import { and, desc, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 
 import type { Db } from './db/client';
+import { meetingSchemas } from './page/meeting';
 import { actions, auditLog, rooms } from './db/schema';
 import { InputError } from './org';
 import { AuthError, type Viewer } from './session';
@@ -21,8 +22,8 @@ export const ACTION_KEYS = {
   service: { scope: 'room', schema: z.enum(['ask', 'yes', 'no']) },
   /** Approvals written back, by approval id. */
   approvals: { scope: 'room', schema: z.record(id, z.object({ at: isoDate })) },
-  /** The last weekly meeting: what was logged and when it finished. */
-  meeting: { scope: 'room', schema: z.object({ log: z.array(z.string().max(200)).max(20), at: isoDate }).nullable() },
+  /** The last weekly meeting (each finished meeting is one entry, so the entries are the room's meeting record). */
+  meeting: { scope: 'room', schema: meetingSchemas.meeting.nullable() },
   /** Findings dismissed ("Not for us"), with the date they may come back. */
   findings: { scope: 'room', schema: z.record(id, isoDate) },
   /** Fences and alert settings, versioned. */
@@ -49,6 +50,10 @@ export const ACTION_KEYS = {
   autonomy: { scope: 'room', schema: z.record(z.string().min(1).max(40), z.number().int().min(0).max(4)) },
   /** Pricing on the invoice: per room per month, and the fee on reconciled savings. */
   pricing: { scope: 'group', schema: z.object({ perRoomMonthlyCents: z.number().int().min(0).max(1_000_000), feePct: z.number().min(0).max(50) }) },
+  /** Weekly meeting: follow-ups ticked off, by follow-up id, with when. */
+  'meeting.followups': { scope: 'room', schema: meetingSchemas.followups },
+  /** Weekly meeting: the room's slot (day of week, 0 = Sunday, and local time). */
+  'meeting.schedule': { scope: 'room', schema: meetingSchemas.schedule },
 } as const;
 
 export type ActionKey = keyof typeof ACTION_KEYS;
