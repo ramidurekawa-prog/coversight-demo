@@ -4,7 +4,7 @@ import * as React from 'react';
 
 import { Icon, Button, Tabs } from '../kit';
 import { CV_PAGES } from '../../lib/pages';
-import { useCv, cvMoney, cvFill, CV_D, CV_GROUP, CV_ROOM, CV_NOW, CV_PERSIST, cvChoosePlan, Claim, Pill, Callout, Interval, PageHead } from './core';
+import { useCv, cvMoney, cvFill, CV_D, CV_DS, CV_GROUP, CV_ROOM, CV_NOW, CV_PERSIST, cvChoosePlan, Claim, Pill, Callout, Interval, PageHead } from './core';
 import { engine, useEngine, useSaved } from '../engine';
 import { LoopStrip } from './areas';
 import { tmpl } from '../../lib/data/model';
@@ -58,7 +58,62 @@ const CV_PAGE_DEPS = {
 const CV_GRADE_TONE = { A: "bad", B: "warn", C: "info", D: "neutral" };
 
 /* ================================================================ First six weeks */
+/* A real group's first weeks: a checklist read from what has actually happened. */
+function StartReal() {
+  const cv = useCv();
+  const eng = useEngine();
+  const [team, setTeam] = React.useState(null);
+  const [mail, setMail] = React.useState(null);
+  React.useEffect(() => {
+    fetch('/api/team', { credentials: 'same-origin' }).then((r) => r.json()).then(setTeam).catch(() => setTeam({ people: [] }));
+    fetch('/api/outbox', { credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : null)).then(setMail).catch(() => setMail(null));
+  }, []);
+  const rooms = Object.values(CV_DS.rooms);
+  const own = rooms.filter((r) => r.fromToast).length;
+  const estimated = rooms.reduce((t, r) => t + r.menu.filter((m) => m.costEstimated).length, 0);
+  const ws = eng.windows || [];
+  const acts = eng.actions || {};
+  const fences = Object.values(acts).some((a) => a?.fences);
+  const approved = acts['']?.billing?.status === 'approved';
+  const steps = [
+    { k: 'Created the group', s: 'done', go: 'team' },
+    { k: `Loaded Toast data for every room (${own} of ${rooms.length})`, s: own === rooms.length ? 'done' : own ? 'now' : 'next', go: 'inputs' },
+    { k: estimated ? `Entered plate costs (${estimated} dishes still estimated)` : 'Entered plate costs for every dish', s: own && !estimated ? 'done' : own ? 'now' : 'next', go: 'inputs' },
+    { k: 'Invited your GMs and accountant', s: team ? (team.people.length > 1 ? 'done' : 'now') : 'next', go: 'team' },
+    { k: 'Set your fences and alerts', s: fences ? 'done' : 'next', go: 'fences' },
+    { k: 'Started the first 28-day test', s: ws.length ? 'done' : own ? 'now' : 'next', go: 'windows' },
+    { k: 'First test verified (around 4 weeks after it starts)', s: ws.some((w) => w.status === 'verified') ? 'done' : ws.length ? 'now' : 'next', go: 'proof' },
+    { k: 'Accountant approved a month', s: approved ? 'done' : 'next', go: 'accountant' },
+    { k: 'Email turned on for alerts and invites', s: mail?.provider ? 'done' : 'next', go: 'system' },
+  ];
+  const done = steps.filter((x) => x.s === 'done').length;
+  return (
+    <div className="cv-page">
+      <PageHead over={`First six weeks · ${eng.org?.name ?? ''}`} q="What happens between signing up and the first proven dollar?"
+        sub="Read from what has actually happened in your group. Each step links to where it's done." />
+      <div className="progress"><span style={{ width: `${(done / steps.length) * 100}%` }} /></div>
+      <span className="cv-small cv-muted">{done} of {steps.length} done</span>
+      <section className="cv-card">
+        {steps.map((x) => (
+          <div key={x.k} className="cv-row nowrap" style={{ gap: 10, padding: '8px 0', borderTop: '1px solid var(--border)' }}>
+            <Icon name={x.s === 'done' ? 'CircleCheck' : x.s === 'now' ? 'CircleDot' : 'Circle'} size={18} className={x.s === 'done' ? 'ok' : ''} />
+            <span className="cv-small" style={{ flex: 1, fontWeight: x.s === 'now' ? 700 : 400 }}>{x.k}</span>
+            {x.s !== 'done' && <Button size="sm" variant={x.s === 'now' ? 'primary' : 'ghost'} onClick={() => cv.go(x.go)}>Go</Button>}
+          </div>
+        ))}
+      </section>
+      <Callout icon="Info">The first weeks usually cost more than they save: tests take 28 days to close, and only closed tests can be billed.</Callout>
+    </div>
+  );
+}
+
 function CvStart() {
+  const eng = useEngine();
+  if (eng.mode === 'server' && eng.org && !eng.org.sample) return <StartReal />;
+  return <CvStartSample />;
+}
+
+function CvStartSample() {
   const cv = useCv();
   const steps = [
     { when: "Jul 6", k: "Connected Toast, 7shifts and your invoice inbox", s: "done" },

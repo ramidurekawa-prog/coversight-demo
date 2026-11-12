@@ -6,6 +6,7 @@ import { Icon, Button, Tabs } from '../kit';
 import { engine, useEngine } from '../engine';
 import { tonightPlan } from './week';
 import { weeklySeries } from '../../lib/data/readers';
+import { measuredFillPct } from '../../lib/data/levers';
 import { useCv, cvMoney, CV_D, CV_ROOM, CV_LOCS, CV_MENU, CV_CM_WEIGHTED, cvPriceMove, cvPriceMoveInterval, CV_INVOICES, CV_PRICE_LEG, CV_MIX_LEG, CV_PROOF, Claim, Money, Pill, Outcome, Callout, Interval, PageHead, cvApproval, cvScale, SampleNote } from './core';
 
 /* Coversight — the four levers: Menu, Labour, Throughput, Purchasing. */
@@ -301,6 +302,31 @@ function LabourOwn() {
 }
 
 /* ================================================================ Throughput */
+/* What a room's own Toast export can say about throughput: turn times, how fast tables are reseated, and when covers peak. */
+function ThroughputOwn() {
+  const L = CV_D.room.levers || {};
+  const turns = L.turns || [];
+  const mean = (a) => (a.length ? a.reduce((t, x) => t + x, 0) / a.length : null);
+  const fri = mean(turns.filter((t) => t.fri).map((t) => t.min));
+  const all = mean(turns.map((t) => t.min));
+  const fill = measuredFillPct(L.reseatGaps || []);
+  const byHour = {};
+  (L.serviceHours || []).forEach((h) => { byHour[`${h.day} ${h.hour}`] = (byHour[`${h.day} ${h.hour}`] || 0) + h.covers / 4; });
+  const peak = Object.entries(byHour).sort((a, b) => b[1] - a[1])[0];
+  const hr = (h) => `${((h + 11) % 12) + 1} ${h < 12 ? 'am' : 'pm'}`;
+  return (
+    <section className="cv-card">
+      <div className="cv-card-head"><span className="cv-h4">From your Toast data through {CV_D.room.fromToast.end}</span><Claim k="obs" /></div>
+      <div className="cv-grid g4">
+        {[['Average dine-in turn', all != null ? `${all.toFixed(0)} min` : '—'], ['Friday dinner turn', fri != null ? `${fri.toFixed(0)} min` : '—'], ['Tables reseated within minutes', fill != null ? `${Math.round(fill * 100)}%` : 'needs 20+'], ['Busiest hour', peak ? `${peak[0].split(' ')[0]} ${hr(+peak[0].split(' ')[1])}, ~${Math.round(peak[1])} covers` : '—']].map(([k, v]) => (
+          <div key={k} className="cv-col" style={{ gap: 4 }}><span className="cv-xs cv-faint">{k}</span><span className="cv-fig md">{v}</span></div>
+        ))}
+      </div>
+      <span className="cv-small cv-muted">A quickly reseated table means someone was waiting for it. Without a waitlist, that's the only sign the room was full, so faster turns stay at $0 until it shows up often.</span>
+    </section>
+  );
+}
+
 function CvThroughput() {
   const cv = useCv();
   const T = CV_D.room.throughput;
@@ -309,7 +335,8 @@ function CvThroughput() {
     <div className="cv-page">
       <PageHead over={`Throughput · ${CV_ROOM.name}`} q="Is the room constrained, and is a faster turn worth anything?"
         sub="A faster turn only earns money when the room is full and people are waiting. So the first number is how often the room is actually full." />
-      <SampleNote what="The seat-use and ceiling figures" />
+      {CV_D.room.fromToast ? <ThroughputOwn /> : <SampleNote what="The seat-use and ceiling figures" />}
+      {CV_D.room.fromToast && <span className="cv-small cv-muted">Below: the 15-minute seat-use view, still on the sample room until table-level data arrives with the API sync.</span>}
       <div className="cv-grid g-hero">
         <section className="cv-card">
           <span className="cv-over">Claimable from faster turns this week</span>

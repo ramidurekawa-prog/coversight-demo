@@ -373,6 +373,7 @@ function CvChannels() {
     <div className="cv-page wide">
       <PageHead over={`Delivery & channels · ${CV_ROOM.name}`} q="Does every channel make money?"
         sub="The same plate earns very different money depending on how it leaves the building. Contribution per channel after food, commission, packaging and refunds, before labour." />
+      {CV_D.room.fromToast && <Callout icon="Info"><span>Sales, orders and refunds by channel are from your Toast data through {CV_D.room.fromToast.end}. Commission rates and packaging are standard assumptions until you enter your delivery statements. <button className="cv-link" onClick={() => cv.go('inputs', { kind: 'channels' })}>Enter statements</button>{C.channels.some((c) => c.none) ? ` · No sales in your data on: ${C.channels.filter((c) => c.none).map((c) => c.name).join(', ')}.` : ''}</span></Callout>}
       <LoopStrip stage="act" notes={{ detect: 'Channel margin from statements', understand: `DoorDash keeps ${Math.round(dd.per100)}¢ of each dollar`, act: '10% delivery markup, ready to review', verify: '6-week test, takeout as control' }} />
       {Math.abs(offBy) > CV_D.week.net * 0.03 && <Callout tone="warn" icon="TriangleAlert">Channel sales add up to {cvMoney(Math.round(C.total))}, {cvMoney(Math.round(Math.abs(offBy)))} {offBy > 0 ? 'more' : 'less'} than the register&apos;s net sales this week. Hand-entered channel figures are shown as entered; check them against your delivery statements.</Callout>}
       <div className="cv-grid g-hero">
