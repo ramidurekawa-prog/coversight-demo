@@ -11,6 +11,7 @@ import { bookedBetween, utcDay } from '../../lib/data/billing';
 import { weekBrief } from '../../lib/data/weekbrief';
 import { TasksPanel } from './tasks';
 import { useCv, cvMoney, cvFill, CV_D, CV_ROOM, CV_NOW, CV_PERSIST, cvPlanCandidates, cvChoosePlan, Claim, Money, Pill, Callout, Interval, PageHead, cvScale, SampleNote } from './core';
+import { DenseWeek, DenseToday, DenseService } from './dense-sections';
 
 /* Coversight — weekly and daily surfaces: This week, Today, Service, The plan.
    Everything reads the current room (CV_D). */
@@ -242,6 +243,7 @@ function CvThisWeek() {
         </span>
         <button className="cv-link" onClick={() => cv.go('plan')}>See the candidates <Icon name="ArrowRight" size={14} /></button>
       </div>
+      <DenseWeek />
     </div>
   );
 }
@@ -317,6 +319,7 @@ function CvToday() {
           })}
         </div>
       )}
+      <DenseToday />
     </div>
   );
 }
@@ -514,6 +517,7 @@ function CvServiceSample() {
           <Callout icon="Smartphone">This screen is laid out for a phone first. Open this page on your phone to see it at full size.</Callout>
         </div>
       </div>
+      <DenseService />
     </div>
   );
 }

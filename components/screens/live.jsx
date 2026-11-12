@@ -164,7 +164,7 @@ function CvConnectDemo() {
       setForm((f) => ({ ...f, secret: '' }));
       setMode('status');
       setBusy(null);
-      cv.toast('Connected. The first sync (13 weeks of history) starts within 15 minutes.');
+      cv.toast('Simulated: on the live platform the first sync (13 weeks of history) would start within 15 minutes.');
     }, 800);
   };
   const firstSync = () => {
@@ -176,7 +176,7 @@ function CvConnectDemo() {
     return { checks: s.checks + b.checks, shifts: s.shifts + b.shifts, weeks: b.weeks };
   }, { checks: 0, shifts: 0, weeks: 0 });
   const failing = conn.state === 'failing';
-  const headline = !conn.connected ? 'Not connected' : failing ? 'Sync failing' : conn.state === 'pending' ? 'Connected — first sync pending' : 'Syncing every 15 minutes';
+  const headline = !conn.connected ? 'Not connected' : failing ? 'Sync failing' : conn.state === 'pending' ? 'Connected — first sync pending' : 'Healthy (simulated: this is the sample walkthrough, no Toast calls are made)';
 
   return (
     <div className="cv-page">
