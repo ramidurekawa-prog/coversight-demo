@@ -51,6 +51,44 @@ async function jpost(url, body) {
   return j;
 }
 
+const SYNC_LABEL = { off: ['Waiting for the first run', 'neutral', 'Hourglass'], backfilling: ['Backfilling 13 weeks', 'warn', 'Loader'], live: ['Live · nightly', 'good', 'CircleCheck'], failing: ['Sync failing', 'bad', 'CircleX'] };
+const syncAgo = (t) => { if (!t) return 'never'; const m = Math.round((Date.now() - Date.parse(t)) / 6e4); return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`; };
+
+/** Lane 1 status: what the hourly sync holds per room, and "Sync now". */
+function SyncPanel({ st, rooms, canRun, busy, onRun }) {
+  const sync = st.sync ?? { state: 'off', rooms: {} };
+  const [label, tone, icon] = SYNC_LABEL[sync.state] ?? SYNC_LABEL.off;
+  return (
+    <div className="cv-col" style={{ gap: 10, borderTop: '1px solid var(--border)', paddingTop: 12 }} data-lane="pos">
+      <div className="cv-row" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+        <div className="cv-col" style={{ gap: 2 }}>
+          <span className="cv-h4">Live sync</span>
+          <span className="cv-xs cv-faint">Orders, checks, voids, discounts, refunds, time entries and wages, one business day at a time. Last run {syncAgo(sync.at)}.</span>
+        </div>
+        <Pill tone={tone} icon={icon}>{label}</Pill>
+      </div>
+      <div className="cv-tablewrap" tabIndex={0} role="group" aria-label="Sync by room">
+        <table className="cv-table">
+          <thead><tr><th>Restaurant</th><th>History held</th><th className="r">Newest day</th><th className="r">Orders last run</th><th className="r">Shifts last run</th></tr></thead>
+          <tbody>{st.restaurants.map((r) => {
+            const d = sync.rooms?.[r.roomId];
+            const pct = d ? Math.round((d.days / (d.days + d.missing || 1)) * 100) : 0;
+            return (
+              <tr key={r.guid}>
+                <td>{r.name} <span className="cv-xs cv-faint">→ {rooms.find((x) => x.id === r.roomId)?.short ?? r.roomId}</span></td>
+                <td style={{ minWidth: 160 }}>{d ? <span className="cv-col" style={{ gap: 3 }}><span className="cv-xs">{d.days} of {d.days + d.missing} days</span><span style={{ height: 6, background: 'var(--surface-sunken)', borderRadius: 3, overflow: 'hidden' }}><span style={{ display: 'block', height: '100%', width: `${pct}%`, background: 'var(--accent)' }} /></span></span> : <span className="cv-xs cv-faint">Not pulled yet</span>}</td>
+                <td className="r cv-num">{d?.newest ?? '—'}</td><td className="r cv-num">{d ? d.orders.toLocaleString('en-US') : '—'}</td><td className="r cv-num">{d ? d.shifts.toLocaleString('en-US') : '—'}</td>
+              </tr>
+            );
+          })}</tbody>
+        </table>
+      </div>
+      <span className="cv-xs cv-faint">The first runs pull 13 weeks, newest first, about five weeks per run. After that each nightly run (or Sync now) re-reads today and the two days before, so late voids, tips and clock-outs are caught. Kitchen ticket times aren&apos;t in Toast&apos;s standard API: add KitchenTimings.csv from the exports above.</span>
+      {canRun && <span><Button size="sm" icon="RefreshCw" disabled={!!busy} onClick={onRun}>{busy === 'sync' ? 'Syncing with Toast…' : 'Sync now'}</Button></span>}
+    </div>
+  );
+}
+
 function CvConnectReal() {
   const cv = useCv();
   const eng = useEngine();
@@ -69,7 +107,7 @@ function CvConnectReal() {
   return (
     <div className="cv-page">
       <PageHead over={`Connect your POS · ${eng.org?.name ?? ''}`} q="How does our Toast data get in?"
-        sub="Today: upload Toast's data exports each week. Next: the live API sync, once Toast issues credentials. Both feed the same figures." />
+        sub="Two ways in, both read by the same code: the live Toast API sync (every night once credentials are stored, or Sync now), and Toast's data exports, uploaded whenever you like." />
       <ToastImport compact />
       <section className="cv-card" aria-labelledby="toast-api">
         <div className="cv-card-head">
@@ -87,7 +125,13 @@ function CvConnectReal() {
               <dt>Last checked</dt><dd>{new Date(st.checkedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</dd>
             </dl>
             {st.lastError && <Callout tone="bad" icon="CircleX">{st.lastError}</Callout>}
-            <Callout icon="Info">The automatic sync (13 weeks of history, then every 15 minutes) isn&apos;t switched on yet. Until it is, keep uploading the Toast data exports above each week.</Callout>
+            <SyncPanel st={st} rooms={rooms} canRun={eng.viewer?.role !== 'gm'} busy={busy} onRun={() => act('sync', async () => {
+              const j = await jpost('/api/jobs', { job: 'sync' });
+              const t = await fetch('/api/toast', { credentials: 'same-origin' }).then((r) => r.json());
+              setSt(t.connection);
+              await engine.hydrate();
+              cv.toast(j.result?.ok ? 'Synced. Every figure now reads the newest Toast data.' : `Sync failed: ${j.result?.detail?.error ?? 'see the error above'}`);
+            })} />
             <div className="cv-row" style={{ gap: 8 }}>
               <Button size="sm" variant="secondary" icon="RefreshCw" disabled={!!busy || eng.viewer?.role === 'gm'} onClick={() => act('recheck', async () => { const j = await jpost('/api/toast/recheck'); setSt(j.connection); cv.toast(j.connection.status === 'connected' ? 'Toast accepted the credentials.' : 'Toast refused them. See the error.'); })}>{busy === 'recheck' ? 'Checking…' : 'Check again'}</Button>
               {isOwner && <Button size="sm" variant="ghost" icon="CircleMinus" disabled={!!busy} onClick={() => act('off', async () => { await jpost('/api/toast/disconnect'); setSt(null); cv.toast('Disconnected. The stored credentials were deleted.'); })}>Disconnect</Button>}
@@ -164,7 +208,7 @@ function CvConnectDemo() {
       setForm((f) => ({ ...f, secret: '' }));
       setMode('status');
       setBusy(null);
-      cv.toast('Connected. The first sync (13 weeks of history) starts within 15 minutes.');
+      cv.toast('Simulated: on the live platform the first sync (13 weeks of history) would start within 15 minutes.');
     }, 800);
   };
   const firstSync = () => {
@@ -176,7 +220,7 @@ function CvConnectDemo() {
     return { checks: s.checks + b.checks, shifts: s.shifts + b.shifts, weeks: b.weeks };
   }, { checks: 0, shifts: 0, weeks: 0 });
   const failing = conn.state === 'failing';
-  const headline = !conn.connected ? 'Not connected' : failing ? 'Sync failing' : conn.state === 'pending' ? 'Connected — first sync pending' : 'Syncing every 15 minutes';
+  const headline = !conn.connected ? 'Not connected' : failing ? 'Sync failing' : conn.state === 'pending' ? 'Connected — first sync pending' : 'Healthy (simulated: this is the sample walkthrough, no Toast calls are made)';
 
   return (
     <div className="cv-page">

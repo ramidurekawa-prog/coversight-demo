@@ -5,6 +5,7 @@ import * as React from 'react';
 import { Tabs } from '../kit';
 import { CV_D, CV_DS, CV_GROUP, CV_ROOM, Callout, Claim, PageHead, cvMoney, cvScale } from './core';
 import { controlLimits } from '../../lib/data/model';
+import { DenseTrends } from './dense-sections';
 
 /* Trends: 52 weeks of the room's own history. The week of Oct 19 is the live
  * week (it moves with hand-entered data); earlier weeks are history. Control
@@ -126,6 +127,7 @@ function CvTrends() {
         </section>
       )}
       <Callout icon="Info">History here is the sample group&apos;s, generated with the same seasonality every year: a December peak, a January dip, Thanksgiving and Christmas weeks. Hand-entered data changes the live week only; past weeks are closed.</Callout>
+      <DenseTrends />
     </div>
   );
 }

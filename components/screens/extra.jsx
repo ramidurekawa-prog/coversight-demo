@@ -9,6 +9,7 @@ import { engine, useEngine, useSaved } from '../engine';
 import { LoopStrip } from './areas';
 import { tmpl } from '../../lib/data/model';
 import { findingBlocked, findingStatus, findingTest } from '../../lib/data/findings';
+import { DensePortfolio } from './dense-sections';
 
 const M_fillLower = (t, tokens) => { const x = tmpl(t, tokens); return x.charAt(0).toLowerCase() + x.slice(1); };
 
@@ -227,6 +228,7 @@ function CvPortfolio() {
       </section>
       {!real && <Callout icon="Lightbulb">{weakest.name} earns the least and has {weakest.banked ? `only ${cvMoney(weakest.banked)}` : "nothing"} banked. {weakest.d.queue[0] ? <> This week&apos;s best use of your time there: {M_fillLower(weakest.d.queue[0].title, weakest.d.tokens)}.</> : null}</Callout>}
       <Callout icon="MousePointerClick">Click a room to open its week. Every screen follows the room you pick.</Callout>
+      <DensePortfolio />
     </div>
   );
 }

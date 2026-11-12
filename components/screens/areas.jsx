@@ -8,6 +8,7 @@ import { EXCEPTION_TYPES, controlLimits } from '../../lib/data/model';
 import { weeklySeries } from '../../lib/data/readers';
 import { TEST_LEVER, coverageOf } from '../../lib/data/coverage';
 import { engine, useEngine, useSaved } from '../engine';
+import { DenseControls, DenseKitchen, DenseChannels } from './dense-sections';
 
 /* Operating areas (V3, from the "map of restaurant inefficiencies" sheets).
  * Every area runs the same closed loop (detect → understand → act → verify),
@@ -191,6 +192,7 @@ function CvControls() {
           <div className="cv-row"><Button variant="secondary" icon="FileCheck" onClick={() => cv.go('packet', { id: 'wc-comps' })}>Open the comp-policy packet</Button></div>
         </section>
       </div>
+      <DenseControls />
     </div>
   );
 }
@@ -286,6 +288,7 @@ function CvKitchen() {
           )}
         </section>
       </div>
+      <DenseKitchen />
     </div>
   );
 }
@@ -426,6 +429,7 @@ function CvChannels() {
         manager={`Delivery orders keep about $${dd.per100.toFixed(0)} of every $100 after the apps take their cut, against $${dine.per100.toFixed(0)} dine-in. We're charging the same price for a plate that earns about half as much, and refunds for missing items add another ${cvMoney(C.deliveryRefunds)} a week.`}
         fix="Raise delivery prices 10% on DoorDash and Uber Eats. Separately, add a bag check at expo for orders with modifiers, where most missing-item refunds start."
         verify="A 6-week test with takeout as the control channel. Delivery contribution per week is compared before and after; the lower bound books." />
+      <DenseChannels />
     </div>
   );
 }

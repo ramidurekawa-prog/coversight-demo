@@ -8,6 +8,7 @@ import { tonightPlan } from './week';
 import { weeklySeries } from '../../lib/data/readers';
 import { measuredFillPct } from '../../lib/data/levers';
 import { useCv, cvMoney, CV_D, CV_ROOM, CV_LOCS, CV_MENU, CV_CM_WEIGHTED, cvPriceMove, cvPriceMoveInterval, CV_INVOICES, CV_PRICE_LEG, CV_MIX_LEG, CV_PROOF, Claim, Money, Pill, Outcome, Callout, Interval, PageHead, cvApproval, cvScale, SampleNote } from './core';
+import { DenseMenu, DenseLabour, DenseThroughput } from './dense-sections';
 
 /* Coversight — the four levers: Menu, Labour, Throughput, Purchasing. */
 
@@ -140,6 +141,7 @@ function CvMenu() {
         <Callout icon="Flame">The hottest plate at {CV_ROOM.short} is the {hottest.name.toLowerCase()} at {Math.round((hottest.cost / hottest.price) * 100)}% food cost. Plate costs come from your recipe-cost upload; refresh them on the data inputs screen and every margin here recomputes.</Callout>
       )}
       <Callout icon="Calculator">The "sides and add-ons" line closes the menu to the register: it's whatever the {CV_MENU.length - 1} named dishes don't account for in this week's sales and food cost, so the totals here always match Earned.</Callout>
+      <DenseMenu />
     </div>
   );
 }
@@ -235,6 +237,7 @@ function CvLabourSample() {
           </table>
         </div>
       </section>
+      <DenseLabour />
     </div>
   );
 }
@@ -377,6 +380,7 @@ function CvThroughput() {
           </table>
         </div>
       </section>
+      <DenseThroughput />
     </div>
   );
 }

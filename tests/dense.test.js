@@ -67,6 +67,16 @@ describe('dense sample detail', () => {
     expect(h.every((r) => r.cells.length === 12)).toBe(true);
   });
 
+  it('heat cells carry sales and covers per server for the Service and Labour grids', () => {
+    const d = densify(SEED.rooms.oakland);
+    const h = heat(d.hours);
+    const sat8 = d.hours.filter((x) => x.dow === 'Sat' && x.hour === 20);
+    const cell = h.find((r) => r.dow === 'Sat').cells.find((c) => c.hour === 20);
+    close(cell.sales, sat8.reduce((s, x) => s + x.sales, 0) / sat8.length);
+    close(cell.cps, sat8.reduce((s, x) => s + x.covers, 0) / sat8.reduce((s, x) => s + x.servers, 0));
+    expect(h.every((r) => r.cells.every((c) => c.cps > 0 && c.sales > 0))).toBe(true);
+  });
+
   it('invents nothing for a room on its own Toast data', () => {
     const ds = applyInputs(SEED, {});
     expect(densify({ ...ds.rooms.oakland, fromToast: { end: '2026-10-24', weeks: 13 } })).toBeNull();
