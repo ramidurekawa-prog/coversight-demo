@@ -4,6 +4,8 @@ import * as React from 'react';
 
 import { Icon, Button, Tabs } from '../kit';
 import { engine, useEngine } from '../engine';
+import { tonightPlan } from './week';
+import { weeklySeries } from '../../lib/data/readers';
 import { useCv, cvMoney, CV_D, CV_ROOM, CV_LOCS, CV_MENU, CV_CM_WEIGHTED, cvPriceMove, cvPriceMoveInterval, CV_INVOICES, CV_PRICE_LEG, CV_MIX_LEG, CV_PROOF, Claim, Money, Pill, Outcome, Callout, Interval, PageHead, cvApproval, cvScale, SampleNote } from './core';
 
 /* Coversight — the four levers: Menu, Labour, Throughput, Purchasing. */
@@ -165,6 +167,10 @@ function LabourChart({ d }) {
   );
 }
 function CvLabour() {
+  if (CV_D.room.fromToast) return <LabourOwn />;
+  return <CvLabourSample />;
+}
+function CvLabourSample() {
   const cv = useCv();
   const [day, setDay] = React.useState("sat");
   const L = CV_D.room.labour;
@@ -226,6 +232,68 @@ function CvLabour() {
             </tbody>
           </table>
         </div>
+      </section>
+    </div>
+  );
+}
+
+/* A room on its own Toast data: staffing per hour from its own clock-ins and covers. */
+const DAY_ORDER = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const hourLbl = (h) => `${((h + 11) % 12) + 1} ${h < 12 ? 'am' : 'pm'}`;
+function LabourOwn() {
+  const cv = useCv();
+  const eng = useEngine();
+  const room = CV_D.room;
+  const plans = Object.fromEntries(DAY_ORDER.map((d) => [d, tonightPlan(room, d)]));
+  const days = DAY_ORDER.filter((d) => plans[d]);
+  const [day, setDay] = React.useState(days.find((d) => plans[d].cutFrom != null) || days[0]);
+  const plan = plans[day];
+  const idleWk = weeklySeries(room, 'idleServerHours').slice(-1)[0]?.value ?? 0;
+  const shortWk = Object.values(plans).filter(Boolean).reduce((t, p) => t + p.hours.reduce((x, h) => x + Math.max(0, h.need - Math.round(h.servers)), 0), 0);
+  const otWk = weeklySeries(room, 'otMinutes').slice(-1)[0]?.value ?? 0;
+  const tests = (eng.windows || []).filter((w) => w.roomId === CV_D.id && (w.lever === 'labour' || w.lever === 'overtime'));
+  const approvalId = plan?.cutFrom != null ? `cut:${day}:${plan.cutFrom}` : null;
+  const task = approvalId && (eng.tasks || []).find((t) => t.roomId === CV_D.id && t.approvalId === approvalId && t.status !== 'cancelled');
+  return (
+    <div className="cv-page wide">
+      <PageHead over={`Labour · ${CV_ROOM.name} · ${room.staff.length} people, ${cvMoney(Math.round(CV_D.week.labour))} this week`} q="How many people does each hour need, and did the last change work?"
+        sub={`From your Toast clock-ins and covers through ${room.fromToast.end}, at this room's own pace. Short hours are shown beside idle ones: a schedule that only ever cuts isn't one anyone should trust.`} />
+      <div className="cv-grid g4">
+        {[['Idle server-hours, last week', `${idleWk} h`, 'cv-exp'], ['Short server-hours, typical week', `${shortWk} h`, 'cv-down'], ['Your measured service rate', plan ? plan.rate.toFixed(2) : '—', ''], ['Overtime, last week', `${Math.round(otWk / 60 * 10) / 10} h`, otWk ? 'cv-exp' : '']].map(([k, v, c]) => (
+          <div key={k} className="cv-card" style={{ gap: 6 }}><span className="cv-xs cv-faint">{k}</span><span className={`cv-fig md ${c}`}>{v}</span><Claim k="obs" /></div>
+        ))}
+      </div>
+      {!days.length ? <Callout icon="Clock">Add TimeEntries.csv to your Toast upload to see servers on the floor per hour.</Callout> : (
+        <div className="cv-grid g-hero">
+          <section className="cv-card flush">
+            <div className="cv-card-head" style={{ padding: '12px 16px' }}><span className="cv-h4">{day}: on the floor vs needed</span><Tabs value={day} onChange={setDay} tabs={days.map((d) => ({ value: d, label: d }))} /></div>
+            <div className="cv-tablewrap"><table className="cv-table">
+              <thead><tr><th>Hour</th><th className="r">Covers</th><th className="r">On the floor</th><th className="r">Needed</th><th className="r">Spare / short</th></tr></thead>
+              <tbody>{plan.hours.map((h) => { const diff = Math.round(h.servers) - h.need; return (
+                <tr key={h.hour}><td>{hourLbl(h.hour)}</td><td className="r">{h.covers}</td><td className="r">{h.servers}</td><td className="r">{h.need}</td><td className={`r ${diff > 0 ? 'cv-exp' : diff < 0 ? 'cv-down' : ''}`}>{diff > 0 ? `+${diff} spare` : diff < 0 ? `${diff} short` : '—'}</td></tr>
+              ); })}</tbody>
+            </table></div>
+          </section>
+          <section className="cv-card">
+            <span className="cv-h4">Next {day}</span>
+            {plan.cutFrom == null ? <span className="cv-small cv-muted">Every hour to close used its servers on recent {day}s. No cut.</span> : (
+              <>
+                <span className="cv-small">One fewer server from {hourLbl(plan.cutFrom)} to close: about {plan.idleHours} server-hour{plan.idleHours === 1 ? '' : 's'}, {cvMoney(plan.idleHours * plan.wage)} a week. <Claim k="mod" /></span>
+                {task ? <Pill tone="info" icon="ListChecks">Approved · steps on Today</Pill> : <Button icon="Send" onClick={async () => { const top = Math.round(plan.hours.find((h) => h.hour === plan.cutFrom).servers); await engine.createTask(approvalId, { title: `${day}: one fewer server from ${hourLbl(plan.cutFrom)} to close`, system: '7shifts', diff: [[`${day} ${hourLbl(plan.cutFrom)} to close`, `${top} servers`, `${top - 1} servers`]] }); cv.toast('Approved. The steps for 7shifts are on Today.'); }}>Approve for next {day}</Button>}
+              </>
+            )}
+            <span className="cv-xs cv-faint">To book it, run a 28-day test on Labour overstaff (Levers or Today).</span>
+          </section>
+        </div>
+      )}
+      <section className="cv-card flush">
+        <div className="cv-tablewrap"><table className="cv-table">
+          <thead><tr><th>Labour and overtime tests</th><th>Status</th><th className="r">Booked /wk</th></tr></thead>
+          <tbody>
+            {tests.length === 0 && <tr><td colSpan={3} className="cv-small cv-muted">No labour tests yet.</td></tr>}
+            {tests.map((w) => <tr key={w.id} className="cv-tr" onClick={() => cv.go('packet', { id: w.id })}><td style={{ fontWeight: 600 }}>{w.title}</td><td>{w.status === 'running' ? `day ${w.day} of 28` : w.status}</td><td className="r">{w.status === 'verified' ? cvMoney(w.bookedCents / 100, { cents: true }) : '$0'}</td></tr>)}
+          </tbody>
+        </table></div>
       </section>
     </div>
   );
