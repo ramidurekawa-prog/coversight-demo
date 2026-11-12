@@ -8,6 +8,7 @@ import { useCv, cvMoney, cvFill, CV_D, CV_DS, CV_GROUP, CV_ROOM, CV_NOW, CV_PERS
 import { engine, useEngine, useSaved } from '../engine';
 import { LoopStrip } from './areas';
 import { tmpl } from '../../lib/data/model';
+import { findingBlocked, findingStatus, findingTest } from '../../lib/data/findings';
 
 const M_fillLower = (t, tokens) => { const x = tmpl(t, tokens); return x.charAt(0).toLowerCase() + x.slice(1); };
 
@@ -369,11 +370,30 @@ function CvFinding({ params }) {
   const [dismissed, setDismissed] = useSaved("findings", {});
   const until = dismissed[c.id] && dismissed[c.id] > new Date().toISOString() ? dismissed[c.id] : null;
   const { chosen } = cvChoosePlan(cands, d.room.managerHours);
+  const eng = useEngine();
+  const test = findingTest(c);
+  const st = findingStatus(c, eng.windows, d.id);
+  const blocked = findingBlocked(c, d.room);
+  const [starting, setStarting] = React.useState(false);
+  const STATE = {
+    testing: { pill: <Pill tone="info" icon="Timer">Being tested</Pill>, verify: st.window ? `Test running since ${String(st.window.startedAt ?? "").slice(0, 10)}` : "Test running" },
+    verified: { pill: <Pill tone="good" icon="BadgeCheck">Verified</Pill>, verify: "Verified by its test" },
+    reversed: { pill: <Pill tone="warn" icon="Undo2">Reversed</Pill>, verify: "Verified, then it slipped back" },
+    ended: { pill: <Pill icon="Hourglass">Last test ended unproven</Pill>, verify: "The last test didn't prove it" },
+  }[st.state];
+  const verifyNote = c.prevent ? "Prevented cost: never counted" : st.state === "untestable" ? "No metric for this is read from your data yet" : STATE ? STATE.verify : `${Math.round(c.p * 100)}% chance it verifies`;
+  const start = async () => {
+    setStarting(true);
+    const r = await engine.startWindow(test.lever, { roomId: d.id, dish: test.dish });
+    setStarting(false);
+    cv.toast(r.ok ? "Test started. The baseline is frozen; each new week of data is a checkpoint." : r.error);
+  };
   return (
     <div className="cv-page">
       <button className="cv-link" onClick={() => cv.go("plan")}><Icon name="ArrowLeft" size={14} />The plan</button>
-      <PageHead over={`Finding · ${c.lever} · ${d.profile.name}`} q={c.title} right={chosen.has(c.id) ? <Pill tone="good" icon="Check">Chosen this week</Pill> : <Pill icon="Clock">Not chosen this week</Pill>} />
-      <LoopStrip stage={chosen.has(c.id) ? "act" : "understand"} notes={{ detect: ev ? ev.detector : "Found in your data", understand: c.claim === "obs" ? "Read straight from your systems" : "Modelled from your own history", act: chosen.has(c.id) ? "In this week's plan" : "Waiting for manager time", verify: c.prevent ? "Prevented cost: never counted" : `${Math.round(c.p * 100)}% chance it verifies` }} />
+      <PageHead over={`Finding · ${c.lever} · ${d.profile.name}`} q={c.title} right={STATE ? STATE.pill : chosen.has(c.id) ? <Pill tone="good" icon="Check">Chosen this week</Pill> : <Pill icon="Clock">Not chosen this week</Pill>} />
+      <LoopStrip stage={STATE ? "verify" : chosen.has(c.id) ? "act" : "understand"} notes={{ detect: ev ? ev.detector : "Found in your data", understand: c.claim === "obs" ? "Read straight from your systems" : "Modelled from your own history", act: STATE ? "Done" : chosen.has(c.id) ? "In this week's plan" : "Waiting for manager time", verify: verifyNote }} />
+      {blocked && <Callout tone="warn" icon="TriangleAlert">{blocked} Until then this figure is shown for context only, and Coversight won't put it in front of you as a change to make.</Callout>}
       <div className="cv-grid g-hero">
         <section className="cv-card">
           <div className="cv-card-head"><span className="cv-over">Expected effect</span><Claim k={c.claim} /></div>
@@ -406,8 +426,12 @@ function CvFinding({ params }) {
         </div>
       ) : <Callout icon="Info">{c.claim === "obs" && c.value === 0 ? "Worth $0 on purpose: the data that would make it measurable isn't connected yet." : "Evidence for this finding comes from the schedule and the matched services behind it."}</Callout>}
       <div className="cv-row">
-        {c.kind === "price" && <Button onClick={() => cv.approve(`price:${c.item}:${c.to}`)}>Review the price change</Button>}
-        {c.kind === "markup" && <Button onClick={() => cv.approve("delivery-markup")}>Review the markup</Button>}
+        {blocked ? <Button onClick={() => cv.go("inputs", { kind: "recipes" })}>Enter recipe costs</Button> : <>
+          {c.kind === "price" && <Button onClick={() => cv.approve(`price:${c.item}:${c.to}`)}>Review the price change</Button>}
+          {c.kind === "markup" && <Button onClick={() => cv.approve("delivery-markup")}>Review the markup</Button>}
+        </>}
+        {test && (st.state === "testing" ? <Button variant="secondary" iconRight="ArrowRight" onClick={() => cv.go("windows")}>See the test</Button>
+          : !blocked && st.state !== "verified" && <Button variant="secondary" icon="FlaskConical" disabled={starting} onClick={start}>{st.state === "none" ? "Start a 28-day test" : "Test it again"}</Button>)}
         {until ? (
           <>
             <Pill icon="EyeOff">Dismissed until {new Date(until).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</Pill>
@@ -417,6 +441,7 @@ function CvFinding({ params }) {
           <Button variant="secondary" onClick={() => { setDismissed((m) => ({ ...m, [c.id]: new Date(Date.now() + 90 * 864e5).toISOString() }), `${c.title || c.id}: not for us`); cv.toast("Dismissed for 90 days. It's off the plan, and the ranker will learn from it."); }}>Not for us</Button>
         )}
       </div>
+      {!test && !c.prevent && <span className="cv-xs cv-faint">Nothing in your data measures this lever week by week yet, so it can be done but not verified, and it's never billed.</span>}
     </div>
   );
 }
