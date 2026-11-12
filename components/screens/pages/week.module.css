@@ -1,0 +1,51 @@
+/* This week: page-only layout. Tokens and kit classes come from app/globals.css. */
+
+/* The scoreboard: four figures, one per claim strength, side by side. */
+.board { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); padding: 0; gap: 0; }
+.tile { display: flex; flex-direction: column; gap: 8px; padding: 18px 20px; min-width: 0; border-left: 1px solid var(--border); }
+.tile:first-child { border-left: 0; }
+.tileHead { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.tileFoot { display: flex; align-items: center; gap: 6px; font-size: var(--text-xs); color: var(--fg-2); min-height: 18px; }
+@media (max-width: 1080px) {
+  .board { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tile:nth-child(3) { border-left: 0; }
+  .tile:nth-child(n + 3) { border-top: 1px solid var(--border); }
+}
+@media (max-width: 560px) {
+  .board { grid-template-columns: minmax(0, 1fr); }
+  .tile { border-left: 0; }
+  .tile + .tile { border-top: 1px solid var(--border); }
+}
+
+/* The brief: what changed, why, what next. */
+.brief { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr) minmax(0, 1fr); gap: 0; }
+.briefCol { display: flex; flex-direction: column; gap: 8px; padding: 0 22px; min-width: 0; border-left: 1px solid var(--border); }
+.briefCol:first-child { padding-left: 0; border-left: 0; }
+.briefCol:last-child { padding-right: 0; }
+@media (max-width: 960px) {
+  .brief { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  .briefCol { padding: 0; border-left: 0; }
+  .briefCol + .briefCol { padding-top: 18px; border-top: 1px solid var(--border); }
+}
+.lead { font-weight: 600; font-size: var(--text-lg, 1.05rem); line-height: 1.35; }
+
+/* Why: each part as a bar from zero, helped to the right, hurt to the left. */
+.parts { display: grid; grid-template-columns: max-content minmax(60px, 1fr) max-content; gap: 8px 12px; align-items: center; font-size: var(--text-sm); }
+.track { position: relative; height: 10px; background: var(--surface-sunken); border-radius: 99px; }
+.track::after { content: ''; position: absolute; left: 50%; top: -3px; bottom: -3px; width: 1px; background: var(--border-strong); }
+.bar { position: absolute; top: 0; bottom: 0; border-radius: 99px; }
+.barUp { left: 50%; background: var(--money-up); }
+.barDown { right: 50%; background: var(--money-down); }
+
+/* Lists of rows inside a card (plan, needs you, in flight). */
+.list { display: flex; flex-direction: column; }
+.item { display: flex; gap: 14px; align-items: flex-start; padding: 12px 0; border-top: 1px solid var(--border); }
+.item:first-child { border-top: 0; padding-top: 2px; }
+.grow { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+
+/* Close out the week. */
+.note { height: auto; min-height: 76px; padding: 10px 12px; resize: vertical; line-height: 1.45; }
+.past { display: flex; flex-direction: column; gap: 0; }
+.pastRow { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 12px; padding: 8px 0; border-top: 1px solid var(--border); font-size: var(--text-sm); }
+@media (max-width: 560px) { .pastRow { grid-template-columns: minmax(0, 1fr); gap: 2px; } }
