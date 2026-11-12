@@ -1,0 +1,35 @@
+/* Today: page-only styles. Tokens come from app/globals.css. */
+
+.summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto; gap: 20px; align-items: end; }
+.figure { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.figure .label { font-size: var(--text-xs); color: var(--fg-3); }
+
+/* One bar, four parts: cleared, snoozed, not for us, still to do. */
+.bar { display: flex; height: 8px; border-radius: 99px; overflow: hidden; background: var(--surface-sunken); }
+.bar > span { display: block; height: 100%; transition: width var(--dur-slow) var(--ease-out); }
+.bar .done { background: var(--success-600); }
+.bar .snoozed { background: var(--info-600); opacity: 0.55; }
+.bar .refused { background: var(--fg-3); opacity: 0.45; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: var(--text-xs); color: var(--fg-3); }
+.legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; vertical-align: 0; }
+
+.sectionHead { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-top: 4px; }
+
+/* The card to do first stands out; the rest stay quiet. */
+.next { border-color: var(--accent); box-shadow: var(--shadow-sm); padding: 20px 22px; }
+.nextTag { display: inline-flex; align-items: center; gap: 5px; font: 600 11px/1 var(--font-sans); letter-spacing: 0.04em; text-transform: uppercase; color: var(--accent); }
+.kind { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--fg-3); }
+.meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.value { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--fg-1); font-weight: 600; }
+.mins { display: inline-flex; align-items: center; gap: 4px; font-size: var(--text-xs); color: var(--fg-3); }
+
+.list { display: flex; flex-direction: column; }
+.row { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 11px 0; border-top: 1px solid var(--border); }
+.row:first-child { border-top: none; }
+.rowIco { width: 30px; height: 30px; }
+
+@media (max-width: 720px) {
+  .summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .summary > :last-child { grid-column: 1 / -1; justify-self: start; }
+  .next { padding: 16px 18px; }
+}
