@@ -152,6 +152,10 @@ import {
   Verified,
   Wrench,
   Zap,
+  ChevronLeft,
+  ChevronRight,
+  StickyNote,
+  X,
 } from 'lucide-react';
 
 const ICONS = {
@@ -302,6 +306,10 @@ const ICONS = {
   Verified,
   Wrench,
   Zap,
+  ChevronLeft,
+  ChevronRight,
+  StickyNote,
+  X,
 };
 
 /** Every icon name the screens use. A unit test keeps this list complete. */

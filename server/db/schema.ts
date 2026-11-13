@@ -592,6 +592,50 @@ export const meetingActions = pgTable(
   ],
 );
 
+// ── Daily detail page ────────────────────────────────────────────────────────
+/**
+ * One business day of a room, summarised for the Daily detail page by
+ * lib/data/page/daily.js summarizeDays(): sales, covers, hours, dishes. Built
+ * from the sync's pos_days ('toast-api', rebuilt when a day is re-pulled) or
+ * from Toast exports dropped on the page ('toast-export'). A synced day always
+ * wins over an uploaded one. Kept two years, longer than pos_days, so every
+ * day has a year-before to compare against.
+ */
+export const dailyDays = pgTable(
+  'daily_days',
+  {
+    orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+    roomId: text('room_id').notNull(),
+    day: text('day').notNull(),
+    source: text('source').notNull(),
+    summary: jsonb('summary').notNull(),
+    /** False while the day was still trading (or not fully synced) when it was read. */
+    complete: boolean('complete').notNull().default(true),
+    /** An uploaded day's checks, for drill-down (a synced day's stay in pos_days). */
+    checks: jsonb('checks'),
+    /** lib/data/page/daily.js CALC_VERSION the summary was built with. */
+    version: text('version').notNull().default(''),
+    userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
+    builtAt: at('built_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.orgId, t.roomId, t.day] })],
+);
+
+/** What happened on a day, in a manager's words ("rain", "private event"), one per room and day. */
+export const dailyNotes = pgTable(
+  'daily_notes',
+  {
+    orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+    roomId: text('room_id').notNull(),
+    day: text('day').notNull(),
+    text: text('text').notNull(),
+    userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
+    author: text('author').notNull().default(''),
+    updatedAt: at('updated_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.orgId, t.roomId, t.day] })],
+);
+
 export const orgRelations = relations(orgs, ({ many }) => ({ rooms: many(rooms), memberships: many(memberships) }));
 
 export const schema = { users, sessions, accounts, verifications, orgs, memberships, rooms, roomData, inputs, actions, auditLog, memberRole, windowStatus, testWindows, checkpoints, jobRuns, snapshots, taskStatus, tasks, notifications, notificationReads, outbox, invites, invoices, toastConnections, posDays, linkedSources, agentCycles, agentEvents, agentRuns, agentProposals, meetingSessions, meetingActions };

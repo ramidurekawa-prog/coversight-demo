@@ -52,6 +52,8 @@ export const ACTION_KEYS = {
   pricing: { scope: 'group', schema: z.object({ perRoomMonthlyCents: z.number().int().min(0).max(1_000_000), feePct: z.number().min(0).max(50) }) },
   /** Weekly meeting: the room's slot (day of week, 0 = Sunday, local time, length) and who usually attends. */
   'meeting.schedule': { scope: 'room', schema: meetingSchemas.schedule },
+  /** Daily detail: this room's day parts, whole hours on the service clock (4 = 4 am … 28 = 4 am next day), no overlaps. */
+  'daily.dayparts': { scope: 'room', schema: z.array(z.object({ name: z.string().trim().min(1).max(30), from: z.number().int().min(4).max(27), to: z.number().int().min(5).max(28) })).min(1).max(8).refine((a) => a.every((p) => p.to > p.from) && [...a].sort((x, y) => x.from - y.from).every((p, i, s) => !i || s[i - 1]!.to <= p.from), 'day parts must run forward and not overlap') },
 } as const;
 
 export type ActionKey = keyof typeof ACTION_KEYS;
