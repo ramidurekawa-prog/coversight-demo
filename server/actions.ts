@@ -9,6 +9,7 @@ import type { Db } from './db/client';
 import { actions, auditLog, rooms } from './db/schema';
 import { InputError } from './org';
 import { AuthError, type Viewer } from './session';
+import { CAUSES as TRENDS_CAUSES, NOTE_KEY_RE as TRENDS_NOTE_KEY } from '../lib/data/page/trends.js';
 
 const id = z.string().min(1).max(120);
 const isoDate = z.string().max(40);
@@ -49,6 +50,8 @@ export const ACTION_KEYS = {
   autonomy: { scope: 'room', schema: z.record(z.string().min(1).max(40), z.number().int().min(0).max(4)) },
   /** Pricing on the invoice: per room per month, and the fee on reconciled savings. */
   pricing: { scope: 'group', schema: z.object({ perRoomMonthlyCents: z.number().int().min(0).max(1_000_000), feePct: z.number().min(0).max(50) }) },
+  /** Trends: why a week or a run of weeks was unusual, per "<week start>:<metric>". */
+  'trends.notes': { scope: 'room', schema: z.record(z.string().regex(TRENDS_NOTE_KEY), z.object({ cause: z.enum(TRENDS_CAUSES.map((c: { value: string }) => c.value) as [string, ...string[]]), text: z.string().trim().max(280), at: isoDate })).refine((r) => Object.keys(r).length <= 300, 'too many notes') },
 } as const;
 
 export type ActionKey = keyof typeof ACTION_KEYS;
