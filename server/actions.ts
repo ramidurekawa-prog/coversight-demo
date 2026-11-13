@@ -6,6 +6,7 @@ import { and, desc, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 
 import type { Db } from './db/client';
+import { meetingSchemas } from './page/meeting';
 import { actions, auditLog, rooms } from './db/schema';
 import { InputError } from './org';
 import { AuthError, type Viewer } from './session';
@@ -49,6 +50,8 @@ export const ACTION_KEYS = {
   autonomy: { scope: 'room', schema: z.record(z.string().min(1).max(40), z.number().int().min(0).max(4)) },
   /** Pricing on the invoice: per room per month, and the fee on reconciled savings. */
   pricing: { scope: 'group', schema: z.object({ perRoomMonthlyCents: z.number().int().min(0).max(1_000_000), feePct: z.number().min(0).max(50) }) },
+  /** Weekly meeting: the room's slot (day of week, 0 = Sunday, local time, length) and who usually attends. */
+  'meeting.schedule': { scope: 'room', schema: meetingSchemas.schedule },
 } as const;
 
 export type ActionKey = keyof typeof ACTION_KEYS;

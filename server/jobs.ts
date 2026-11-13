@@ -17,6 +17,7 @@ import { previousPeriod } from '../lib/data/billing.js';
 import { syncToast } from './pos-sync';
 import { pullLinks } from './links';
 import { runAgents } from './agents/service';
+import { runMeetingReminders } from './page/meeting';
 
 export const JOBS = {
   sync: { schedule: 'Daily, 2:20 am Pacific (hourly on Vercel Pro: set the cron to 20 * * * *)', what: 'Pulls new Toast orders and time entries for every connected restaurant (13 weeks the first time) and rebuilds each room’s figures from them', cron: '20 10 * * *' },
@@ -27,6 +28,7 @@ export const JOBS = {
   reverify: { schedule: 'Mondays, 3:00 am Pacific', what: 'Checks average check and turn time against each verified test’s guardrails; a breach reverses it', cron: '0 11 * * 1' },
   billing: { schedule: '2nd of the month, 6:00 am Pacific', what: 'Drafts last month’s invoice for every group from its verified tests', cron: '0 14 2 * *' },
   cleanup: { schedule: 'Daily, 5:00 am Pacific', what: 'Deletes “try the sample” guests older than 30 days and their sample copies', cron: '0 13 * * *' },
+  meeting: { schedule: 'Daily, 7:00 am Pacific', what: 'Reminds each room about weekly-meeting actions due tomorrow or overdue, and about the meeting on its day', cron: '0 15 * * *' },
 } as const;
 export type JobName = keyof typeof JOBS;
 
@@ -76,6 +78,13 @@ async function record(db: Db, job: JobName, orgId: string | null, trigger: strin
 /** Run a job for one org (owner's "Run now") or every org (the schedule). */
 export async function runJob(db: Db, job: JobName, { orgId, trigger = 'schedule', now = new Date(), fetchImpl }: { orgId?: string; trigger?: string; now?: Date; fetchImpl?: typeof fetch } = {}) {
   if (job === 'cleanup') return [await record(db, job, null, trigger, () => runCleanup(db, now))];
+  if (job === 'meeting') {
+    const real = orgId ? [orgId] : (await db.select({ id: orgs.id }).from(orgs).where(eq(orgs.sample, false))).map((o) => o.id);
+    const out = [];
+    for (const id of real) out.push(await record(db, job, id, trigger, () => runMeetingReminders(db, id, now)));
+    await deliverOutbox(db, { now }).catch(() => null);
+    return out;
+  }
   // The sync and linked sheets run only for groups that have them, the crew only for real groups
   // (a sample visitor runs it from System); every other job, for every group.
   const ids = orgId ? [orgId] : job === 'sync' ? (await db.select({ id: toastConnections.orgId }).from(toastConnections)).map((o) => o.id) : job === 'links' ? [...new Set((await db.select({ id: linkedSources.orgId }).from(linkedSources)).map((o) => o.id))] : job === 'agents' ? (await db.select({ id: orgs.id }).from(orgs).where(eq(orgs.sample, false))).map((o) => o.id) : (await db.select({ id: orgs.id }).from(orgs)).map((o) => o.id);
