@@ -5,7 +5,7 @@
 import { and, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 
-import { validate, mapColumns, parseRows, gridToTable, KINDS } from '../lib/data/ingest.js';
+import { validate, mapColumns, parseRows, gridToTable, KINDS, SCHEMAS } from '../lib/data/ingest.js';
 import { route } from '../lib/data/sniff.js';
 import type { Db } from './db/client';
 import { auditLog, inputs, linkedSources, rooms } from './db/schema';
@@ -18,6 +18,8 @@ import { AuthError, type Viewer } from './session';
 export const stable = (v: unknown): string => (Array.isArray(v) ? `[${v.map(stable).join(',')}]` : v && typeof v === 'object' ? `{${Object.keys(v as object).filter((k) => (v as Record<string, unknown>)[k] !== undefined).sort().map((k) => `${JSON.stringify(k)}:${stable((v as Record<string, unknown>)[k])}`).join(',')}}` : JSON.stringify(v ?? null));
 
 const MAX = 20 * 1024 * 1024;
+/** Linked sheets per group. */
+export const MAX_LINKS = 25;
 const ALLOWED = /^(docs\.google\.com|[a-z0-9-]+\.googleusercontent\.com|www\.dropbox\.com|dl\.dropboxusercontent\.com|[a-z0-9-]+\.dl\.dropboxusercontent\.com)$/;
 
 /** A share link → the URL that returns the file itself. Throws in plain words for anything else. */
@@ -90,9 +92,27 @@ export async function addLink(db: Db, v: Pick<Viewer, 'orgId' | 'userId' | 'role
   if (p.data.picks.some((x) => x.kind === 'toast')) throw new InputError('Toast exports come in through Connect, not a linked sheet.');
   const bad = p.data.picks.find((x) => !(KINDS as string[]).includes(x.kind));
   if (bad) throw new InputError(`unknown kind '${bad.kind}'`);
+  // Two tabs feeding one kind would overwrite each other every morning.
+  const twice = p.data.picks.find((x, i) => p.data.picks.findIndex((y) => y.kind === x.kind) !== i);
+  if (twice) throw new InputError(`Two tabs are set as ${SCHEMAS[twice.kind as keyof typeof SCHEMAS]?.title.toLowerCase() ?? twice.kind}. Pick one tab per kind of data.`);
   directUrl(p.data.url); // refuse anything we'd never fetch
   const [room] = await db.select({ id: rooms.id }).from(rooms).where(and(eq(rooms.orgId, v.orgId), eq(rooms.id, p.data.roomId)));
   if (!room) throw new InputError(`no room '${p.data.roomId}' in this group`);
+  const existing = await db.select().from(linkedSources).where(eq(linkedSources.orgId, v.orgId));
+  // The same sheet linked to the same room again: update which tabs it feeds, don't add a second copy.
+  const same = existing.find((l) => l.roomId === p.data.roomId && directUrl(l.url).url === directUrl(p.data.url).url);
+  if (same) {
+    const [row] = await db.update(linkedSources).set({ url: p.data.url, picks: p.data.picks }).where(eq(linkedSources.id, same.id)).returning();
+    await db.insert(auditLog).values({ orgId: v.orgId, userId: v.userId, action: 'link.updated', detail: { roomId: p.data.roomId, kinds: p.data.picks.map((x) => x.kind) } });
+    return row!;
+  }
+  if (existing.length >= MAX_LINKS) throw new InputError(`A group can keep ${MAX_LINKS} sheets linked. Unlink one first.`);
+  // One kind in one room is fed by one linked sheet, or two sheets would take turns replacing it.
+  const clash = existing.find((l) => l.roomId === p.data.roomId && l.picks.some((x) => p.data.picks.some((y) => y.kind === x.kind)));
+  if (clash) {
+    const k = clash.picks.find((x) => p.data.picks.some((y) => y.kind === x.kind))!.kind;
+    throw new InputError(`Another linked sheet already feeds ${SCHEMAS[k as keyof typeof SCHEMAS]?.title.toLowerCase() ?? k} for this room. Unlink it first.`);
+  }
   const [row] = await db.insert(linkedSources).values({ orgId: v.orgId, roomId: p.data.roomId, url: p.data.url, picks: p.data.picks, createdBy: v.userId }).returning();
   await db.insert(auditLog).values({ orgId: v.orgId, userId: v.userId, action: 'link.added', detail: { roomId: p.data.roomId, kinds: p.data.picks.map((x) => x.kind) } });
   return row!;
@@ -100,7 +120,7 @@ export async function addLink(db: Db, v: Pick<Viewer, 'orgId' | 'userId' | 'role
 
 export async function listLinks(db: Db, orgId: string, roomScope: string[] | null = null) {
   const rows = await db.select().from(linkedSources).where(eq(linkedSources.orgId, orgId)).orderBy(desc(linkedSources.createdAt));
-  return rows.filter((r) => !roomScope || roomScope.includes(r.roomId)).map((r) => ({ id: r.id, roomId: r.roomId, url: r.url, picks: r.picks, pulledAt: r.pulledAt, lastError: r.lastError, lastResult: r.lastResult }));
+  return rows.filter((r) => !roomScope || roomScope.includes(r.roomId)).map((r) => ({ id: r.id, roomId: r.roomId, url: r.url, picks: r.picks, pulledAt: r.pulledAt, lastError: r.lastError, lastResult: r.lastResult, createdAt: r.createdAt }));
 }
 
 export async function removeLink(db: Db, v: Pick<Viewer, 'orgId' | 'userId' | 'rooms'>, id: string) {

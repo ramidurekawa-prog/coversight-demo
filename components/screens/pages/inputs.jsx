@@ -2,329 +2,115 @@
 
 import * as React from 'react';
 
-import { Button, Icon, Tabs } from '../../kit';
-import { CV_D, CV_DS, CV_ROOM, Callout, Claim, Pill, PageHead, useCv } from '../core';
-import { engine, useEngine } from '../../engine';
-import { KINDS, SCHEMAS, mapColumns, parseCSV, preview, templateCSV, templateRows, validate } from '../../../lib/data/ingest';
-import { SEED } from '../../../lib/data/seed';
-import { KIND_LABEL } from '../../../lib/data/apply';
+import { Button, Icon } from '../../kit';
+import { CV_D, CV_DS, CV_ROOM, Callout, PageHead, Pill } from '../core';
+import { useEngine } from '../../engine';
+import { KINDS } from '../../../lib/data/ingest';
+import { attention, stakes } from '../../../lib/data/page/inputs';
+import { Coverage, FixNext, Hero, KindTiles, StakeBars } from './inputs-visual';
 import { ToastImport } from '../toast-import';
 import { BringIn } from '../bring-in';
+import { boardRows } from './inputs-board';
+import { Editor } from './inputs-editor';
+import { History } from './inputs-history';
+import { LinkedSheets } from './inputs-links';
+import { useHistory, useLinks } from './inputs-data';
+import s from './inputs.module.css';
 
-const META = (k) => SCHEMAS[k] || { title: KIND_LABEL[k] || k, icon: k === 'toast' ? 'PlugZap' : 'FilePen' };
+/* Data inputs: the manual ingestion layer. First, where each kind of this
+ * room's data comes from now. Then the ways in: drop, paste, link, photo.
+ * Anything that comes in opens in the editor, where it's checked row by row
+ * and previewed (exactly which figures move) before it's committed. The
+ * server checks it again with the same rules. Every commit is in the history
+ * with who made it, the one in use can be undone, and verified figures never
+ * move. */
 
-/* Data inputs: the manual ingestion layer. Six kinds of data a restaurant
- * often keeps by hand. Each one: type it in (pre-filled with what's there
- * now) or paste/upload a CSV, check it row by row, preview exactly which
- * figures move, then commit. Every commit is logged and can be undone, and
- * verified figures never move. */
-
-const inputStyle = { width: '100%', minWidth: 70, height: 32, padding: '0 8px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-strong)', background: 'var(--surface)', color: 'var(--fg-1)', font: 'inherit', fontSize: 'var(--text-sm)' };
-
-function download(name, text) {
-  try {
-    const url = URL.createObjectURL(new Blob([text], { type: 'text/csv' }));
-    const a = document.createElement('a');
-    a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  } catch { /* downloads blocked: the template is still visible in the paste box */ }
-}
-
-function KindCard({ kind, on, onPick }) {
-  const s = SCHEMAS[kind];
-  const entry = CV_D.inputs[kind];
-  const feed = CV_D.feeds.find((f) => f.name === s.feed);
-  return (
-    <button type="button" className={`cv-kind ${on ? 'on' : ''}`} onClick={() => onPick(kind)} aria-pressed={on}>
-      <span className={`cv-q-ico ${entry ? 'good' : feed && feed.state !== 'healthy' ? 'warn' : 'accent'}`}><Icon name={s.icon} size={18} /></span>
-      <span className="cv-col" style={{ gap: 3, alignItems: 'flex-start', textAlign: 'left' }}>
-        <b>{s.title}</b>
-        <span className="cv-xs cv-faint">{entry ? `Entered by hand ${entry.date} · ${entry.n} row${entry.n === 1 ? '' : 's'}` : feed ? `${feed.state === 'healthy' ? 'Sample data' : feed.state === 'off' ? 'Nothing yet' : `Feed ${feed.state}`} · ${feed.last}` : 'Sample data'}</span>
-      </span>
-    </button>
-  );
-}
-
-function Grid({ kind, rows, setRows, issues }) {
-  const cols = SCHEMAS[kind].columns;
-  const bad = (i, k) => issues.find((x) => x.row === i + 1 && (x.col === k || x.col == null));
-  const set = (i, k, v) => setRows(rows.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
-  return (
-    <div className="cv-tablewrap" tabIndex={0} role="group" aria-label={`${SCHEMAS[kind].title} rows`} style={{ maxHeight: 460, overflowY: 'auto' }}>
-      <table className="cv-table cv-grid-edit">
-        <thead><tr><th style={{ width: 36 }}>#</th>{cols.map((c) => <th key={c.k}>{c.label}{c.required ? '' : ' (optional)'}</th>)}<th style={{ width: 40 }}><span className="sr-only">Remove</span></th></tr></thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <tr key={i}>
-              <td className="cv-xs cv-faint cv-num">{i + 1}</td>
-              {cols.map((c) => {
-                const b = bad(i, c.k);
-                const style = { ...inputStyle, borderColor: b ? (b.level === 'error' ? 'var(--error-600)' : 'var(--warning-600)') : 'var(--border-strong)', textAlign: c.type === 'text' || c.type === 'enum' ? 'left' : 'right' };
-                return (
-                  <td key={c.k}>
-                    {c.type === 'enum' ? (
-                      <select aria-label={`${c.label}, row ${i + 1}`} value={r[c.k] ?? ''} onChange={(e) => set(i, c.k, e.target.value)} style={style}>
-                        <option value="">Choose…</option>
-                        {c.options.map((o) => <option key={o} value={o}>{o}</option>)}
-                      </select>
-                    ) : (
-                      <input aria-label={`${c.label}, row ${i + 1}`} value={r[c.k] ?? ''} inputMode={c.type === 'text' ? 'text' : 'decimal'} onChange={(e) => set(i, c.k, e.target.value)} style={style} />
-                    )}
-                  </td>
-                );
-              })}
-              <td><button className="iconbtn" style={{ width: 28, height: 28 }} aria-label={`Remove row ${i + 1}`} onClick={() => setRows(rows.filter((_, j) => j !== i))}><Icon name="X" size={14} /></button></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function Issues({ result }) {
-  if (!result) return null;
-  const { errors, warnings, issues, rows } = result;
-  return (
-    <div className="cv-col" style={{ gap: 8 }}>
-      <div className="cv-row" style={{ gap: 8 }}>
-        <Pill tone={errors ? 'bad' : 'good'} icon={errors ? 'CircleX' : 'CircleCheck'}>{errors ? `${errors} error${errors === 1 ? '' : 's'}` : 'No errors'}</Pill>
-        <Pill tone={warnings ? 'warn' : 'neutral'} icon="TriangleAlert">{warnings} warning{warnings === 1 ? '' : 's'}</Pill>
-        <span className="cv-xs cv-faint">{rows.length} row{rows.length === 1 ? '' : 's'} ready</span>
-      </div>
-      {issues.length > 0 && (
-        <ul className="cv-issues">
-          {issues.slice(0, 12).map((x, i) => (
-            <li key={i} className={x.level}>
-              <Icon name={x.level === 'error' ? 'CircleX' : 'TriangleAlert'} size={14} />
-              <span>{x.row ? <b>Row {x.row}{x.col ? ` · ${x.col}` : ''}: </b> : null}{x.msg}</span>
-            </li>
-          ))}
-          {issues.length > 12 && <li className="cv-xs cv-faint">…and {issues.length - 12} more</li>}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-function Preview({ pv }) {
-  if (!pv) return null;
-  return (
-    <div className="cv-grid g2" style={{ alignItems: 'start' }}>
-      <div className="cv-col" style={{ gap: 8 }}>
-        <span className="cv-over">What changes if you commit</span>
-        <div className="cv-diff">
-          <div className="r h" style={{ gridTemplateColumns: 'minmax(0, 1.8fr) minmax(0, 1fr) minmax(0, 1fr)' }}><span>Figure</span><span>Now</span><span>After</span></div>
-          {pv.moves.map((m) => (
-            <div key={m.label} className="r" style={{ gridTemplateColumns: 'minmax(0, 1.8fr) minmax(0, 1fr) minmax(0, 1fr)' }}><span className="cv-row" style={{ gap: 6 }}>{m.label} <Claim k={m.claim} /></span><span className="was">{m.before}</span><span className="now" style={{ fontWeight: m.changed ? 700 : 400 }}>{m.after}</span></div>
-          ))}
-        </div>
-      </div>
-      <div className="cv-col" style={{ gap: 8 }}>
-        <span className="cv-over">What can't change</span>
-        <div className="cv-diff">
-          <div className="r h" style={{ gridTemplateColumns: 'minmax(0,1fr) 120px' }}><span>Figure</span><span>Stays</span></div>
-          {pv.frozen.map((m) => <div key={m.label} className="r" style={{ gridTemplateColumns: 'minmax(0,1fr) 120px' }}><span className="cv-row" style={{ gap: 6 }}>{m.label} <Claim k="book" /></span><span className="now">{m.value} <Icon name="Lock" size={12} /></span></div>)}
-        </div>
-        <span className="cv-xs cv-faint">Verified rates are frozen in their packets when the window closes. New data moves estimates and observed figures, never a proven number.</span>
-      </div>
-    </div>
-  );
-}
-
-function Panel({ kind, seed }) {
-  const cv = useCv();
-  const eng = useEngine();
-  const room = CV_DS.rooms[CV_D.id];
-  const s = SCHEMAS[kind];
-  const [mode, setMode] = React.useState(seed ? 'csv' : 'grid');
-  const [rows, setRows] = React.useState(() => templateRows(kind, room).map((r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, v == null ? '' : String(v)]))));
-  const [csv, setCsv] = React.useState(seed?.csv ?? '');
-  const [result, setResult] = React.useState(null);
-  const [mapInfo, setMapInfo] = React.useState(null);
-  const [pv, setPv] = React.useState(null);
-  const [replace, setReplace] = React.useState(() => !!eng.inputs[CV_D.id]?.[kind]?.opts?.replace);
-  const opts = s.replace && replace ? { replace: true } : undefined;
-  const fileRef = React.useRef(null);
-  const blankRow = () => Object.fromEntries(s.columns.map((c) => [c.k, '']));
-
-  const check = () => {
-    let res;
-    if (mode === 'csv') {
-      const parsed = parseCSV(csv);
-      const mi = mapColumns(parsed.headers, kind);
-      setMapInfo(mi);
-      if (mi.missing.length) { setResult({ rows: [], issues: [{ row: 0, col: null, level: 'error', msg: `Missing column${mi.missing.length === 1 ? '' : 's'}: ${mi.missing.join(', ')}` }], errors: 1, warnings: 0 }); setPv(null); return; }
-      res = validate(kind, parsed.rows, room, mi.map, opts);
-    } else {
-      setMapInfo(null);
-      res = validate(kind, rows, room, null, opts);
-    }
-    setResult(res);
-    const commitRows = kind === 'waste' ? [...(eng.inputs[CV_D.id]?.waste?.rows || []), ...res.rows] : res.rows;
-    setPv(res.errors || !res.rows.length ? null : preview(SEED, eng.inputs, CV_D.id, kind, commitRows, opts));
-  };
-
-  // Arrived from "Bring data in": check it straight away so the issues and the preview show.
-  React.useEffect(() => { if (seed) { check(); document.getElementById(`kind-${kind}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const commit = () => {
-    const prior = kind === 'waste' ? eng.inputs[CV_D.id]?.waste?.rows || [] : [];
-    const commitRows = [...prior, ...result.rows];
-    const changed = pv.moves.filter((m) => m.changed).map((m) => `${m.label}: ${m.before} → ${m.after}`);
-    engine.commit(kind, CV_D.id, commitRows, `${opts?.replace ? 'Replaced the sample list. ' : ''}${changed.length ? changed.join('; ') : 'No figure moved'}`, opts);
-    cv.toast(`${s.title} committed for ${CV_ROOM.short}: ${result.rows.length} rows. ${changed.length ? `${changed.length} figure${changed.length === 1 ? '' : 's'} moved.` : 'Nothing moved.'}`);
-  };
-
-  const onFile = (e) => {
-    const f = e.target.files && e.target.files[0];
-    if (!f) return;
-    const reader = new FileReader();
-    reader.onload = () => { setCsv(String(reader.result || '')); setResult(null); setPv(null); };
-    reader.readAsText(f);
-  };
-
-  return (
-    <section className="cv-card" id={`kind-${kind}`}>
-      <div className="cv-card-head">
-        <div className="cv-col" style={{ gap: 4 }}>
-          <span className="cv-h4">{s.title} · {CV_ROOM.name}</span>
-          {seed && <span className="cv-xs"><Icon name="FileInput" size={12} /> From {seed.source}{seed.notes ? ` · ${seed.notes}` : ''}</span>}
-          <span className="cv-small cv-muted" style={{ maxWidth: '70ch' }}>{s.blurb}</span>
-        </div>
-        <Button variant="secondary" size="sm" icon="Download" onClick={() => download(`${kind}-${CV_D.id}-template.csv`, templateCSV(kind, room))}>Template</Button>
-      </div>
-      <Tabs value={mode} onChange={(m) => { setMode(m); setResult(null); setPv(null); }} tabs={[{ value: 'grid', label: 'Type it in' }, { value: 'csv', label: 'Paste or upload CSV' }]} />
-      {mode === 'grid' ? (
-        <>
-          <span className="cv-xs cv-faint">{kind === 'waste' ? 'Each row adds to the log.' : 'Pre-filled with what this room has now. Change what\'s different and check it.'}</span>
-          <Grid kind={kind} rows={rows} setRows={(r) => { setRows(r); setResult(null); setPv(null); }} issues={result?.issues || []} />
-          <div className="cv-row">
-            {!s.single && <Button size="sm" variant="ghost" icon="Plus" onClick={() => setRows([...rows, blankRow()])}>Add a row</Button>}
-            {!s.single && <Button size="sm" variant="ghost" icon="Eraser" onClick={() => { setRows([blankRow()]); setResult(null); setPv(null); }}>Start blank</Button>}
-          </div>
-        </>
-      ) : (
-        <div className="cv-col" style={{ gap: 8 }}>
-          <label htmlFor={`csv-${kind}`} className="cv-small" style={{ fontWeight: 600 }}>Paste rows with a header line, or upload a .csv</label>
-          <textarea id={`csv-${kind}`} rows={8} value={csv} onChange={(e) => { setCsv(e.target.value); setResult(null); setPv(null); }} placeholder={templateCSV(kind, room).split('\n').slice(0, 3).join('\n')}
-            style={{ ...inputStyle, height: 'auto', padding: 10, fontFamily: 'var(--font-mono)', fontSize: 12, whiteSpace: 'pre' }} />
-          <div className="cv-row">
-            <input ref={fileRef} type="file" accept=".csv,text/csv,text/plain" onChange={onFile} style={{ display: 'none' }} />
-            <Button size="sm" variant="secondary" icon="Upload" onClick={() => fileRef.current && fileRef.current.click()}>Upload a file</Button>
-            <Button size="sm" variant="ghost" onClick={() => { setCsv(templateCSV(kind, room)); setResult(null); setPv(null); }}>Paste the template</Button>
-            <span className="cv-xs cv-faint">Headers are matched by name: {s.columns.map((c) => c.k).join(', ')} (common alternatives work too).</span>
-          </div>
-          {mapInfo && mapInfo.ignored.length > 0 && <Callout icon="Info">Ignored column{mapInfo.ignored.length === 1 ? '' : 's'}: {mapInfo.ignored.join(', ')}.</Callout>}
-        </div>
-      )}
-      {s.replace && (
-        <label className="cv-row cv-small" style={{ gap: 8, alignItems: 'flex-start', cursor: 'pointer' }}>
-          <input type="checkbox" checked={replace} onChange={(e) => { setReplace(e.target.checked); setResult(null); setPv(null); }} style={{ marginTop: 3 }} />
-          <span className="cv-col" style={{ gap: 2 }}><b>{s.replace.label}</b><span className="cv-xs cv-faint">{replace ? s.replace.note : 'Off: your rows update matching sample rows, and new names are added.'}</span></span>
-        </label>
-      )}
-      <div className="cv-row">
-        <Button icon="ListChecks" onClick={check}>Check {mode === 'grid' ? rows.length : 'the'} rows</Button>
-        {result && !result.errors && pv && <Button icon="Check" onClick={commit}>Commit to {CV_ROOM.short}</Button>}
-        {result && result.errors > 0 && <span className="cv-small cv-down">Fix the errors to commit. Warnings are allowed.</span>}
-      </div>
-      <Issues result={result} />
-      <Preview pv={pv} />
-    </section>
-  );
-}
-
-function Log() {
-  const cv = useCv();
-  const eng = useEngine();
-  const name = (id) => CV_DS.rooms[id]?.profile?.short || id;
-  return (
-    <section className="cv-card">
-      <div className="cv-card-head">
-        <span className="cv-h4">Audit log</span>
-        <Button size="sm" variant="ghost" icon="RotateCcw" disabled={!eng.log.length} onClick={() => { engine.reset(); cv.toast('Back to the sample restaurant group. Every hand-entered row is cleared.'); }}>Reset to sample data</Button>
-      </div>
-      {eng.log.length === 0 ? <span className="cv-small cv-muted">Nothing entered by hand yet. Every commit lands here with what it moved, and each one can be undone.</span> : (
-        <div className="cv-col" style={{ gap: 0 }}>
-          {eng.log.map((e, i) => (
-            <div key={e.id} className="cv-row nowrap" style={{ gap: 12, padding: '10px 0', borderTop: i ? '1px solid var(--border)' : 0, alignItems: 'flex-start', opacity: e.undone ? 0.55 : 1 }}>
-              <span className="cv-q-ico" style={{ width: 30, height: 30 }}><Icon name={META(e.kind).icon} size={15} /></span>
-              <div className="cv-col" style={{ gap: 2, flex: 1 }}>
-                <span className="cv-small" style={{ fontWeight: 600 }}>{META(e.kind).title} · {name(e.room)} · {e.rows} row{e.rows === 1 ? '' : 's'}{e.undone ? ' · undone' : ''}</span>
-                <span className="cv-xs cv-faint">{e.at} · by you · {e.summary}</span>
-              </div>
-              {!e.undone && <Button size="sm" variant="secondary" icon="Undo2" onClick={() => { engine.undo(e.id); cv.toast('Undone. The figures are back to what they were.'); }}>Undo</Button>}
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
-
-/* Using the demo on your own restaurant: the order that gives a sensible room fastest. */
-const OWN_STEPS = [
-  ['profile', 'Name, seats and weekly covers', 'Renames the room everywhere.'],
-  ['recipes', 'Your dishes, prices, plate costs and plates a week', 'Tick "replace the sample menu". Earned, food cost and the menu moves come from here.'],
-  ['exceptions', 'Your team: sales, voids, comps, discounts, hours, rate', 'Tick "replace the sample staff". Labour and every control limit come from here.'],
-  ['channels', 'This week\'s sales by channel', 'Delivery share, refunds and the markup range.'],
-  ['counts', 'A count of a few key items', 'Add what came in, unit cost and expected use, and usage gaps appear.'],
-];
-function OwnStart() {
+function ToastExports() {
   const [open, setOpen] = React.useState(false);
-  const done = (k) => !!CV_D.inputs[k];
+  const t = CV_D.inputs.toast?.rows?.[0];
+  if (open) return <ToastImport />;
   return (
-    <section className="cv-card" aria-labelledby="own-start">
+    <section className="cv-card" aria-label="Toast data exports">
       <div className="cv-card-head">
-        <div className="cv-col" style={{ gap: 4 }}>
-          <span className="cv-h4" id="own-start">Try it on your own restaurant</span>
-          <span className="cv-small cv-muted">Five inputs, about 15 minutes. Whatever you don&apos;t enter stays sample data, scaled to your sales.</span>
+        <div className="cv-row nowrap" style={{ gap: 12 }}>
+          <span className="cv-q-ico"><Icon name="FileArchive" size={18} /></span>
+          <div className="cv-col" style={{ gap: 2 }}>
+            <span className="cv-small" style={{ fontWeight: 600 }}>Toast data exports, file by file</span>
+            <span className="cv-xs cv-faint">No API keys needed: download 13 weeks from Toast Web → Reports → Data exports. A zip dropped above works too.</span>
+          </div>
         </div>
-        <Button size="sm" variant="secondary" icon={open ? 'ChevronUp' : 'ChevronDown'} onClick={() => setOpen(!open)} aria-expanded={open}>{open ? 'Hide steps' : 'Show steps'}</Button>
+        <span className="cv-row" style={{ gap: 8 }}>
+          {t ? <Pill tone="good" icon="CircleCheck">{`Toast data to ${t.end}`}</Pill> : <Pill icon="CircleDashed">Not loaded</Pill>}
+          <Button size="sm" variant="secondary" icon="ChevronDown" onClick={() => setOpen(true)} aria-expanded={false}>Open</Button>
+        </span>
       </div>
-      {open && (
-        <ol className="cv-col" style={{ gap: 8, margin: 0, paddingLeft: 20 }}>
-          {OWN_STEPS.map(([k, what, why]) => (
-            <li key={k} className="cv-small">
-              <a href={`#${k}`}><b>{SCHEMAS[k].title}</b></a>{done(k) ? ' ✓' : ''}: {what}. <span className="cv-faint">{why}</span>
-            </li>
-          ))}
-        </ol>
-      )}
     </section>
   );
 }
 
 function CvInputs() {
   const eng = useEngine();
+  const server = eng.mode === 'server';
+  const sample = !server || !!eng.org?.sample;
   const [kind, setKind] = React.useState('profile');
   const [seed, setSeed] = React.useState(null);
+  const [startMode, setStartMode] = React.useState(null);
+  const [editing, setEditing] = React.useState(false);
+  const { links, setLinks } = useLinks(server);
+  // The board needs who made each room's current entry; the History card keeps its own filtered list.
+  const roomHistory = useHistory({ server, roomId: CV_D.id, kind: null });
+
   React.useEffect(() => {
-    const read = () => { const h = window.location.hash.slice(1); if (KINDS.includes(h)) setKind(h); };
+    const read = () => { const h = window.location.hash.slice(1); if (KINDS.includes(h)) { setKind(h); setEditing(true); } };
     read();
     window.addEventListener('hashchange', read);
     return () => window.removeEventListener('hashchange', read);
   }, []);
-  const pick = (k) => { setKind(k); setSeed(null); try { window.history.replaceState(null, '', `#${k}`); } catch { /* no history */ } };
-  const entered = KINDS.filter((k) => CV_D.inputs[k]).length;
+  const setHash = (k) => { try { window.history.replaceState(null, '', `#${k}`); } catch { /* no history */ } };
+  const scrollTo = (id) => requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  const open = (k, m = null) => { setKind(k); setSeed(null); setStartMode(m); setEditing(true); setHash(k); scrollTo('inputs-editor'); };
+  const focusLink = () => { scrollTo('bring-in'); setTimeout(() => document.getElementById('inputs-link')?.focus(), 350); };
+  const rows = boardRows(links, roomHistory.entries);
+  const linkedKinds = new Set(links.filter((l) => l.roomId === CV_D.id).flatMap((l) => l.picks.map((p) => p.kind)));
+  const items = attention(CV_D, CV_DS.rooms[CV_D.id], { windows: eng.windows, linkedKinds, server });
+  const stake = stakes(CV_D, CV_DS.rooms[CV_D.id]);
+
   return (
     <div className="cv-page wide">
-      <PageHead over={`Data inputs · ${CV_ROOM.name}`} q="Bring in what isn't connected yet"
-        sub="Drop a file, paste from a spreadsheet, link a Google Sheet, snap a photo, or type it in. Every row is checked before it lands, you see exactly which figures move, and every commit can be undone." />
-      <BringIn onReview={(x) => { setSeed(x); setKind(x.kind); try { window.history.replaceState(null, '', `#${x.kind}`); } catch { /* no history */ } }} />
-      <ToastImport />
-      <OwnStart />
-      <div className="cv-row" style={{ gap: 8 }}>
-        <Pill tone={entered ? 'info' : 'neutral'} icon="PencilLine">{entered ? `${entered} of ${KINDS.length} kinds entered by hand at ${CV_ROOM.short}` : `${CV_ROOM.short} is on sample data`}</Pill>
-        <span className="cv-xs cv-faint">{eng.mode === 'server' ? 'Saved to your account.' : 'Saved in this browser only.'} Switch rooms in the top bar to enter another room's data.</span>
+      <PageHead over={`Data inputs · ${CV_ROOM.name}`} q="Your data, at a glance"
+        sub="The more of it is yours, the sharper every number in Coversight."
+        right={<>{sample && <Pill tone="warn" icon="FlaskConical">Sample group</Pill>}<Pill tone={server ? 'good' : 'neutral'} icon={server ? 'Cloud' : 'HardDrive'}>{server ? 'Saved to your account' : 'Saved in this browser only'}</Pill></>} />
+      {sample && <Callout icon="FlaskConical">Sample restaurant group. Anything you enter replaces the sample for that kind and is labelled as yours.</Callout>}
+      <Hero rows={rows} stakes={stake} items={items} />
+      <div className={s.split}>
+        <section className="cv-card" aria-labelledby="inputs-next">
+          <span className="cv-h4" id="inputs-next">Fix next</span>
+          <FixNext items={items} server={server} onOpen={open} onLink={focusLink} />
+        </section>
+        <section className="cv-card" aria-labelledby="inputs-cover">
+          <span className="cv-h4" id="inputs-cover">Where your data comes from</span>
+          <Coverage rows={rows} onPick={(k) => open(k)} />
+        </section>
       </div>
-      <div className="cv-kinds">
-        {KINDS.map((k) => <KindCard key={k} kind={k} on={k === kind} onPick={pick} />)}
-      </div>
-      <Panel key={`${CV_D.id}-${kind}-${seed?.id ?? ''}`} kind={kind} seed={seed?.kind === kind ? seed : null} />
-      <Log />
-      <Callout icon="ShieldCheck">Hand-entered data is labelled wherever it's used: its feed shows "manual entry" on Sources, and a quarantined test that was waiting on it restarts its window from the day it arrived. It never re-prices a verified result.</Callout>
+      <section className="cv-card" aria-labelledby="inputs-stakes">
+        <span className="cv-h4" id="inputs-stakes">What each kind of data unlocks</span>
+        <StakeBars stakes={stake} onPick={(k) => open(k)} />
+      </section>
+      <section className="cv-card" aria-labelledby="inputs-kinds">
+        <div className="cv-card-head">
+          <span className="cv-h4" id="inputs-kinds">All seven kinds</span>
+          <span className="cv-xs cv-faint">Tap one to view, enter or update it</span>
+        </div>
+        <KindTiles rows={rows} kind={editing ? kind : null} onPick={(k) => open(k)} />
+      </section>
+      {editing
+        ? <Editor key={`${CV_D.id}-${kind}-${seed?.id ?? ''}-${startMode ?? ''}`} kind={kind} seed={seed?.kind === kind ? seed : null} startMode={startMode} />
+        : null}
+      <BringIn setLinks={setLinks} onReview={(x) => { setSeed(x); setKind(x.kind); setStartMode('csv'); setEditing(true); setHash(x.kind); scrollTo('inputs-editor'); }} />
+      {server && <LinkedSheets links={links} setLinks={setLinks} />}
+      <History server={server} onChanged={roomHistory.reload} />
+      <ToastExports />
+      <span className="cv-xs cv-faint" style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}><Icon name="ShieldCheck" size={13} />Your data is labelled wherever it&apos;s used, and it never re-prices a verified saving.</span>
     </div>
   );
 }

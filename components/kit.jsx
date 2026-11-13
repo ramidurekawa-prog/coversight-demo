@@ -152,6 +152,14 @@ import {
   Verified,
   Wrench,
   Zap,
+  ArrowDown,
+  ChevronRight,
+  Cloud,
+  FileArchive,
+  HardDrive,
+  History,
+  X,
+  Minus,
 } from 'lucide-react';
 
 const ICONS = {
@@ -302,6 +310,14 @@ const ICONS = {
   Verified,
   Wrench,
   Zap,
+  ArrowDown,
+  ChevronRight,
+  Cloud,
+  FileArchive,
+  HardDrive,
+  History,
+  X,
+  Minus,
 };
 
 /** Every icon name the screens use. A unit test keeps this list complete. */
