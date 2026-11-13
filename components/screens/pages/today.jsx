@@ -5,10 +5,10 @@ import * as React from 'react';
 import { Icon, Button } from '../../kit';
 import { engine, useEngine, useSaved } from '../../engine';
 import {
-  applyOp, cardState, DECLINE, DEFAULT_TZ, FIRST_SCREEN, isActive, localDay, queueSummary, queueView, TEST_DAYS, todayCards, worthOf,
+  applyOp, cardState, DECLINE, DEFAULT_TZ, FIRST_SCREEN, isActive, localDay, queueSummary, queueView, TEST_DAYS, todayCards, unlocksOf, upNextOrder, worthOf,
 } from '../../../lib/data/page/today';
 import { TasksPanel } from '../tasks';
-import { useCv, CV_CLAIM, CV_D, Claim, cvMoney } from '../core';
+import { useCv, CV_CLAIM, CV_D, CV_NOW, Claim, cvMoney } from '../core';
 import { useDense, pct } from '../dense-ui';
 import { reportTodayView } from './today.badge';
 import s from './today.module.css';
@@ -106,39 +106,53 @@ const shortDate = (at, tz) => new Date(at).toLocaleDateString('en-US', { month: 
 const whoLabel = (by) => (by?.you ? 'You' : by?.name || 'A guest');
 const OP_LABEL = { done: 'Marked done', refuse: 'Turned down', snooze: 'Snoozed', undo: 'Put back on the queue', reset: 'Showed today’s cards again' };
 
-const dueLabel = (q) => (q.deadline === 'today' ? 'Due today' : q.deadline ? 'Due this week' : null);
-const actLabel = (q, fix) => (q.blocked && fix ? `First: ${fix.primary}` : q.primary);
+const dueLabel = (q) => (q.deadline === 'today' ? 'Due today' : q.deadline ? `Due ${q.deadline}` : null);
+/** The button's words. An approval says what it does; a blocked card names its first step. */
+const actLabel = (q, fix) => (q.blocked && fix ? `First: ${fix.primary}` : q.approval && q.primary === 'Review' ? 'Review and approve' : q.primary);
+/** Two weights below the one filled button: commit (does the thing) and go (opens a screen or a form). */
+const isGo = (q) => !!q.input || /^Open\b/.test(q.primary) || !!q.blocked;
+/** What this card's dependency line says: what it unblocks, protects or settles. */
+const dependency = (q) => (worthOf(q).figure ? null : q.value);
 
-/** What a card is worth, in words: the money and what it is, with its claim strength. A value that isn't money stays a short note. */
-function Worth({ q, big }) {
+/**
+ * The value slot: one dollar figure, its unit and its claim strength, in a
+ * fixed right-hand column so rows compare at a glance. A card that unlocks
+ * money shows that; a card with no dollars says so.
+ */
+function Slot({ q, cards }) {
   const w = worthOf(q);
-  if (!w.figure) return <span className={s.worthNote}>{w.note}</span>;
+  const un = w.figure ? null : unlocksOf(q, cards);
+  if (!w.figure && !un) return <span className={s.slotNone}>No $ impact yet</span>;
+  const fig = w.figure || un.figure;
   return (
-    <span className={big ? s.worthBig : s.worth}>
-      <span className={s.worthMeans}>{w.means}</span>
-      <span className={big ? s.leadFig : s.rowFig}>{w.about && <span className={s.about}>about </span>}{w.figure}</span>
-      <Claim k={q.claim} />
+    <span className={s.slot} title={w.means || 'What this unlocks, on the card waiting for it'}>
+      <span className={s.slotFig}>
+        {un && <span className={s.slotPre}>Unlocks </span>}
+        {w.about && <span className={s.slotPre}>about </span>}
+        {fig}
+        {(w.unit || un?.unit) && <span className={s.slotUnit}>{(w.unit || un.unit).startsWith('/') ? '' : ' '}{w.unit || un.unit}</span>}
+      </span>
+      <Claim k={un ? un.claim : q.claim} />
     </span>
   );
 }
 
 function Details({ q, history, tz, fix }) {
-  const claim = CV_CLAIM[q.claim] || CV_CLAIM.none;
-  const w = worthOf(q);
-  const what = q.approval ? 'You’ll see exactly what changes, the limits it stays inside and how to undo it. Approving adds the steps to make it; it isn’t done until it’s made.'
+  const what = q.approval ? 'Review shows what changes, the limits, and how to undo. Nothing happens until you confirm.'
     : q.start ? `Starts a ${TEST_DAYS}-day test that runs on its own. Nothing is counted as saved unless the test proves it.`
       : q.task ? `Adds the steps to make this change in ${q.task.system}. Tick it off when it’s made.`
         : q.go ? 'Opens the screen where this is done.'
           : 'Records that it’s done, with your name and the time.';
   const mine = history.filter((h) => h.cardId === q.id);
+  const claim = CV_CLAIM[q.claim];
   return (
     <dl className={s.details}>
-      <dt>Why</dt><dd>{q.body}</dd>
       {q.blocked && <><dt>Waiting on</dt><dd>{fix ? fix.title : q.blocked}</dd></>}
-      <dt>{w.figure ? 'The money' : 'Why it matters'}</dt>
-      <dd>{w.figure ? <>{q.value}: {w.means.toLowerCase()}. {claim.label}: {claim.tip}</> : w.note}</dd>
       <dt>If you act</dt><dd>{what}</dd>
-      <dt>Source</dt><dd>{q.source.kind === 'toast' ? `Your Toast data through ${q.source.through}` : 'Sample restaurant data'}. {q.why}</dd>
+      {worthOf(q).figure && claim && <><dt>{claim.label}</dt><dd>{claim.tip}</dd></>}
+      {q.deadline && <><dt>Due</dt><dd>{q.deadline === 'today' ? 'Today' : q.deadline[0].toUpperCase() + q.deadline.slice(1)}</dd></>}
+      <dt>Why now</dt><dd>{q.why}</dd>
+      <dt>Source</dt><dd>{q.source.kind === 'toast' ? `Your Toast data through ${q.source.through}` : 'Sample restaurant data'}</dd>
       {mine.length > 0 && <><dt>History</dt><dd>{mine.map((h, i) => <div key={i}>{OP_LABEL[h.op]}{h.reason ? ` (${DECLINE[h.reason]?.label.toLowerCase()})` : ''}, {whoLabel(h.by).toLowerCase() === 'you' ? 'you' : whoLabel(h.by)}{h.at ? `, ${clock(h.at, tz)}` : ''}</div>)}</dd></>}
     </dl>
   );
@@ -168,10 +182,11 @@ function Secondary({ q, busy, onSnooze, onDecline, onDone }) {
   );
 }
 
-/** The one thing to do first: its money and what that money is, one button. */
-function Lead({ q, n, busy, fix, history, tz, isNew, actions }) {
+/** The one thing to do first: what the money is, the figure, one filled button. */
+function Lead({ q, n, busy, history, tz, isNew, actions }) {
   const [open, setOpen] = React.useState(false);
   const due = dueLabel(q);
+  const w = worthOf(q);
   return (
     <section id={`card-${q.id}`} className={s.lead} aria-labelledby={`q-${q.id}`} aria-busy={busy || undefined}>
       <div className={s.overline}>
@@ -180,45 +195,54 @@ function Lead({ q, n, busy, fix, history, tz, isNew, actions }) {
         {due && <span className={q.deadline === 'today' ? s.dueToday : s.due}>{due}</span>}
         {isNew && <span className={s.tag}>New since this morning</span>}
       </div>
-      <h3 id={`q-${q.id}`} className={s.leadTitle}>{q.title}</h3>
-      <p className={s.leadWhy}>{q.body}</p>
-      <div className={s.leadFoot}>
-        <div className={s.leadWorth}>
-          <Worth q={q} big />
+      <div className={s.leadGrid}>
+        <div className={s.leadText}>
+          <h3 id={`q-${q.id}`} className={s.leadTitle}>{q.title}</h3>
+          <p className={s.leadWhy}>{q.body}</p>
+          <div className={s.leadBottom}>
+            <button type="button" className={s.textBtn} aria-expanded={open} aria-controls={`d-${q.id}`} onClick={() => setOpen(!open)}>{open ? 'Hide details' : 'Details'}<Icon name={open ? 'ChevronUp' : 'ChevronDown'} size={14} /></button>
+            <Secondary q={q} busy={busy} onSnooze={actions.snooze} onDecline={actions.decline} onDone={actions.done} />
+          </div>
+        </div>
+        <div className={s.leadSide}>
+          {w.figure ? (
+            <span className={s.leadWorth}>
+              <span className={s.worthMeans}>{w.means}</span>
+              <span className={s.leadFigRow}><span className={s.leadFig}>{w.about && <span className={s.about}>about </span>}{w.figure}</span><Claim k={q.claim} /></span>
+            </span>
+          ) : <span className={s.worthNote}>{w.note}</span>}
+          <Button size="lg" className={s.leadBtn} disabled={busy} onClick={actions.primary}>{actLabel(q, null)}</Button>
           <span className={s.leadMeta}>{q.effort.manager} min of your time</span>
         </div>
-        <Button size="lg" className={s.leadBtn} disabled={busy} onClick={actions.primary}>{actLabel(q, fix)}</Button>
       </div>
-      <div className={s.leadBottom}>
-        <button type="button" className={s.detailsBtn} aria-expanded={open} aria-controls={`d-${q.id}`} onClick={() => setOpen(!open)}>{open ? 'Hide details' : 'Details'}<Icon name={open ? 'ChevronUp' : 'ChevronDown'} size={14} /></button>
-        <Secondary q={q} busy={busy} onSnooze={actions.snooze} onDecline={actions.decline} onDone={actions.done} />
-      </div>
-      {open && <div id={`d-${q.id}`}><Details q={q} history={history} tz={tz} fix={fix} /></div>}
+      {open && <div id={`d-${q.id}`}><Details q={q} history={history} tz={tz} fix={null} /></div>}
     </section>
   );
 }
 
-/** One action row: what, why, how long; what it's worth; one button. Details open in place. */
-function Row({ q, busy, fix, history, tz, isNew, open, onToggle, actions }) {
-  const meta = q.blocked ? [`Needs: ${fix ? fix.title : 'new data'}`] : [`${q.effort.manager} min`, dueLabel(q)].filter(Boolean);
+/** One action row: title, its dependency or why, time; the value slot; one button and More. */
+function Row({ q, cards, busy, fix, history, tz, isNew, open, onToggle, actions }) {
+  const dep = q.blocked ? `Needs: ${fix ? fix.title : 'new data'}` : dependency(q);
+  const meta = [`${q.effort.manager} min`, dueLabel(q)].filter(Boolean).join(' · ');
   return (
     <li id={`card-${q.id}`} className={`${s.item} ${q.blocked ? s.itemBlocked : ''} ${open ? s.itemOpen : ''}`} aria-busy={busy || undefined}>
       <div className={s.rowMain}>
         <div className={s.rowText}>
-          <span className={s.rowTitle}>{q.blocked && <Icon name="Lock" size={13} className={s.lock} aria-label="Waiting on data" />}{q.title}{isNew && <span className={s.newTag}>New</span>}</span>
-          <span className={s.rowWhy}>{q.body}</span>
-          <span className={s.rowSub}>{meta.join(' · ')}</span>
+          <span className={s.rowTitle}>{q.blocked && <Icon name="Lock" size={13} className={s.lock} />}{q.title}{isNew && <span className={s.newTag}>New</span>}</span>
+          {dep ? <span className={s.rowDep}>{dep}</span> : <span className={s.rowWhy}>{q.body}</span>}
+          <span className={s.rowSub}>{q.blocked && <span className={s.srOnly}>Waiting on data. </span>}{meta}</span>
         </div>
-        <div className={s.rowWorth}><Worth q={q} /></div>
+        <div className={s.rowWorth}><Slot q={q} cards={cards} /></div>
         <div className={s.rowActs}>
-          <Button size="sm" variant="secondary" className={s.rowBtn} disabled={busy} onClick={actions.primary}>{actLabel(q, fix)}</Button>
-          <button type="button" className={s.rowMore} aria-expanded={open} aria-controls={`d-${q.id}`} onClick={onToggle}>
+          <Button size="sm" variant="secondary" className={`${s.rowBtn} ${isGo(q) ? '' : s.commit}`} disabled={busy} onClick={actions.primary}>{actLabel(q, fix)}</Button>
+          <button type="button" className={s.textBtn} aria-expanded={open} aria-controls={`d-${q.id}`} onClick={onToggle}>
             {open ? 'Less' : 'More'}<Icon name={open ? 'ChevronUp' : 'ChevronDown'} size={13} />
           </button>
         </div>
       </div>
       {open && (
         <div id={`d-${q.id}`} className={s.rowOpen}>
+          {dep && <p className={s.rowBody}>{q.body}</p>}
           <Details q={q} history={history} tz={tz} fix={fix} />
           <Secondary q={q} busy={busy} onSnooze={actions.snooze} onDecline={actions.decline} onDone={actions.done} />
         </div>
@@ -230,33 +254,41 @@ function Row({ q, busy, fix, history, tz, isNew, open, onToggle, actions }) {
 /** Today's list as one line: a segment per card, as wide as its minutes, with the counts that add up to the whole. */
 function Progress({ cards, view, sum, onPick }) {
   const [tip, setTip] = React.useState(null);
+  const track = React.useRef(null);
   const cls = (c) => {
     const st = cardState(c, view);
     if (st === 'blocked') return s.pWait;
     if (st === 'ready' || st === 'needs_review') return s.pLeft;
     return s.pDone;
   };
-  const label = (c) => { const st = cardState(c, view); return st === 'ready' || st === 'needs_review' ? 'to decide' : (STATE[st]?.label || st).toLowerCase(); };
+  const label = (c) => { const st = cardState(c, view); return st === 'ready' || st === 'needs_review' ? 'To decide' : STATE[st]?.label || st; };
+  const show = (c, e) => {
+    const box = track.current?.getBoundingClientRect();
+    const r = e.currentTarget.getBoundingClientRect();
+    setTip({ c, x: box ? r.left - box.left + r.width / 2 : 0, w: box?.width ?? 0 });
+  };
   return (
     <div className={s.progress}>
-      <div className={s.pTrack} onMouseLeave={() => setTip(null)}>
+      <div className={s.pTrack} ref={track} onMouseLeave={() => setTip(null)}>
         {cards.map((c) => (
           <button key={c.id} type="button" className={`${s.pSeg} ${cls(c)}`} style={{ flexGrow: Math.max(2, c.effort.manager) }}
-            aria-label={`${c.title}: ${label(c)}, ${c.effort.manager} min`}
-            onMouseEnter={() => setTip(c)} onFocus={() => setTip(c)} onBlur={() => setTip(null)} onClick={() => onPick(c)} />
+            aria-label={`${c.title}: ${label(c).toLowerCase()}, ${c.effort.manager} min`}
+            onMouseEnter={(e) => show(c, e)} onFocus={(e) => show(c, e)} onBlur={() => setTip(null)} onClick={() => onPick(c)} />
         ))}
-      </div>
-      <div className={s.pFoot} aria-live="polite">
-        {tip ? <span>{tip.title} · {label(tip)} · {tip.effort.manager} min</span> : (
-          <>
-            <span><b>{sum.total}</b> on today’s list</span>
-            <span className={s.legend}>
-              <span><i className={s.pLeft} /><b>{sum.ready}</b> to decide</span>
-              {sum.blocked > 0 && <span><i className={s.pWait} /><b>{sum.blocked}</b> waiting on data</span>}
-              <span><i className={s.pDone} /><b>{sum.handled}</b> handled</span>
-            </span>
-          </>
+        {tip && (
+          <span className={s.pTip} role="tooltip" style={{ left: Math.min(Math.max(tip.x, 110), Math.max(110, tip.w - 110)) }}>
+            <b>{tip.c.title}</b>
+            <span>{label(tip.c)} · {tip.c.effort.manager} min</span>
+          </span>
         )}
+      </div>
+      <div className={s.pFoot}>
+        <span><b>{sum.total}</b> on today’s list</span>
+        <span className={s.legend}>
+          <span><i className={s.pLeft} /><b>{sum.ready}</b> to decide</span>
+          {sum.blocked > 0 && <span><i className={s.pWait} /><b>{sum.blocked}</b> waiting on data</span>}
+          {sum.handled > 0 && <span><i className={s.pDone} /><b>{sum.handled}</b> handled</span>}
+        </span>
       </div>
     </div>
   );
@@ -308,24 +340,84 @@ function Decided({ cards, view, history, tz, busy, onUndo, onReset, own }) {
 }
 
 
-const niceMax = (v) => {
-  const raw = v * 1.08;
-  const step = 10 ** Math.floor(Math.log10(raw)) / 2;
-  return Math.ceil(raw / step) * step;
-};
-const shortMoney = (v) => (v >= 1000 ? `$${(v / 1000).toFixed(v % 1000 ? 1 : 0)}k` : `$${Math.round(v)}`);
+
+const shortMoney = (v) => (Math.abs(v) >= 1000 ? `$${(v / 1000).toFixed(1).replace(/\.0$/, '')}k` : `$${Math.round(v)}`);
 const dayLabel = (iso) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+const isoMinus = (iso, n) => new Date(Date.parse(`${iso}T12:00:00Z`) - n * 864e5).toISOString().slice(0, 10);
+
+/** Width of an element, kept up to date. */
+function useWidth() {
+  const ref = React.useRef(null);
+  const [w, setW] = React.useState(0);
+  React.useLayoutEffect(() => {
+    if (!ref.current) return undefined;
+    const ro = new ResizeObserver(([e]) => setW(Math.round(e.contentRect.width)));
+    ro.observe(ref.current);
+    return () => ro.disconnect();
+  }, []);
+  return [ref, w];
+}
 
 /**
- * Yesterday's sales against the same weekday in the weeks before: the two
- * numbers, and the last eight of that weekday on a labelled chart with the
- * range and average of the seven before it. Colour only marks a day outside
- * that range. Sample rooms only (real rooms have no daily detail here).
+ * Net sales on the last eight of one weekday, as a run chart: a line with
+ * points on an axis that fits the data, the range of the seven before as a
+ * band (solid edges) and their average as a dashed line, the latest point
+ * marked and labelled.
  */
-function Yesterday() {
+function RunChart({ days, stat, dow }) {
+  const [ref, W] = useWidth();
+  const [hover, setHover] = React.useState(null);
+  const H = 168, P = { l: 48, r: 16, t: 14, b: 26 };
+  const vals = days.map((d) => d.net);
+  const lo = Math.min(...vals, stat.lo), hi = Math.max(...vals, stat.hi);
+  const pad = (hi - lo) * 0.25 || hi * 0.05;
+  const step = 10 ** Math.floor(Math.log10(hi - lo + 2 * pad)) / 2;
+  const y0 = Math.floor((lo - pad) / step) * step, y1 = Math.ceil((hi + pad) / step) * step;
+  const iw = Math.max(1, W - P.l - P.r);
+  const x = (i) => P.l + (days.length === 1 ? iw / 2 : (i / (days.length - 1)) * iw);
+  const y = (v) => P.t + (1 - (v - y0) / (y1 - y0)) * (H - P.t - P.b);
+  const ticks = [y0, (y0 + y1) / 2, y1];
+  const last = days.length - 1;
+  const where = vals[last] > stat.hi ? 'above the range of the 7 before' : vals[last] < stat.lo ? 'below the range of the 7 before' : 'inside the range of the 7 before';
+  const label = `Net sales, last ${days.length} ${dow}s, latest ${cvMoney(Math.round(vals[last]))}, ${where}`;
+  const shown = hover ?? last;
+  return (
+    <div ref={ref} className={s.run}>
+      {W > 0 && (
+        <svg width={W} height={H} role="img" aria-label={label} onMouseLeave={() => setHover(null)}>
+          <rect x={P.l} width={iw} y={y(stat.hi)} height={Math.max(1, y(stat.lo) - y(stat.hi))} className={s.runBand} />
+          <line x1={P.l} x2={P.l + iw} y1={y(stat.hi)} y2={y(stat.hi)} className={s.runEdge} />
+          <line x1={P.l} x2={P.l + iw} y1={y(stat.lo)} y2={y(stat.lo)} className={s.runEdge} />
+          <line x1={P.l} x2={P.l + iw} y1={y(stat.avg)} y2={y(stat.avg)} className={s.runAvg} />
+          {ticks.map((t) => <text key={t} x={P.l - 8} y={y(t) + 4} textAnchor="end" className={s.runAxis}>{shortMoney(t)}</text>)}
+          <line x1={P.l} x2={P.l + iw} y1={H - P.b} y2={H - P.b} className={s.runBase} />
+          <polyline points={vals.map((v, i) => `${x(i)},${y(v)}`).join(' ')} className={s.runLine} />
+          {days.map((d, i) => (
+            <g key={d.iso}>
+              <circle cx={x(i)} cy={y(d.net)} r={i === last ? 5.5 : i === hover ? 4.5 : 3.5} className={i === last ? s.runNow : s.runPt} />
+              {(W >= 560 || i === last || (i % 2 === 0 && i < last - 1)) && <text x={x(i)} y={H - 8} textAnchor={i === 0 ? 'start' : i === last ? 'end' : 'middle'} className={i === last ? s.runXNow : s.runAxis}>{dayLabel(d.iso)}</text>}
+              <rect x={x(i) - iw / (2 * Math.max(1, last))} width={iw / Math.max(1, last)} y={P.t} height={H - P.t - P.b} fill="transparent"
+                onMouseEnter={() => setHover(i)} />
+            </g>
+          ))}
+          <text x={Math.min(x(shown), P.l + iw)} y={y(vals[shown]) - 11} textAnchor={shown === last ? 'end' : shown === 0 ? 'start' : 'middle'} className={s.runVal}>{cvMoney(Math.round(vals[shown]))}</text>
+          <text x={P.l + 4} y={y(stat.avg) - 6} className={s.runAvgLbl}>avg {shortMoney(stat.avg)}</text>
+        </svg>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The last day of sales against the same weekday in the weeks before: the
+ * two numbers, and the run chart. Titled "Yesterday" only when the data's
+ * last day is the day before the header's date; otherwise "Last service",
+ * with how far the data runs. Colour only marks a figure outside the range of
+ * the 7 before. Sample rooms only (real rooms have no daily detail here).
+ */
+function Yesterday({ todayIso }) {
   const cv = useCv();
   const dense = useDense();
-  const [hover, setHover] = React.useState(null);
   if (!dense) return null;
   const day = dense.days.at(-1);
   const same = dense.days.filter((d) => d.dow === day.dow).slice(-8);
@@ -338,18 +430,16 @@ function Yesterday() {
   };
   const net = stat('net'), cov = stat('covers');
   const tone = (v, st) => (v > st.hi ? s.up : v < st.lo ? s.down : s.flat);
-  const top = niceMax(Math.max(...same.map((d) => d.net)));
-  const y = (v) => `${(v / top) * 100}%`;
+  const isYesterday = day.iso === isoMinus(todayIso, 1);
   const verdict = day.net > net.hi ? `Higher than any of the ${prior.length} ${day.dow}s before`
     : day.net < net.lo ? `Lower than any of the ${prior.length} ${day.dow}s before`
-      : `Normal for a ${day.dow}: inside the range of the ${prior.length} before`;
+      : `Normal for a ${day.dow}`;
   const vsAvg = (day.net - net.avg) / net.avg;
-  const shown = hover == null ? null : same[hover];
   return (
     <section className={s.pulse} aria-labelledby="y-head">
       <div className={s.sectionHead}>
-        <h3 id="y-head" className={s.sectionTitle}>Yesterday</h3>
-        <span className={s.sectionSub}>{day.dow}, {dayLabel(day.iso)}</span>
+        <h3 id="y-head" className={s.sectionTitle}>{isYesterday ? 'Yesterday' : 'Last service'}</h3>
+        <span className={s.sectionSub}>{day.dow}, {dayLabel(day.iso)}{isYesterday ? '' : ' · the latest day in your sales data'}</span>
         <span className={s.headEnd}><Claim k="obs" /></span>
       </div>
       <div className={s.pulseBody}>
@@ -366,45 +456,15 @@ function Yesterday() {
               <dd className={tone(day.covers, cov)}>{pct(day.covers, prev.covers)} vs {dayLabel(prev.iso)}</dd>
             </div>
           </dl>
-          <p className={s.verdict}><b>{verdict}.</b> {Math.abs(vsAvg) < 0.005 ? 'Right on' : `${(Math.abs(vsAvg) * 100).toFixed(1)}% ${vsAvg > 0 ? 'above' : 'below'}`} their average of {cvMoney(Math.round(net.avg))}.</p>
+          <p className={s.verdict}><b>{verdict}.</b> The {prior.length} before ran {shortMoney(net.lo)} to {shortMoney(net.hi)}; this was {Math.abs(vsAvg) < 0.005 ? 'right on' : `${(Math.abs(vsAvg) * 100).toFixed(1)}% ${vsAvg > 0 ? 'above' : 'below'}`} their average.</p>
         </div>
         <figure className={s.chart}>
-          <figcaption className={s.chartHead}>
-            <span>Net sales, last {same.length} {day.dow}s</span>
-            <span className={s.chartTip} aria-live="polite">{shown ? `${dayLabel(shown.iso)}: ${cvMoney(Math.round(shown.net))}` : ''}</span>
-          </figcaption>
-          <div className={s.plotWrap}>
-            <div className={s.axis} aria-hidden="true">
-              <span style={{ bottom: '100%' }}>{shortMoney(top)}</span>
-              <span style={{ bottom: '50%' }}>{shortMoney(top / 2)}</span>
-              <span style={{ bottom: 0 }}>$0</span>
-            </div>
-            <div className={s.plot} onMouseLeave={() => setHover(null)}>
-              <span className={s.grid} style={{ bottom: '100%' }} />
-              <span className={s.grid} style={{ bottom: '50%' }} />
-              <span className={s.band} style={{ bottom: y(net.lo), height: `calc(${y(net.hi)} - ${y(net.lo)})` }} title={`Range of the ${prior.length} ${day.dow}s before: ${cvMoney(Math.round(net.lo))} to ${cvMoney(Math.round(net.hi))}`} />
-              <span className={s.avg} style={{ bottom: y(net.avg) }}><em>avg {shortMoney(net.avg)}</em></span>
-              {same.map((d, i) => {
-                const last = i === same.length - 1;
-                return (
-                  <button key={d.iso} type="button" className={`${s.col} ${hover === i ? s.colOn : ''}`}
-                    aria-label={`${dayLabel(d.iso)}: ${cvMoney(Math.round(d.net))} net sales`}
-                    onMouseEnter={() => setHover(i)} onFocus={() => setHover(i)} onBlur={() => setHover(null)}>
-                    <span className={`${s.bar} ${last ? s.barNow : ''}`} style={{ height: y(d.net) }}>
-                      {last && <span className={s.barVal}>{shortMoney(d.net)}</span>}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-            <span />
-            <div className={s.xLabels} aria-hidden="true">
-              {same.map((d, i) => <span key={d.iso} className={i === same.length - 1 ? s.xNow : undefined}>{i === same.length - 1 ? 'Yest.' : dayLabel(d.iso)}</span>)}
-            </div>
-          </div>
+          <figcaption className={s.chartHead}>Net sales, last {same.length} {day.dow}s</figcaption>
+          <RunChart days={same} stat={net} dow={day.dow} />
           <div className={s.chartKey} aria-hidden="true">
             <span><i className={s.keyBand} />Range of the {prior.length} before</span>
             <span><i className={s.keyAvg} />Their average</span>
+            <span><i className={s.keyNow} />{isYesterday ? 'Yesterday' : 'Last service'}</span>
           </div>
         </figure>
       </div>
@@ -471,7 +531,8 @@ function CvToday() {
   });
 
   const checksOk = !CV_D.staleCount && !waiting.length;
-  const [lead, ...next] = ready;
+  const [lead, ...rest] = ready;
+  const next = upNextOrder(rest, cards);
   const LIMIT = FIRST_SCREEN + 1;
   const shownNext = showAll ? next : next.slice(0, LIMIT);
   const pick = (c) => {
@@ -480,11 +541,11 @@ function CvToday() {
     if (c !== lead) setOpenId(c.id);
     setTimeout(() => document.getElementById(`card-${c.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
   };
-  const rowProps = (q) => ({ q, busy: busy === q.id, fix: q.blockedBy ? byId(q.blockedBy) : null, history, tz, isNew: added.has(q.id),
+  const rowProps = (q) => ({ q, cards, busy: busy === q.id, fix: q.blockedBy ? byId(q.blockedBy) : null, history, tz, isNew: added.has(q.id),
     open: openId === q.id, onToggle: () => setOpenId(openId === q.id ? null : q.id), actions: actionsFor(q) });
 
   return (
-    <div className={`cv-page ${s.page}`}>
+    <div className={`cv-page ${s.page}`} data-page="today">
       <header className={s.head}>
         {sum.ready ? (
           <h2 className={s.answer}>
@@ -498,13 +559,13 @@ function CvToday() {
         {cards.length > 0 && <Progress cards={cards} view={view} sum={sum} onPick={pick} />}
       </header>
 
-      {lead && <Lead q={lead} n={ready.length} busy={busy === lead.id} fix={null} history={history} tz={tz} isNew={added.has(lead.id)} actions={actionsFor(lead)} />}
+      {lead && <Lead q={lead} n={ready.length} busy={busy === lead.id} history={history} tz={tz} isNew={added.has(lead.id)} actions={actionsFor(lead)} />}
 
       {next.length > 0 && (
         <section aria-labelledby="next-head">
           <div className={s.sectionHead}>
             <h3 id="next-head" className={s.sectionTitle}>Up next</h3>
-            <span className={s.sectionSub}>{next.length} more to decide, in order</span>
+            <span className={s.sectionSub}>{next.length} more to decide, most money first</span>
           </div>
           <ul className={s.list}>{shownNext.map((q) => <Row key={q.id} {...rowProps(q)} />)}</ul>
           {next.length > LIMIT && (
@@ -526,7 +587,7 @@ function CvToday() {
       )}
 
       <TasksPanel />
-      <Yesterday />
+      <Yesterday todayIso={own ? today : CV_NOW.iso} />
       <Decided cards={cards} view={view} history={history} tz={tz} busy={busy} own={own} onUndo={undo} onReset={reset} />
     </div>
   );

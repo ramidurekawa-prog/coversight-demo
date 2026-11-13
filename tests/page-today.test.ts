@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { applyInputs } from '../lib/data/apply.js';
 import { deriveRoom } from '../lib/data/model.js';
 import {
-  applyOp, cardState, DECLINE, hoursToMinutes, localDay, nextDay, queueChanges, queueHistory, queueSummary, queueView, RANK_POLICY, todayCards, worthOf,
+  applyOp, cardState, DECLINE, hoursToMinutes, localDay, nextDay, queueChanges, queueHistory, queueSummary, queueView, RANK_POLICY, todayCards, unlocksOf, upNextOrder, worthOf,
 } from '../lib/data/page/today.js';
 import { SEED } from '../lib/data/seed.js';
 import { readToastExports } from '../lib/data/toast.js';
@@ -290,3 +290,17 @@ function isActiveCard(c: C, stored: unknown, ctx: { cards: C[]; today: string; o
   const st = cardState(c, queueView(stored as never, ctx));
   return st === 'ready' || st === 'needs_review';
 }
+
+describe('up next, by the money at stake', () => {
+  const cards = todayCards(deriveRoom(SEED, 'oakland'), { today });
+  it('the recipe upload shows the salmon price it unlocks', () => {
+    const recipes = cards.find((c) => c.id === 'recipes')!;
+    expect(unlocksOf(recipes, cards)).toMatchObject({ figure: '$146', unit: '/wk', claim: 'mod' });
+  });
+  it('orders by money times urgency, then the least time', () => {
+    const [, ...rest] = cards.filter((c) => !c.blocked);
+    const ids = upNextOrder(rest, cards).map((c) => c.id);
+    expect(ids.slice(0, 2)).toEqual(['recipes', 'ot']);
+    expect(ids.indexOf('7shifts')).toBeLessThan(ids.indexOf('count')); // no dollars: 1 min before 15 min
+  });
+});

@@ -32,3 +32,14 @@
   .cv-top .sub { display: none; }
 }
 .cv-health { white-space: nowrap; }
+/* Today lines its content up with the top bar: both stop at the same width. */
+.content:has([data-page="today"]) .topbar { max-width: 1240px; }
+/* Visible tooltips for icon-only buttons in the top bar. */
+.cv-quiet[data-tip] { position: relative; }
+.cv-quiet[data-tip]:hover::after, .cv-quiet[data-tip]:focus-visible::after {
+  content: attr(data-tip); position: absolute; top: calc(100% + 8px); right: 0; z-index: var(--z-modal, 50);
+  width: max-content; max-width: 240px; padding: 6px 9px; border-radius: var(--radius-md);
+  background: var(--fg-1); color: var(--surface); font: 500 12px/1.35 var(--font-sans); white-space: normal; text-align: left; pointer-events: none;
+}
+/* Sidebar: a fade where the list scrolls, so a cut-off item reads as "more below". */
+.sidebar .sb-scroll { mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent); -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent); scrollbar-width: thin; scrollbar-color: var(--side-line) transparent; }

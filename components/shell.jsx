@@ -190,7 +190,7 @@ function TopBar({ page, loc, onLoc, role, onRole, go, onMenu, onAsk, tools }) {
         )}
       </div>
       <div className="cv-pop-wrap cv-hide-sm">
-        <button className="iconbtn cv-quiet" onClick={() => setPop(pop === 'legend' ? null : 'legend')} aria-expanded={pop === 'legend'} aria-label="What the money labels mean" title="What the money labels mean">
+        <button className="iconbtn cv-quiet" data-tip="What Observed, Estimated and Modeled mean" onClick={() => setPop(pop === 'legend' ? null : 'legend')} aria-expanded={pop === 'legend'} aria-label="What the money labels mean">
           <Icon name="CircleHelp" size={17} />
         </button>
         {pop === 'legend' && <LegendPop onClose={() => setPop(null)} />}
@@ -290,8 +290,8 @@ function ThemeButton() {
   const nextT = THEMES[(i + 1) % THEMES.length];
   const label = `Appearance: ${THEMES[i][2]}. Switch to ${nextT[2].toLowerCase()}`;
   return (
-    <button type="button" className="iconbtn cv-quiet cv-hide-sm" aria-label={label} title={label} onClick={() => { setT(nextT[0]); applyTheme(nextT[0]); }}>
-      <Icon name={t === 'dark' ? 'Moon' : t === 'light' ? 'Sun' : 'SunMoon'} size={17} />
+    <button type="button" className="iconbtn cv-quiet cv-hide-sm" aria-label={label} data-tip={`Theme: ${THEMES[i][2].toLowerCase()}`} onClick={() => { setT(nextT[0]); applyTheme(nextT[0]); }}>
+      <Icon name={THEMES[i][1]} size={17} />
     </button>
   );
 }

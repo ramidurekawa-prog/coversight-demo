@@ -106,9 +106,9 @@ function buildDeriv(d) {
     },
     "earned-week": {
       title: "Earned this week", value: cvMoney(Math.round(w.earned)), claim: "obs",
-      formula: `contribution = net sales − food cost − hourly labour\n= ${cvMoney(Math.round(w.net))} − ${cvMoney(Math.round(w.food))} − ${cvMoney(Math.round(w.labour))}\n= ${cvMoney(Math.round(w.earned))}`,
-      inputs: [["Menu sales (Σ price × plates)", cvMoney(Math.round(w.gross))], ["Comps and discounts", cvMoney(-Math.round(w.gross - w.net))], ["Net sales", cvMoney(Math.round(w.net))], [`Food cost (Σ plate cost × plates, ${d.menu.menu.length} dishes)`, cvMoney(Math.round(w.food))], [`Hourly labour (Σ hours × rate, ${d.room.staff.length} people)`, cvMoney(Math.round(w.labour))], ["Covers", w.covers.toLocaleString("en-US")]],
-      sources: [["Toast · net sales", "2 min ago"], ["Recipe costs", d.feeds.find((f) => f.name === "Recipe costs").last], ["7shifts · labour", d.feeds.find((f) => f.name === "7shifts").last]],
+      formula: `contribution = net sales − food cost − hourly labor\n= ${cvMoney(Math.round(w.net))} − ${cvMoney(Math.round(w.food))} − ${cvMoney(Math.round(w.labour))}\n= ${cvMoney(Math.round(w.earned))}`,
+      inputs: [["Menu sales (Σ price × plates)", cvMoney(Math.round(w.gross))], ["Comps and discounts", cvMoney(-Math.round(w.gross - w.net))], ["Net sales", cvMoney(Math.round(w.net))], [`Food cost (Σ plate cost × plates, ${d.menu.menu.length} dishes)`, cvMoney(Math.round(w.food))], [`Hourly labor (Σ hours × rate, ${d.room.staff.length} people)`, cvMoney(Math.round(w.labour))], ["Covers", w.covers.toLocaleString("en-US")]],
+      sources: [["Toast · net sales", "2 min ago"], ["Recipe costs", d.feeds.find((f) => f.name === "Recipe costs").last], ["7shifts · labor", d.feeds.find((f) => f.name === "7shifts").last]],
       eq: "A-01 contribution margin", note: "This is your restaurant's number, not ours. It exists whether or not Coversight does, and it keeps every other figure honest.",
     },
     "margin-move": {
@@ -179,7 +179,7 @@ function cvDerivFor(id) { return CV_DERIV[id] || null; }
 /* ---------------------------------------------------------------- primitives */
 const CV_CLAIM = {
   est: { label: "Estimated", icon: "CircleDashed", tip: "A detector's view of money being lost. Never invoiced." },
-  mod: { label: "Modelled", icon: "Sigma", tip: "Computed from your own history, before anything changed." },
+  mod: { label: "Modeled", icon: "Sigma", tip: "Computed from your own history, before anything changed." },
   cau: { label: "Causal", icon: "GitCompareArrows", tip: "Measured against matched controls after the change." },
   book: { label: "Bookable", icon: "BadgeCheck", tip: "The lower bound of a measured interval. The only figure a fee can touch." },
   obs: { label: "Observed", icon: "Eye", tip: "Read directly from your systems. No model involved." },
@@ -318,8 +318,8 @@ function buildApprovals(d) {
     "wc-draft": {
       title: "Start Sunday brunch staff 30 minutes earlier", where: `${room.name} · Sunday Nov 8`, level: "A3 · Executes within a fence", system: "7shifts",
       diff: [["Line cook (Iris N.)", "10:00 am", "9:30 am"], ["Server (brunch open)", "10:00 am", "9:30 am"], ["Net hours", "301 h", "302 h"]],
-      fence: "Brunch labour under 22% of brunch sales. Never more than one hour net added without the owner.",
-      kill: ["Brunch labour past 22% of sales", "First-wave ticket time not improving after 3 Sundays"],
+      fence: "Brunch labor under 22% of brunch sales. Never more than one hour net added without the owner.",
+      kill: ["Brunch labor past 22% of sales", "First-wave ticket time not improving after 3 Sundays"],
       window: "Opens a 6-week window against Sundays before the change.", revert: "One tap restores the old start times.",
       value: `about ${cvMoney(64)}/wk expected`, claim: "mod",
     },
