@@ -41,14 +41,14 @@ function pathOf(vals, x, y, start) {
  * sampleTo: weeks before this index are the sample's (own-data rooms) · marks: { [i]: 'bad' | 'good' }
  * noted: Set of indexes with a note · selected, onSelect(i) · fmt(v) for the axis and tooltip
  */
-export function TrendChart({ labels, series, lim, start = 0, baseTo, sampleTo = 0, marks = {}, noted, selected, onSelect, fmt, height = 260, ariaLabel, tip }) {
+export function TrendChart({ labels, series, lim, start = 0, end, baseTo, sampleTo = 0, marks = {}, noted, events = [], selected, onSelect, fmt, height = 260, ariaLabel, tip, yLabel }) {
   const [ref, W] = useWidth();
   const [hover, setHover] = React.useState(null);
-  const n = labels.length;
+  const n = end != null ? end + 1 : labels.length;
   const narrow = W < 520;
   const P = { l: narrow ? 46 : 60, r: 14, t: 16, b: 30 };
   const H = height;
-  const vis = series.map((sr) => sr.vals.slice(start));
+  const vis = series.map((sr) => sr.vals.slice(start, n));
   const all = vis.flat().filter((v) => v != null);
   const extra = lim ? [lim.ucl, lim.lcl] : [];
   let lo = Math.min(...all, ...extra), hi = Math.max(...all, ...extra);
@@ -94,18 +94,25 @@ export function TrendChart({ labels, series, lim, start = 0, baseTo, sampleTo = 
         {at != null && <line x1={x(at)} x2={x(at)} y1={P.t} y2={H - P.b} className={s.cross} />}
         {series.map((sr) => (
           <g key={sr.key}>
-            <path d={pathOf(sr.vals.slice(start), x, y, start)} fill="none" stroke={sr.color} strokeWidth={sr.thin ? 1.5 : 2.25} strokeDasharray={sr.dash} strokeLinejoin="round" strokeLinecap="round" />
+            <path d={pathOf(sr.vals.slice(start, n), x, y, start)} fill="none" stroke={sr.color} strokeWidth={sr.bold ? 3 : sr.thin ? 1.5 : 2.25} strokeDasharray={sr.dash} strokeLinejoin="round" strokeLinecap="round" />
             {!sr.dash && Object.entries(marks).map(([i, kind]) => {
               const v = sr.vals[+i];
-              if (+i < start || v == null) return null;
+              if (+i < start || +i >= n || v == null) return null;
               return <circle key={i} cx={x(+i)} cy={y(v)} r="4.5" className={kind === 'good' ? s.markGood : s.markBad} />;
             })}
-            {!sr.dash && noted && [...noted].map((i) => (i >= start && sr.vals[i] != null ? <circle key={`n${i}`} cx={x(i)} cy={y(sr.vals[i])} r="7.5" className={s.markNoted} /> : null))}
+            {!sr.dash && noted && [...noted].map((i) => (i >= start && i < n && sr.vals[i] != null ? <circle key={`n${i}`} cx={x(i)} cy={y(sr.vals[i])} r="7.5" className={s.markNoted} /> : null))}
             {at != null && sr.vals[at] != null && <circle cx={x(at)} cy={y(sr.vals[at])} r="4" fill={sr.color} stroke="var(--surface)" strokeWidth="2" />}
-            {at == null && sr.vals[n - 1] != null && !sr.dash && <circle cx={x(n - 1)} cy={y(sr.vals[n - 1])} r="4" fill={sr.color} stroke="var(--surface)" strokeWidth="2" />}
+            {at == null && sr.vals[n - 1] != null && (!sr.dash || sr.bold) && <circle cx={x(n - 1)} cy={y(sr.vals[n - 1])} r="4" fill={sr.color} stroke="var(--surface)" strokeWidth="2" />}
           </g>
         ))}
-        {labels.map((l, i) => (i >= start && ((i - start) % every === 0 || i === n - 1) && (i === n - 1 || n - 1 - i >= every * 0.6) ? <text key={i} x={x(i)} y={H - 9} textAnchor="middle">{l}</text> : null))}
+        {events.filter((e) => e.i >= start && e.i < n).map((e) => (
+          <g key={`${e.kind}${e.i}`} className={e.kind === 'proof' ? s.evProof : s.evHoliday}>
+            <title>{e.label}</title>
+            {e.kind === 'proof' ? <path d={`M${x(e.i) - 5},${P.t - 2} L${x(e.i) + 5},${P.t - 2} L${x(e.i)},${P.t + 6} Z`} /> : <rect x={x(e.i) - 2.5} y={H - P.b + 2} width="5" height="5" rx="1" />}
+          </g>
+        ))}
+        {yLabel && !narrow && <text className="lbl" x={4} y={P.t - 4}>{yLabel}</text>}
+        {labels.map((l, i) => (i >= start && i < n && ((i - start) % every === 0 || i === n - 1) && (i === n - 1 || n - 1 - i >= every * 0.6) ? <text key={i} x={x(i)} y={H - 9} textAnchor="middle">{l}</text> : null))}
       </svg>
       {at != null && (
         <div className={s.tip} style={tipRight ? { right: W - x(at) + 12 } : { left: x(at) + 12 }} aria-hidden="true">

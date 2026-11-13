@@ -1,20 +1,21 @@
-// The nightly Trends watch. For every room it computes the same series, limits
-// and signals the Trends page shows (lib/data/page/trends.js on the rows
-// lib/data/model.js derives), keeps a snapshot, and tells the room's people
-// about a signal that is still going, is in the bad direction and nobody has
-// explained yet. One notification per episode, ever: the dedupe key is the
-// episode's first week, which doesn't move as the episode grows.
+// The nightly Trends watch. For every room it computes the same series,
+// limits, signals and explanations the Trends page shows (lib/data/page/trends.js,
+// method METHOD, on the rows lib/data/model.js derives), keeps a snapshot, and
+// tells the room's people about a signal that is still going, is in the bad
+// direction, is medium or high severity and nobody has explained yet. One
+// notification per episode, ever: the dedupe key is the episode's first week,
+// which doesn't move as the episode grows.
 import { and, eq } from 'drizzle-orm';
 
 import { deriveRoom } from '../../lib/data/model.js';
-import { describeSignal, isExplained, METRIC, signalKey, trendsFor } from '../../lib/data/page/trends.js';
+import { describeSignal, explainSignal, fmtMetric, isExplained, METHOD, METRIC, signalKey, trendsFor } from '../../lib/data/page/trends.js';
 import type { Db } from '../db/client';
 import { snapshots } from '../db/schema';
 import { loadActions } from '../actions';
 import { loadDataset } from '../dataset';
 import { notify } from '../notify';
 
-type Signal = { metric: string; from: number; to: number; i: number; weeks: number; kind: 'limit' | 'shift'; dir: 'up' | 'down'; value: number; ongoing: boolean; good: boolean };
+type Signal = { metric: string; from: number; to: number; i: number; weeks: number; kind: 'limit' | 'shift'; dir: 'up' | 'down'; value: number; avg: number; ongoing: boolean; good: boolean; severity: 'high' | 'medium' | 'low' | 'info'; z: number; n: number; limited: boolean; expected: { mean: number; lcl: number; ucl: number } };
 type Note = { cause: string; text: string; at: string };
 type Row = { iso?: string; label?: string; own?: boolean };
 
@@ -28,23 +29,30 @@ export async function runTrendsWatch(db: Db, orgId: string) {
     const d = deriveRoom(loaded.ds, id);
     const rows: Row[] = d.hist.rows;
     const t = trendsFor(rows) as unknown as { w: { own: boolean; ready: boolean; needWeeks: number }; signals: Signal[]; metrics: Record<string, { lim: unknown }> };
+    const ctx = { proofs: d.proofs, candidates: d.candidates };
     const notes = (acts[id]?.['trends.notes'] ?? {}) as Record<string, Note>;
     const signals = t.signals.map((s) => {
       const key = signalKey(s, rows);
       const note = notes[key];
-      return { key, metric: s.metric, kind: s.kind, dir: s.dir, good: s.good, ongoing: s.ongoing, weeks: s.weeks, from: rows[s.from]?.iso ?? null, to: rows[s.to]?.iso ?? null, explained: isExplained(note), cause: note?.cause ?? null, ...describeSignal(s, rows, t.metrics[s.metric]!.lim) };
+      const why = explainSignal(s, t, ctx) as { arithmetic: string[]; possible: string[]; finding: { id: string } | null };
+      return {
+        key, metric: s.metric, kind: s.kind, dir: s.dir, good: s.good, ongoing: s.ongoing, weeks: s.weeks, severity: s.severity,
+        from: rows[s.from]?.iso ?? null, to: rows[s.to]?.iso ?? null, value: s.value, expected: s.expected, z: s.z, baselineWeeks: s.n, limitedHistory: s.limited,
+        explained: isExplained(note), cause: note?.cause ?? null, arithmetic: why.arithmetic, possible: why.possible, finding: why.finding?.id ?? null,
+        ...describeSignal(s, rows, t.metrics[s.metric]!.lim),
+      };
     });
     const latest = rows.at(-1);
-    const data = { week: latest?.iso ?? null, own: t.w.own, ready: t.w.ready, needWeeks: t.w.needWeeks, signals };
+    const data = { method: METHOD, week: latest?.iso ?? null, own: t.w.own, ready: t.w.ready, needWeeks: t.w.needWeeks, signals };
     await db.insert(snapshots).values({ orgId, roomId: id, kind: 'trends', data })
       .onConflictDoUpdate({ target: [snapshots.orgId, snapshots.roomId, snapshots.kind], set: { data, at: new Date() } });
     const name = loaded.ds.rooms[id]?.profile?.short ?? id;
     for (const s of signals) {
-      if (s.good || !s.ongoing || s.explained) continue;
+      if (s.good || !s.ongoing || s.explained || s.severity === 'low') continue; // low: on the page, not worth waking anyone
       const row = await notify(db, {
         orgId, roomId: id, kind: 'trends.signal', severity: 'warn', link: '/trends/',
         title: `${name}: ${s.title}`,
-        body: `${s.body}\n\nOpen Trends to see the week and note why (${METRIC[s.metric]?.label ?? s.metric}).`,
+        body: `${s.body}${s.arithmetic.length ? `\n\n${s.arithmetic.join(' ')}` : ''}\n\nCoversight can't tell the cause from these figures alone. Open Trends to look into it and note why (${METRIC[s.metric]?.label ?? s.metric}, ${fmtMetric(s.metric, s.value)}).`,
         dedupe: `trends:${id}:${s.key}`,
       });
       if (row) told++;

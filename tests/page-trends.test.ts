@@ -11,6 +11,7 @@ import { loadActions, saveAction } from '../server/actions';
 import { runJob } from '../server/jobs';
 import { commitInput, createSampleOrg } from '../server/org';
 import { runTrendsWatch } from '../server/page/trends';
+import { loadDataset } from '../server/dataset';
 import { freshDb } from './helpers/db';
 import { toastFixture } from './helpers/toast-fixture.js';
 
@@ -24,7 +25,7 @@ beforeEach(async () => {
   orgId = (await createSampleOrg(db, { ownerId: 'u1' })).id;
 });
 
-type Snap = { own: boolean; ready: boolean; signals: { key: string; metric: string; good: boolean; ongoing: boolean; explained: boolean; title: string }[] };
+type Snap = { method: string; own: boolean; ready: boolean; signals: { key: string; metric: string; good: boolean; ongoing: boolean; explained: boolean; severity: string; title: string; expected: unknown; baselineWeeks: number }[] };
 const snap = async (roomId: string) => (await db.select().from(snapshots).where(and(eq(snapshots.orgId, orgId), eq(snapshots.roomId, roomId), eq(snapshots.kind, 'trends'))))[0]?.data as Snap;
 const berkeleyWcmKey = () => {
   const rows = deriveRoom(SEED, 'berkeley').hist.rows;
@@ -76,7 +77,7 @@ describe('the nightly trends watch', () => {
     expect(notes.some((n) => n.roomId === 'berkeley' && n.title.includes('Weighted margin per dish'))).toBe(true);
     // Good news and episodes that already ended aren't sent.
     for (const id of Object.keys(SEED.rooms)) {
-      const sent = (await snap(id)).signals.filter((x) => !x.good && x.ongoing && !x.explained).length;
+      const sent = (await snap(id)).signals.filter((x) => !x.good && x.ongoing && !x.explained && x.severity !== 'low').length;
       expect(notes.filter((n) => n.roomId === id)).toHaveLength(sent);
     }
     const again = await runTrendsWatch(db, orgId);
@@ -99,6 +100,24 @@ describe('the nightly trends watch', () => {
     await runTrendsWatch(db, orgId);
     const notes = await db.select().from(notifications).where(eq(notifications.orgId, orgId));
     expect(notes.some((n) => n.title.includes('Weighted margin per dish'))).toBe(true);
+  });
+
+  it('corrected source data updates the affected trend', async () => {
+    const commit = async (seed: number) => {
+      const files = toastFixture({ seed });
+      const { unknown, ...sum } = readToastExports(Object.entries(files).map(([name, text]) => ({ name, text })));
+      void unknown;
+      await commitInput(db, { orgId, userId: 'u1', roomId: 'oakland', kind: 'toast', rows: [JSON.parse(JSON.stringify(sum))] });
+      const { ds } = (await loadDataset(db, orgId))!;
+      return trendsFor(deriveRoom(ds, 'oakland').hist.rows);
+    };
+    const first = await commit(7);
+    const corrected = await commit(8);
+    expect(first.w.own).toBe(true);
+    type T = { w: { from: number }; metrics: Record<string, { vals: (number | null)[] }> };
+    const own = (t: unknown) => (t as T).metrics.net!.vals.slice((t as T).w.from);
+    expect(own(corrected)).not.toEqual(own(first));
+    expect(own(corrected).every((v) => v == null || v > 0)).toBe(true);
   });
 
   it('judges a room on its own Toast weeks only', async () => {
