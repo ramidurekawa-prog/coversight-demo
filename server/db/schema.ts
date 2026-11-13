@@ -4,7 +4,7 @@
 //     itself, stored per room and per kind in the same shape the model reads
 //     (lib/data/seed.js), so every figure is still computed by lib/data/model.js.
 import { relations, sql } from 'drizzle-orm';
-import { boolean, doublePrecision, index, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
+import { boolean, doublePrecision, index, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, unique, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 
 const at = (name: string) => timestamp(name, { withTimezone: true });
 const timestamps = {
@@ -531,7 +531,68 @@ export const agentProposals = pgTable(
   (t) => [unique('agent_proposals_org_key').on(t.orgId, t.key), index('agent_proposals_org_status_idx').on(t.orgId, t.status)],
 );
 
+/** Weekly meeting (page: meeting). One row per meeting; a live one holds the
+ * in-progress state server-side, editable by one person at a time (editorId
+ * holds the lease until lockedUntil). Finalized ones are the room's record. */
+export const meetingSessions = pgTable(
+  'meeting_sessions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+    roomId: text('room_id').notNull(),
+    week: text('week').notNull(),
+    status: text('status').notNull().default('live'),
+    agendaVersion: text('agenda_version').notNull(),
+    dataThrough: text('data_through'),
+    agenda: jsonb('agenda').notNull(),
+    state: jsonb('state').notNull(),
+    record: jsonb('record'),
+    version: integer('version').notNull().default(1),
+    editorId: text('editor_id').references(() => users.id, { onDelete: 'set null' }),
+    lockedUntil: at('locked_until'),
+    startedBy: text('started_by').references(() => users.id, { onDelete: 'set null' }),
+    startedAt: at('started_at').notNull().defaultNow(),
+    endedAt: at('ended_at'),
+    ...timestamps,
+  },
+  (t) => [
+    index('meeting_sessions_org_room_idx').on(t.orgId, t.roomId, t.startedAt),
+    uniqueIndex('meeting_sessions_one_live').on(t.orgId, t.roomId).where(sql`status = 'live'`),
+  ],
+);
+
+/** Weekly meeting actions: what a meeting decided, with an owner, a due date and
+ * a definition of done. One live (open or deferred) action per room and source,
+ * so restarting a meeting or deciding again updates instead of duplicating. */
+export const meetingActions = pgTable(
+  'meeting_actions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+    roomId: text('room_id').notNull(),
+    meetingId: uuid('meeting_id').references(() => meetingSessions.id, { onDelete: 'set null' }),
+    sourceKey: text('source_key').notNull(),
+    findingId: text('finding_id'),
+    title: text('title').notNull(),
+    owner: text('owner').notNull().default(''),
+    due: text('due').notNull(),
+    priority: text('priority').notNull().default('normal'),
+    doneWhen: text('done_when').notNull().default(''),
+    approval: text('approval').notNull().default(''),
+    status: text('status').notNull().default('open'),
+    reason: text('reason'),
+    history: jsonb('history').notNull().default(sql`'[]'::jsonb`),
+    createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+    closedAt: at('closed_at'),
+    ...timestamps,
+  },
+  (t) => [
+    index('meeting_actions_org_room_idx').on(t.orgId, t.roomId, t.status),
+    uniqueIndex('meeting_actions_one_live').on(t.orgId, t.roomId, t.sourceKey).where(sql`status in ('open', 'deferred')`),
+  ],
+);
+
 export const orgRelations = relations(orgs, ({ many }) => ({ rooms: many(rooms), memberships: many(memberships) }));
 
-export const schema = { users, sessions, accounts, verifications, orgs, memberships, rooms, roomData, inputs, actions, auditLog, memberRole, windowStatus, testWindows, checkpoints, jobRuns, snapshots, taskStatus, tasks, notifications, notificationReads, outbox, invites, invoices, toastConnections, posDays, linkedSources, agentCycles, agentEvents, agentRuns, agentProposals };
+export const schema = { users, sessions, accounts, verifications, orgs, memberships, rooms, roomData, inputs, actions, auditLog, memberRole, windowStatus, testWindows, checkpoints, jobRuns, snapshots, taskStatus, tasks, notifications, notificationReads, outbox, invites, invoices, toastConnections, posDays, linkedSources, agentCycles, agentEvents, agentRuns, agentProposals, meetingSessions, meetingActions };
 
