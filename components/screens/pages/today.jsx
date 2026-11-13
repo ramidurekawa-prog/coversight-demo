@@ -5,7 +5,7 @@ import * as React from 'react';
 import { Icon, Button, Tabs } from '../../kit';
 import { engine, useEngine, useSaved } from '../../engine';
 import {
-  applyOp, cardState, DECLINE, DEFAULT_TZ, FIRST_SCREEN, isActive, localDay, queueSummary, queueView, RANK_POLICY, TEST_DAYS, todayCards,
+  applyOp, cardState, DECLINE, DEFAULT_TZ, FIRST_SCREEN, isActive, localDay, queueSummary, queueView, TEST_DAYS, todayCards,
 } from '../../../lib/data/page/today';
 import { TasksPanel } from '../tasks';
 import { useCv, CV_CLAIM, CV_D, CV_ROOM, CV_NOW, Claim, PageHead, Pill } from '../core';
@@ -132,46 +132,109 @@ function Details({ q, history, tz, fix }) {
   );
 }
 
-function QueueCard({ q, lead, state, busy, isNew, fix, history, tz, onPrimary, onDone, onSnooze, onDecline }) {
-  const [open, setOpen] = React.useState(false);
+const KIND_COLOR = { decide: 'var(--cat-1)', data: 'var(--cat-3)', test: 'var(--cat-2)' };
+const KIND_SHORT = { decide: 'Decisions', data: 'Data fixes', test: 'Tests' };
+
+function QueueCard({ q, lead, state, busy, isNew, fix, history, tz, open, onToggle, onPrimary, onDone, onSnooze, onDecline }) {
   const [declining, setDeclining] = React.useState(false);
   const canSnooze = !q.critical && q.deadline !== 'today';
   return (
-    <article id={`card-${q.id}`} className={`cv-q-card ${lead ? s.next : ''} ${q.blocked ? s.blocked : ''}`} aria-labelledby={`q-${q.id}`} aria-busy={busy || undefined}>
+    <article id={`card-${q.id}`} className={`${s.card} ${lead ? s.lead : ''} ${q.blocked ? s.blocked : ''}`} aria-labelledby={`q-${q.id}`} aria-busy={busy || undefined}>
+      <span className={s.stripe} style={{ background: KIND_COLOR[q.kind] }} aria-hidden="true" />
       <span className={`cv-q-ico ${q.tone}`}><Icon name={q.blocked ? 'Lock' : q.icon} size={18} /></span>
-      <div className="cv-col" style={{ gap: 6, minWidth: 0 }}>
+      <div className={s.main}>
         <div className={s.tags}>
           {lead ? <span className={s.nextTag}><Icon name="ArrowRight" size={12} />Do this first</span> : <span className={s.kind}>{KIND[q.kind]}</span>}
           {isNew && <span className={s.newTag}>New</span>}
-        </div>
-        <span id={`q-${q.id}`} className={lead ? s.leadTitle : s.title}>{q.title}</span>
-        <span className="cv-small cv-muted" style={{ lineHeight: 1.5 }}>{q.blocked ? q.blocked : q.body}</span>
-        <div className={s.meta}>
-          <Claim k={q.claim} />
-          <span className={s.value}>{q.value}</span>
-          <span className={s.mins}><Icon name="Clock" size={12} />{q.effort.manager} min of your time</span>
-          {q.deadline && <Pill tone="warn" icon="CalendarClock">{q.deadline === 'today' ? 'Due today' : `Due ${q.deadline}`}</Pill>}
+          {q.deadline && <Pill tone="warn" icon="CalendarClock">{q.deadline === 'today' ? 'Due today' : 'Due soon'}</Pill>}
           <StatePill state={state} />
         </div>
-        <button type="button" className={s.more} aria-expanded={open} onClick={() => setOpen(!open)}><Icon name={open ? 'ChevronUp' : 'ChevronDown'} size={13} />{open ? 'Hide details' : 'Why, evidence and what happens next'}</button>
-        {declining && (
-          <div className={s.decline} role="group" aria-label="Why isn’t this for you?">
-            <span className="cv-xs cv-muted">Why isn’t this for you?</span>
-            <div className="cv-row" style={{ gap: 6, flexWrap: 'wrap' }}>
-              {Object.entries(DECLINE).map(([k, d]) => <Button key={k} size="sm" variant="secondary" disabled={busy} onClick={() => { setDeclining(false); onDecline(k); }}>{d.label}</Button>)}
-              <Button size="sm" variant="ghost" onClick={() => setDeclining(false)}>Cancel</Button>
-            </div>
-          </div>
-        )}
-        {open && <Details q={q} history={history} tz={tz} fix={fix} />}
+        <span id={`q-${q.id}`} className={lead ? s.leadTitle : s.title}>{q.title}</span>
+        <div className={s.meta}>
+          <span className={s.mins}><Icon name="Clock" size={12} />{q.effort.manager} min</span>
+          <button type="button" className={s.more} aria-expanded={open} onClick={onToggle}><Icon name={open ? 'ChevronUp' : 'ChevronDown'} size={13} />{open ? 'Less' : 'Why?'}</button>
+        </div>
       </div>
-      <div className="cv-q-acts">
+      <div className={s.worth}>
+        <span className={/\$/.test(q.value) ? `cv-num ${s.worthFig}` : s.worthText}>{q.value}</span>
+        <Claim k={q.claim} />
+      </div>
+      <div className={s.acts}>
         {q.refuse && !q.critical && <Button variant="ghost" size="sm" disabled={busy} aria-expanded={declining} onClick={() => setDeclining(!declining)}>Not for us</Button>}
-        {!q.refuse && canSnooze && <Button variant="ghost" size="sm" disabled={busy} onClick={onSnooze}>Snooze</Button>}
-        {q.go && !q.blocked && <Button variant="ghost" size="sm" icon="Check" disabled={busy} onClick={onDone}>Mark done</Button>}
+        {!q.refuse && canSnooze && <Button variant="ghost" size="sm" icon="CalendarClock" disabled={busy} onClick={onSnooze}>Tomorrow</Button>}
         <Button size="sm" variant={lead ? 'primary' : 'secondary'} disabled={busy} onClick={onPrimary}>{q.blocked && fix ? `First: ${fix.primary}` : q.primary}</Button>
       </div>
+      {(declining || open) && (
+        <div className={s.below}>
+          {declining && (
+            <div className={s.decline} role="group" aria-label="Why isn’t this for you?">
+              <span className="cv-xs cv-muted">Why isn’t this for you?</span>
+              <div className="cv-row" style={{ gap: 6, flexWrap: 'wrap' }}>
+                {Object.entries(DECLINE).map(([k, d]) => <Button key={k} size="sm" variant="secondary" disabled={busy} onClick={() => { setDeclining(false); onDecline(k); }}>{d.label}</Button>)}
+                <Button size="sm" variant="ghost" onClick={() => setDeclining(false)}>Cancel</Button>
+              </div>
+            </div>
+          )}
+          {open && <Details q={q} history={history} tz={tz} fix={fix} />}
+          {open && q.go && !q.blocked && <Button variant="ghost" size="sm" icon="Check" disabled={busy} onClick={onDone}>Already done? Mark it done</Button>}
+        </div>
+      )}
     </article>
+  );
+}
+
+/** Decided out of total, as a ring: done or approved, snoozed, declined, left. Each arc says what it is on hover. */
+function Ring({ sum }) {
+  const R = 34, C = 2 * Math.PI * R;
+  const parts = [
+    ['Done or approved', sum.cleared, 'var(--success-600)'],
+    ['Snoozed', sum.snoozed, 'var(--info-600)'],
+    ['Not for us', sum.refused, 'var(--fg-3)'],
+  ];
+  let off = 0;
+  const decided = sum.cleared + sum.snoozed + sum.refused;
+  return (
+    <svg width="84" height="84" viewBox="0 0 84 84" role="img" aria-label={`${decided} of ${sum.total} decided: ${parts.map(([l, n]) => `${n} ${l.toLowerCase()}`).join(', ')}, ${sum.left} left`}>
+      <circle cx="42" cy="42" r={R} fill="none" stroke="var(--surface-sunken)" strokeWidth="9" />
+      {parts.map(([l, n, c]) => {
+        if (!n) return null;
+        const len = (n / Math.max(1, sum.total)) * C;
+        const el = <circle key={l} cx="42" cy="42" r={R} fill="none" stroke={c} strokeWidth="9" strokeDasharray={`${Math.max(0, len - 2)} ${C}`} strokeDashoffset={-off} transform="rotate(-90 42 42)"><title>{`${l}: ${n}`}</title></circle>;
+        off += len;
+        return el;
+      })}
+      <text x="42" y="47" textAnchor="middle" className={s.ringText}>{decided}/{sum.total}</text>
+    </svg>
+  );
+}
+
+/** Where your time goes: one segment per card, sized by your minutes, coloured by kind. Hover or focus for what it is; click to open it. */
+function TimeBar({ cards, onPick }) {
+  const [tip, setTip] = React.useState(null);
+  const total = cards.filter((c) => !c.blocked).reduce((m, c) => m + c.effort.manager, 0);
+  const waiting = cards.filter((c) => c.blocked).reduce((m, c) => m + c.effort.manager, 0);
+  const kinds = ['decide', 'data', 'test'].filter((k) => cards.some((c) => c.kind === k));
+  return (
+    <div className={s.timebar}>
+      <div className={s.tbTrack} onMouseLeave={() => setTip(null)}>
+        {cards.map((c) => (
+          <button key={c.id} type="button" className={`${s.seg} ${c.blocked ? s.segBlocked : ''}`} style={{ flexGrow: c.effort.manager, background: KIND_COLOR[c.kind] }}
+            aria-label={`${c.title}: ${c.effort.manager} min, ${c.value}${c.blocked ? ', waiting on data' : ''}`}
+            onMouseEnter={() => setTip(c)} onFocus={() => setTip(c)} onBlur={() => setTip(null)} onClick={() => onPick(c.id)} />
+        ))}
+      </div>
+      <div className={s.tbFoot} aria-live="polite">
+        {tip ? (
+          <span className={s.tbTip}><b>{tip.title}</b> · {tip.effort.manager} min · {tip.value} <Claim k={tip.claim} />{tip.blocked ? ' · waiting on data' : ''}</span>
+        ) : (
+          <span className={s.legend}>
+            {kinds.map((k) => <span key={k}><i style={{ background: KIND_COLOR[k] }} />{KIND_SHORT[k]} {cards.filter((c) => c.kind === k).reduce((m, c) => m + c.effort.manager, 0)} min</span>)}
+            {cards.some((c) => c.blocked) && <span><i className={s.hatch} />Waiting on data</span>}
+          </span>
+        )}
+        <span className="cv-xs cv-faint cv-num">{total} min{waiting ? ` + ${waiting} later` : ''}</span>
+      </div>
+    </div>
   );
 }
 
@@ -235,6 +298,8 @@ function CvToday() {
   const own = !!CV_D.room.fromToast;
   const [dismissed, setDismissed] = useSaved('findings', {});
   const [showAll, setShowAll] = React.useState(false);
+  const [filter, setFilter] = React.useState('all');
+  const [openId, setOpenId] = React.useState(null);
   const testing = (eng.windows || []).filter((w) => w.roomId === CV_D.id && (w.status === 'running' || w.status === 'waiting')).map((w) => w.lever);
   const cards = todayCards(CV_D, { today, testing, dismissed, tasks: (eng.tasks || []).filter((t) => t.roomId === CV_D.id) });
   const { view, history, run, busy, remote } = useQueue({ cards, today, own, tz });
@@ -278,56 +343,82 @@ function CvToday() {
   const day = own ? new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: tz }) : CV_NOW.label;
   const checksOk = !CV_D.staleCount && !left.some((c) => c.blocked);
   const head = sum.left ? 'Here’s what needs you today' : checksOk ? 'Everything important is handled' : 'Nothing to decide, but some data needs attention';
-  const visible = showAll ? left : left.slice(0, FIRST_SCREEN);
-  const hidden = left.length - visible.length;
-  const pct = (n) => `${sum.total ? (n / sum.total) * 100 : 0}%`;
+  const kinds = ['decide', 'data', 'test'].filter((k) => left.some((c) => c.kind === k));
+  const shownLeft = filter === 'all' ? left : left.filter((c) => c.kind === filter);
+  const visible = showAll || filter !== 'all' ? shownLeft : shownLeft.slice(0, FIRST_SCREEN);
+  const hidden = shownLeft.length - visible.length;
+  const pick = (id) => {
+    const i = left.findIndex((c) => c.id === id);
+    setFilter('all');
+    if (i >= FIRST_SCREEN) setShowAll(true);
+    setOpenId(id);
+    setTimeout(() => document.getElementById(`card-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
+  };
   return (
     <div className="cv-page" style={{ maxWidth: 880 }}>
-      <PageHead over={`${CV_ROOM.name} · ${day}`} q={head}
-        sub={sum.left
-          ? `${sum.ready} thing${sum.ready === 1 ? '' : 's'} to do, about ${sum.minsLeft} minutes of your time${sum.blocked ? `, and ${sum.blocked} waiting on data` : ''}. In the order to do them.`
-          : checksOk ? 'Every card is decided and the data checks passed. Tomorrow’s queue is built from the latest data.' : 'The queue is clear, but a data feed is stale, so some findings can’t be trusted until it’s fixed.'} />
+      <PageHead over={`${CV_ROOM.name} · ${day}`} q={head} />
 
       <div className={s.context} aria-label="Where this queue comes from">
         {own ? <span><Icon name="Database" size={13} />Toast data through {remote?.dataThrough || CV_D.room.fromToast.end}</span>
           : <span><Icon name="FlaskConical" size={13} />Sample restaurant · not real data</span>}
-        {remote?.changes?.builtAt && <span><Icon name="Clock" size={13} />Queue built {clock(remote.changes.builtAt, tz)}{remote.changes.added.length ? `, ${remote.changes.added.length} new since` : ''}{remote.changes.gone.length ? `, ${remote.changes.gone.length} cleared by new data` : ''}</span>}
+        {remote?.changes?.builtAt && <span><Icon name="Clock" size={13} />Built {clock(remote.changes.builtAt, tz)}{remote.changes.added.length ? ` · ${remote.changes.added.length} new` : ''}{remote.changes.gone.length ? ` · ${remote.changes.gone.length} cleared by new data` : ''}</span>}
         {CV_D.staleCount > 0 && <button type="button" className={s.ctxLink} onClick={() => cv.go('sources')}><Icon name="TriangleAlert" size={13} />{CV_D.staleCount} feed{CV_D.staleCount === 1 ? '' : 's'} stale</button>}
-        <span title={RANK_POLICY.map(([, l], i) => `${i + 1}. ${l}`).join('\n')}><Icon name="ListChecks" size={13} />Ranked by urgency, then value</span>
       </div>
 
-      <section className="cv-card" aria-label="Today’s progress">
-        <div className={s.summary}>
-          <div className={s.figure}><span className={s.label}>To do</span><span className="cv-fig md cv-num">{sum.ready}{sum.blocked ? <span className="cv-small cv-faint"> +{sum.blocked} waiting</span> : null}</span></div>
-          <div className={s.figure}><span className={s.label}>Your time</span><span className="cv-fig md cv-num">{sum.minsLeft}<span className="cv-small cv-faint"> min</span></span></div>
-          <div className={s.figure}><span className={s.label}>{own ? 'Decided today' : 'Decided'}</span><span className="cv-fig md cv-num">{sum.cleared + sum.snoozed + sum.refused}<span className="cv-small cv-faint"> of {sum.total}</span></span></div>
+      <section className={s.hero} aria-label="Today at a glance">
+        <div className={s.tile}>
+          <span className={s.label}>To do</span>
+          <span className={s.big}>{sum.ready}</span>
+          <span className="cv-xs cv-faint">{sum.blocked ? `+${sum.blocked} waiting on data` : 'ready now'}</span>
         </div>
-        <div className={s.bar} role="img" aria-label={`${sum.cleared} done or approved, ${sum.snoozed} snoozed, ${sum.refused} turned down, ${sum.left} left`}>
-          <span className={s.done} style={{ width: pct(sum.cleared) }} />
-          <span className={s.snoozed} style={{ width: pct(sum.snoozed) }} />
-          <span className={s.refused} style={{ width: pct(sum.refused) }} />
+        <div className={s.tile}>
+          <span className={s.label}>Your time</span>
+          <span className={s.big}>{sum.minsLeft}<small> min</small></span>
+          <span className="cv-xs cv-faint">only what needs you</span>
         </div>
+        <div className={`${s.tile} ${s.ringTile}`}>
+          <Ring sum={sum} />
+          <div className="cv-col" style={{ gap: 2 }}>
+            <span className={s.label}>{own ? 'Decided today' : 'Decided'}</span>
+            <span className="cv-xs cv-faint">{sum.cleared} done · {sum.snoozed} snoozed<br />{sum.refused} not for us</span>
+          </div>
+        </div>
+        {left.length > 0 && (
+          <div className={s.heroChart}>
+            <div className={s.chartHead}><span className="cv-h4">Where your time goes</span><span className="cv-xs cv-faint">Tap a block to open it</span></div>
+            <TimeBar cards={left} onPick={pick} />
+          </div>
+        )}
       </section>
 
       {left.length === 0 ? (
         <div className="cv-empty">
           <span className="ico"><Icon name={checksOk ? 'Check' : 'TriangleAlert'} size={22} /></span>
           <span className="cv-h3">{checksOk ? 'Queue clear' : 'Queue clear, data needs a look'}</span>
-          <span className="cv-small cv-muted" style={{ maxWidth: 400 }}>{checksOk ? 'Nothing else needs you today.' : 'Open Sources to see which feed is stale and how to fix it.'}</span>
           {!checksOk && <Button size="sm" variant="secondary" onClick={() => cv.go('sources')}>Open Sources</Button>}
         </div>
       ) : (
         <div className="cv-col" style={{ gap: 10 }}>
-          {visible.map((q, i) => (
-            <QueueCard key={q.id} q={q} lead={i === 0} state={cardState(q, view)} busy={busy === q.id} isNew={added.has(q.id)} fix={q.blockedBy ? byId(q.blockedBy) : null} history={history} tz={tz}
+          {kinds.length > 1 && (
+            <div className={s.chips} role="group" aria-label="Show">
+              {[['all', 'All', left.length], ...kinds.map((k) => [k, KIND_SHORT[k], left.filter((c) => c.kind === k).length])].map(([k, l, n]) => (
+                <button key={k} type="button" className={`${s.chip} ${filter === k ? s.chipOn : ''}`} aria-pressed={filter === k} onClick={() => setFilter(k)}>
+                  {k !== 'all' && <i style={{ background: KIND_COLOR[k] }} />}{l}<span className="cv-num">{n}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          {visible.map((q) => (
+            <QueueCard key={q.id} q={q} lead={q.id === left[0].id} state={cardState(q, view)} busy={busy === q.id} isNew={added.has(q.id)} fix={q.blockedBy ? byId(q.blockedBy) : null} history={history} tz={tz}
+              open={openId === q.id} onToggle={() => setOpenId(openId === q.id ? null : q.id)}
               onPrimary={() => primary(q)}
               onDone={() => decide('done', q, { summary: `${q.title}: done` }, 'Done. Logged with your name and the time.')}
               onSnooze={() => decide('snooze', q, { summary: `${q.title}: snoozed` }, 'Snoozed. It’s back on tomorrow’s queue.')}
               onDecline={(reason) => decline(q, reason)} />
           ))}
-          {(hidden > 0 || showAll) && left.length > FIRST_SCREEN && (
+          {filter === 'all' && left.length > FIRST_SCREEN && (
             <Button variant="secondary" icon={showAll ? 'ChevronUp' : 'ChevronDown'} aria-expanded={showAll} onClick={() => setShowAll(!showAll)}>
-              {showAll ? 'Show the first three only' : `View remaining ${hidden} (${left.slice(FIRST_SCREEN).filter((c) => !c.blocked).reduce((m, c) => m + c.effort.manager, 0)} min${left.slice(FIRST_SCREEN).some((c) => c.blocked) ? ', some waiting on data' : ''})`}
+              {showAll ? 'Show the top three' : `${hidden} more · ${left.slice(FIRST_SCREEN).filter((c) => !c.blocked).reduce((m, c) => m + c.effort.manager, 0)} min`}
             </Button>
           )}
         </div>
