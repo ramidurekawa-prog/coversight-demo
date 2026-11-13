@@ -10,7 +10,7 @@
 import { and, desc, eq, gte, inArray, lt } from 'drizzle-orm';
 import { z } from 'zod';
 
-import { cutApprovalId, clockLabel, DAYS, DEFAULT_TZ, hhmm, isCutFor, liveNight, localNow, servicePlan } from '../../lib/data/page/service.js';
+import { cutApprovalId, clockLabel, DAYS, DEFAULT_TZ, hhmm, isCutFor, LIVE_CADENCE_MIN, liveNight, localNow, servicePlan, SLOT_MIN } from '../../lib/data/page/service.js';
 import { mapToastDay } from '../../lib/data/toast-api.js';
 import { loadDataset } from '../dataset';
 import type { Db } from '../db/client';
@@ -27,7 +27,7 @@ type Fetch = typeof fetch;
 type Rows = Record<string, string>[];
 type Night = NonNullable<ReturnType<typeof liveNight>>;
 export type Live =
-  | { live: true; tz: string; date: string; day: string; nowMin: number; night: Night; fetchedAt: string }
+  | { live: true; tz: string; date: string; day: string; nowMin: number; night: Night; fetchedAt: string; cadenceMin: number }
   | { live: false; tz: string; date: string; day: string; nowMin: number; why: 'not-connected' | 'no-history' | 'error'; message?: string };
 
 /** How long one pull of tonight is reused for a room. */
@@ -58,6 +58,18 @@ async function planFor(db: Db, orgId: string, roomId: string, day: string, fence
   const loaded = await loadDataset(db, orgId);
   const room = loaded?.ds.rooms[roomId];
   return room ? servicePlan(room, day, fences) : null;
+}
+
+/** Tonight's approved cut for a room, if any: its time and the servers on before it (from the task's own steps). */
+async function tonightCut(db: Db, orgId: string, roomId: string, date: string) {
+  const rows = await db.select({ approvalId: tasks.approvalId, steps: tasks.steps, status: tasks.status }).from(tasks)
+    .where(and(eq(tasks.orgId, orgId), eq(tasks.roomId, roomId), inArray(tasks.status, ['open', 'done', 'verified', 'mismatch'])));
+  const t = rows.find((x) => isCutFor(x.approvalId, date));
+  if (!t) return null;
+  const m = /:(\d{2}):(\d{2})$/.exec(t.approvalId);
+  const before = (t.steps || []).map((x) => /“(\d+) servers” to “\d+ servers”/.exec(x)).find(Boolean);
+  if (!m || !before) return null;
+  return { at: +m[1]! * 60 + +m[2]!, before: +before[1]!, status: t.status };
 }
 
 /** Tonight for one room, live from Toast when it's connected for that room. */
@@ -92,8 +104,9 @@ export async function liveService(db: Db, v: V, roomIdRaw: unknown, { now = new 
     const m = mapToastDay({ orders: orders as never[], timeEntries: timeEntries as never[], refs: { employees, jobs } as never, tz });
     const fences = await fencesFor(db, v.orgId, roomId);
     const plan = await planFor(db, v.orgId, roomId, day, fences);
-    const night = liveNight({ today: { day: date, orders: m.orders, time: m.time }, comparable, nowMin, rate: plan?.rate ?? null, wage: plan?.wage ?? 18, fences });
-    value = night ? { live: true, ...head, night, fetchedAt: now.toISOString() } : { live: false, ...head, why: 'no-history' };
+    const cut = await tonightCut(db, v.orgId, roomId, date);
+    const night = liveNight({ today: { day: date, orders: m.orders, time: m.time }, comparable, nowMin, rate: plan?.rate ?? null, wage: plan?.wage ?? null, fences, cut });
+    value = night ? { live: true, ...head, night, fetchedAt: now.toISOString(), cadenceMin: LIVE_CADENCE_MIN } : { live: false, ...head, why: 'no-history' };
   } catch (e) {
     const message = e instanceof SyncError ? e.message : 'Couldn’t reach Toast just now. The plan from your recent weeks still holds.';
     return { live: false, ...head, why: 'error', message };
@@ -101,7 +114,7 @@ export async function liveService(db: Db, v: V, roomIdRaw: unknown, { now = new 
   cache.set(key, { at: now.getTime(), value });
 
   // The one message per service: when the call turns into a cut nobody has answered yet.
-  if (value.live && value.night.call.mode === 'cut') {
+  if (value.live && value.night.call.mode === 'cut' && !value.night.execution) {
     const call = value.night.call;
     await notify(db, {
       orgId: v.orgId, roomId, kind: 'service.cut', severity: 'info',
@@ -109,6 +122,13 @@ export async function liveService(db: Db, v: V, roomIdRaw: unknown, { now = new 
       body: `Covers are pacing ${Math.abs(call.pace)}% ${call.pace < 0 ? 'under' : 'over'} a comparable ${DAYS[dow]}. Even at the top of the band, ${call.serversNow! - 1} servers cover the rest of the night.`,
       link: '/service', dedupe: `service-cut:${roomId}:${date}`,
     }).catch(() => null);
+  }
+  // After a release: confirmed from clock-ins once, and a guardrail warning once if covers need the server back.
+  const ex = value.live ? value.night.execution : null;
+  if (ex?.state === 'confirmed') {
+    await notify(db, { orgId: v.orgId, roomId, kind: 'service.cut', severity: 'good', title: 'Tonight’s release is confirmed in Toast', body: ex.text, link: '/service', dedupe: `service-cut-confirmed:${roomId}:${date}` }).catch(() => null);
+  } else if (ex?.state === 'breach') {
+    await notify(db, { orgId: v.orgId, roomId, kind: 'service.guardrail', severity: 'warn', title: 'Covers are running above the band since the release', body: ex.text, link: '/service', dedupe: `service-breach:${roomId}:${date}` }).catch(() => null);
   }
   return value;
 }
@@ -126,7 +146,8 @@ const cutBody = z.object({
  * Exported so any other path that creates a `cut:<date>:` task can call it.
  */
 export async function refuseCut(db: Db, v: V, input: { roomId: string; date: string; at: string }, opts: { now?: Date; fetchImpl?: Fetch } = {}) {
-  const live = await liveService(db, v, input.roomId, opts);
+  // Revalidate on fresh data: the page may be up to two minutes old.
+  const live = await liveService(db, v, input.roomId, { ...opts, fresh: true });
   if (input.date !== live.date) throw new InputError(`A same-night cut can only be approved for tonight (${live.date}).`);
   const done = await db.select({ approvalId: tasks.approvalId }).from(tasks)
     .where(and(eq(tasks.orgId, v.orgId), eq(tasks.roomId, input.roomId), inArray(tasks.status, ['open', 'done', 'verified', 'mismatch'])));
@@ -135,8 +156,11 @@ export async function refuseCut(db: Db, v: V, input: { roomId: string; date: str
 
   if (live.live) {
     const call = live.night.call;
-    if (call.mode !== 'cut' || hhmm(call.at!) !== input.at) throw new InputError('Tonight’s numbers moved since this was shown. Look again before approving.');
-    return { live, title: `${live.day} ${live.date}: one fewer server from ${clockLabel(call.at!)} to close`, servers: call.serversNow! };
+    const [h, mm] = input.at.split(':').map(Number) as [number, number];
+    const want = h * 60 + mm;
+    // A later release than the call's is at least as safe (fewer hours short); an earlier one isn't checked.
+    if (call.mode !== 'cut' || want < call.at! || want % SLOT_MIN !== 0 || want > call.fences.cutBy) throw new InputError('Tonight’s numbers moved since this was shown. Look again before approving.');
+    return { live, title: `${live.day} ${live.date}: release one server from ${clockLabel(want)} to close`, servers: call.serversNow! };
   }
   const fences = await fencesFor(db, v.orgId, input.roomId);
   const plan = await planFor(db, v.orgId, input.roomId, live.day, fences);
@@ -158,5 +182,6 @@ export async function approveCut(db: Db, v: V, raw: unknown, opts: { now?: Date;
   const label = `${ok.live.day} ${clockLabel(h * 60 + m)} to close`;
   const a = { roomId, approvalId, title: ok.title, system: '7shifts', diff: [[label, `${ok.servers} servers`, `${ok.servers - 1} servers`]] as [string, string, string][] };
   const task = await createTask(db, v, a);
+  cache.delete(`${v.orgId}:${roomId}`);
   return { task, approval: a };
 }

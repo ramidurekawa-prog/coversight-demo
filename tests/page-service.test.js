@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { bandSpread, clockLabel, clockMinutes, cutApprovalId, fencesOf, isCutFor, liveNight, localNow, pacing, serviceCall, servicePlan, serversOn, serviceWindow, slotCovers } from '../lib/data/page/service.js';
+import { bandSpread, calibratedBand, clockLabel, clockMinutes, cutApprovalId, cutExecution, fencesOf, isCutFor, lastOrderAt, liveNight, localNow, pacing, serviceCall, serviceHealth, servicePlan, serversOn, serviceWindow, slotCovers } from '../lib/data/page/service.js';
 
 const hours = (day, rows) => rows.flatMap(([hour, covers, servers]) => [0, 1, 2, 3].map((week) => ({ week, day, hour, covers, servers })));
 // 24+ busy hours so the room's pace can be measured; Thursday has a spare server from 8 pm.
@@ -86,23 +86,88 @@ describe('Service: live pacing', () => {
 
   const win = { start: 17 * 60, end: 22 * 60, slots: 20 };
   const comp = [3, 4, 5, 6, 7, 8, 8, 9, 9, 8, 7, 6, 5, 4, 4, 3, 2, 2, 1, 1];
-  it('speaks only when one fewer is safe at the top of the band', () => {
-    const slow = serviceCall({ comp, actual: comp.slice(0, 10).map((c) => c * 0.6), now: 10, win, serversNow: 5, rate: 6, wage: 20, fences: { f: { minDinner: 3, cutBy: '9:00 pm' } } });
+  const band = { spread: 0.15, nights: 4, calibrated: true };
+  const fences = { f: { minDinner: 3, cutBy: '9:00 pm' } };
+  const call = (over) => serviceCall({ comp, win, rate: 6, wage: 20, fences, band, serversNow: 5, ...over });
+
+  it('suggests a release only when every check passes, and values it as potential wages', () => {
+    const slow = call({ actual: comp.slice(0, 10).map((c) => c * 0.6), now: 10 });
     expect(slow.mode).toBe('cut');
     expect(slow.at).toBe(19 * 60 + 45);
     expect(slow.value).toBe(Math.round(2.25 * 20));
-    const busy = serviceCall({ comp, actual: comp.slice(0, 10), now: 10, win, serversNow: 5, rate: 6, fences: { f: { minDinner: 3, cutBy: '9:00 pm' } } });
-    expect(busy.mode).toBe('quiet');
+    expect(slow.checks.filter((c) => c.ok === false)).toEqual([]);
+    // Reservations and sections can't be read from Toast: always shown as the manager's to check.
+    expect(slow.checks.filter((c) => c.ok === null).map((c) => c.key)).toEqual(['reservations', 'roles']);
+    expect(serviceHealth(slow).text).toBe('Staffing may be above current demand.');
+    expect(call({ actual: comp.slice(0, 10).map((c) => c * 0.6), now: 10, wage: null }).value).toBeNull();
   });
 
-  it('waits while the band is wide, and stays quiet before the first hour, past the fence, or under the floor', () => {
-    const base = { comp, win, rate: 6, fences: { f: { minDinner: 3, cutBy: '9:00 pm' } } };
-    const wide = serviceCall({ ...base, actual: comp.slice(0, 5).map((c) => c * 0.8), now: 5, serversNow: 6 });
-    expect(['wait', 'cut']).toContain(wide.mode);
-    expect(serviceCall({ ...base, actual: [3, 3], now: 2, serversNow: 5 }).mode).toBe('early');
-    expect(serviceCall({ ...base, actual: comp.slice(0, 18).map(() => 0), now: 18, serversNow: 5 }).mode).toBe('late');
-    expect(serviceCall({ ...base, actual: comp.slice(0, 10).map(() => 1), now: 10, serversNow: 3 })).toMatchObject({ mode: 'quiet', why: 'floor' });
-    expect(serviceCall({ ...base, actual: comp.slice(0, 10), now: 10, serversNow: null }).mode).toBe('unknown');
+  it('never suggests a cut when demand is higher than expected', () => {
+    const busy = call({ actual: comp.slice(0, 10).map((c) => c * 1.4), now: 10 });
+    expect(busy.mode).toBe('quiet');
+    expect(busy.checks.find((c) => c.key === 'demand').ok).toBe(false);
+    expect(serviceHealth(busy).text).toBe('Demand is higher than expected.');
+    expect(serviceHealth(call({ actual: comp.slice(0, 10), now: 10 })).text).toBe('Service is on track.');
+  });
+
+  it('holds the minimum staffing fence whatever the demand', () => {
+    const r = call({ actual: comp.slice(0, 10).map(() => 0), now: 10, serversNow: 3 });
+    expect(r).toMatchObject({ mode: 'quiet', why: 'floor' });
+    expect(r.checks.find((c) => c.key === 'floor').ok).toBe(false);
+  });
+
+  it('pauses live suggestions on stale data, before the first hour, past the fence, without clock-ins, or on an uncalibrated band', () => {
+    const slow = { actual: comp.slice(0, 10).map((c) => c * 0.6), now: 10 };
+    expect(call({ ...slow, stale: true }).mode).toBe('stale');
+    expect(serviceHealth(call({ ...slow, stale: true })).text).toBe('Data is too old for a live recommendation.');
+    expect(call({ actual: [3, 3], now: 2 }).mode).toBe('early');
+    expect(call({ actual: comp.slice(0, 18).map(() => 0), now: 18 }).mode).toBe('late');
+    expect(call({ ...slow, serversNow: null }).mode).toBe('unknown');
+    expect(call({ ...slow, band: { spread: 0.15, nights: 2, calibrated: false } })).toMatchObject({ mode: 'wait', why: 'history' });
+  });
+
+  it('waits while one fewer is fine at the forecast but not at the band’s top', () => {
+    const r = call({ actual: comp.slice(0, 10).map((c) => c * 0.8), now: 10, band: { spread: 0.6, nights: 4, calibrated: true }, serversNow: 4, fences: { f: { minDinner: 1, cutBy: '9:00 pm' } }, rate: 10 });
+    expect(r.mode).toBe('wait');
+    expect(r.needTop).toBeGreaterThan(r.needMid);
+  });
+
+  it('sizes the band from how far off the forecast was on the room’s own nights', () => {
+    const steady = [comp, comp, comp, comp];
+    expect(calibratedBand(steady, 8)).toMatchObject({ spread: 0.05, nights: 4, calibrated: true });
+    const wobbly = [comp, comp.map((c) => c * 1.3), comp.map((c, i) => (i >= 8 ? c * 0.5 : c)), comp];
+    const b = calibratedBand(wobbly, 8);
+    expect(b.spread).toBeGreaterThan(0.2);
+    expect(calibratedBand([comp, comp], 8).calibrated).toBe(false);
+    const p = pacing({ comp, actual: comp.slice(0, 8), now: 8, spread: 0.2 });
+    expect(p.range[0]).toBeLessThan(p.remaining);
+    expect(p.range[1]).toBeGreaterThan(p.remaining);
+  });
+
+  it('confirms a release from clock-ins, never from a ticked task, and flags a guardrail breach', () => {
+    const t = (n, out) => Array.from({ length: n }, (_, i) => ({ Employee: `S${i}`, 'Job Title': 'Server', 'In Date': '2026-10-29 16:00:00', 'Out Date': i === 0 && out ? `2026-10-29 ${out}:00` : '' }));
+    const cut = { at: 20 * 60, before: 5 };
+    expect(cutExecution({ cut, time: t(5), date: '2026-10-29', nowMin: 19 * 60 + 30, needTop: 4 }).state).toBe('awaiting');
+    expect(cutExecution({ cut, time: t(5), date: '2026-10-29', nowMin: 20 * 60 + 15, needTop: 4 }).state).toBe('not-seen');
+    expect(cutExecution({ cut, time: t(5, '20:00'), date: '2026-10-29', nowMin: 20 * 60 + 15, needTop: 4 }).state).toBe('confirmed');
+    expect(cutExecution({ cut, time: t(5, '20:00'), date: '2026-10-29', nowMin: 20 * 60 + 15, needTop: 5 }).state).toBe('breach');
+    expect(cutExecution({ cut, time: [], date: '2026-10-29', nowMin: 20 * 60 + 15, needTop: 4 }).state).toBe('unconfirmed');
+  });
+
+  it('reads the data watermark from the latest order, not the pull time', () => {
+    expect(lastOrderAt([order('2026-10-29', '18:05', 2), order('2026-10-29', '18:40', 2), order('2026-10-29', '18:50', 2, true)], '2026-10-29')).toBe(18 * 60 + 40);
+    expect(lastOrderAt([], '2026-10-29')).toBeNull();
+  });
+
+  it('marks the night stale when orders stop arriving mid-service', () => {
+    const past = ['2026-10-22', '2026-10-15', '2026-10-08'].map((d) => ({ day: d, orders: Array.from({ length: 40 }, (_, i) => order(d, `${17 + Math.floor(i / 10)}:${String((i % 10) * 6).padStart(2, '0')}`, 2)) }));
+    const flowing = { day: '2026-10-29', orders: Array.from({ length: 20 }, (_, i) => order('2026-10-29', `${17 + Math.floor(i / 10)}:${String((i % 10) * 6).padStart(2, '0')}`, 2)), time: [] };
+    expect(liveNight({ today: flowing, comparable: past, nowMin: 19 * 60, rate: 6 }).stale).toBe(false);
+    const stopped = { ...flowing, orders: flowing.orders.slice(0, 5) }; // last order 17:24
+    const n = liveNight({ today: stopped, comparable: past, nowMin: 19 * 60, rate: 6 });
+    expect(n.stale).toBe(true);
+    expect(n.call.mode).toBe('stale');
+    expect(n.dataThrough).toBe(17 * 60 + 24);
   });
 
   it('needs two comparable nights before pacing live', () => {

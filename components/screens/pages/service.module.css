@@ -24,8 +24,9 @@
 .quiet .callIcon { background: var(--success-50); color: var(--success-600); }
 .callTitle { font-weight: 700; font-size: var(--text-lg); line-height: 1.25; }
 .callBody { font-size: var(--text-sm); color: var(--fg-2); line-height: 1.5; }
-.actions { display: flex; gap: 8px; }
-.actions > :first-child { flex: 1; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.actions > * { min-width: 0; }
+.actions > :first-child { flex: 1 1 180px; }
 
 .tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .tile { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 10px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
@@ -53,3 +54,23 @@
   .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
   .hourRow { gap: 8px; padding: 6px 4px; }
 }
+
+/* Indicator tones, the conclusion line, checks and the review panel. */
+.tile.t_warn { border-color: var(--warning-500); }
+.conclusion { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: var(--radius-md); font-weight: 600; font-size: var(--text-base); background: var(--surface); border: 1px solid var(--border); }
+.conclusion svg { flex-shrink: 0; color: var(--fg-3); }
+.c_good svg { color: var(--success-600); }
+.c_warn { background: var(--warning-50); border-color: var(--warning-100); }
+.c_warn svg { color: var(--warning-600); }
+.c_accent { background: var(--accent-subtle); }
+.c_accent svg { color: var(--accent); }
+.checks { list-style: none; display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; }
+.checks li { display: flex; gap: 8px; align-items: flex-start; font-size: var(--text-xs); line-height: 1.45; color: var(--fg-1); }
+.checks li svg { flex-shrink: 0; margin-top: 2px; }
+.pass svg { color: var(--success-600); }
+.fail svg { color: var(--error-600); }
+.manual svg { color: var(--warning-600); }
+.review { display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: var(--radius-md); background: var(--surface-sunken); }
+.details summary { cursor: pointer; font-size: var(--text-xs); color: var(--fg-2); min-height: 32px; display: flex; align-items: center; }
+.details summary:focus-visible { outline: none; box-shadow: var(--ring); border-radius: var(--radius-sm); }
+.actions :global(.btn) { min-height: 44px; }

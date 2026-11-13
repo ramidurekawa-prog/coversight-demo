@@ -133,7 +133,7 @@ describe('Service: approving tonight’s cut', () => {
   it('tells the room once per service when the live call turns into a cut, and approves that cut', async () => {
     const api = fakeToastApi();
     // Tonight: eight servers clocked in at 4 pm.
-    const eight = Array.from({ length: 8 }, (_, i) => ({ guid: `te${i}`, employeeReference: { guid: `s${i}` }, jobReference: { guid: 'j1' }, inDate: '2026-10-29T23:00:00.000Z', regularHours: 0, hourlyWage: 18 }));
+    let eight: Record<string, unknown>[] = Array.from({ length: 8 }, (_, i) => ({ guid: `te${i}`, employeeReference: { guid: `s${i}` }, jobReference: { guid: 'j1' }, inDate: '2026-10-29T23:00:00.000Z', regularHours: 0, hourlyWage: 18 }));
     const f = (async (url: string, init?: RequestInit) => (String(url).includes('/labor/v1/timeEntries') && String(url).includes('20261029')
       ? new Response(JSON.stringify(eight), { headers: { 'content-type': 'application/json' } })
       : api.f(url, init))) as unknown as typeof fetch;
@@ -155,10 +155,26 @@ describe('Service: approving tonight’s cut', () => {
     const n = await db.select().from(notifications).where(and(eq(notifications.orgId, orgId), eq(notifications.kind, 'service.cut')));
     expect(n).toHaveLength(1);
     expect(n[0]!.link).toBe('/service');
-    // A different time than the call is refused; the call's own time goes through.
-    await expect(approveCut(db, owner(), { roomId: 'oakland', date: '2026-10-29', at: '20:00' }, { now: NOW, fetchImpl: f })).rejects.toThrow(/moved since/);
+    // Earlier than the call, or off the quarter hour, is refused; the call's own time goes through.
+    await expect(approveCut(db, owner(), { roomId: 'oakland', date: '2026-10-29', at: '19:00' }, { now: NOW, fetchImpl: f })).rejects.toThrow(/moved since/);
+    await expect(approveCut(db, owner(), { roomId: 'oakland', date: '2026-10-29', at: '19:20' }, { now: NOW, fetchImpl: f })).rejects.toThrow(/moved since/);
     const { task, approval } = await approveCut(db, owner(), { roomId: 'oakland', date: '2026-10-29', at: '19:15' }, { now: NOW, fetchImpl: f });
     expect(task.approvalId).toBe('cut:2026-10-29:19:15');
     expect(approval.diff[0]).toEqual(['Thu 7:15 pm to close', '8 servers', '7 servers']);
+    expect(await db.select().from(tasks).where(eq(tasks.orgId, orgId))).toHaveLength(1);
+
+    // Approval is not execution: until Toast shows a server clocked out, it's awaiting.
+    const later = new Date(NOW.getTime() + 30 * 6e4); // 7:40 pm
+    const before = await liveService(db, owner(), 'oakland', { now: later, fetchImpl: f, fresh: true });
+    if (!before.live) throw new Error('not live');
+    expect(before.night.execution?.state).toBe('not-seen');
+    // A server clocks out at 7:15 pm in Toast: the release is confirmed from the source, once.
+    eight = eight.map((e, i) => (i === 0 ? { ...e, outDate: '2026-10-30T02:15:00.000Z' } : e));
+    const after = await liveService(db, owner(), 'oakland', { now: later, fetchImpl: f, fresh: true });
+    if (!after.live) throw new Error('not live');
+    expect(after.night.execution).toMatchObject({ state: 'confirmed', on: 7 });
+    await liveService(db, owner(), 'oakland', { now: later, fetchImpl: f, fresh: true });
+    const confirmed = await db.select().from(notifications).where(and(eq(notifications.orgId, orgId), eq(notifications.dedupe, 'service-cut-confirmed:oakland:2026-10-29')));
+    expect(confirmed).toHaveLength(1);
   });
 });
