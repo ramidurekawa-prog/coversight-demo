@@ -8,6 +8,7 @@
     { "path": "/api/cron/proof", "schedule": "0 12 * * *" },
     { "path": "/api/cron/reverify", "schedule": "0 11 * * 1" },
     { "path": "/api/cron/cleanup", "schedule": "0 13 * * *" },
-    { "path": "/api/cron/billing", "schedule": "0 14 2 * *" }
+    { "path": "/api/cron/billing", "schedule": "0 14 2 * *" },
+    { "path": "/api/cron/week", "schedule": "0 15 * * 1" }
   ]
 }

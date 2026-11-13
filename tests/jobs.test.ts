@@ -142,7 +142,9 @@ describe('job runs and cleanup', () => {
   it('records every run per org, ok or not', async () => {
     await runJob(db, 'proof', { orgId, trigger: 'manual' });
     const st = await jobStatus(db, orgId);
-    expect(st.jobs.map((j) => j.job)).toEqual(['sync', 'links', 'agents', 'detection', 'proof', 'reverify', 'billing', 'cleanup']);
+    // The job list is append-only (page threads add theirs at the end).
+    expect(st.jobs.map((j) => j.job).slice(0, 8)).toEqual(['sync', 'links', 'agents', 'detection', 'proof', 'reverify', 'billing', 'cleanup']);
+    expect(st.jobs.map((j) => j.job)).toContain('week');
     expect(st.jobs.find((j) => j.job === 'proof')!.last!.ok).toBe(true);
     expect(st.jobs.find((j) => j.job === 'proof')!.last!.trigger).toBe('manual');
     expect(st.jobs.find((j) => j.job === 'detection')!.last).toBeNull();
