@@ -22,6 +22,13 @@ describe('This week, on the sample', () => {
     expect(v.dataThrough).toBe('2026-10-25');
   });
 
+  it('charts the last twelve weeks, ending on this one, from the same rows', () => {
+    expect(v.history).toHaveLength(12);
+    expect(v.history.at(-1)).toMatchObject({ iso: d.hist.rows.at(-1).iso, current: true });
+    expect(v.history.at(-1).earned).toBeCloseTo(v.contribution.value, 2);
+    expect(v.history.filter((h) => h.current)).toHaveLength(1);
+  });
+
   it('weekly totals reconcile with Daily, in every room', () => {
     for (const id of Object.keys(SEED.rooms)) {
       const dd = deriveRoom(SEED, id);
@@ -156,6 +163,7 @@ describe('This week, for a real group', () => {
     expect(v.decomposition).toBeNull();
     expect(v.contribution.value).toBeNull();
     expect(v.headline).toMatch(/no earlier week/);
+    expect(v.history).toEqual([]);
     // Own rows count.
     const own = { ...d, hist: { ...d.hist, rows: d.hist.rows.map((r, i) => (i >= d.hist.rows.length - 2 ? { ...r, own: true } : r)) } };
     const w = weekView(own, { windows: [], matchedWeeks: MW, now: NOW });
