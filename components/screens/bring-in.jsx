@@ -120,13 +120,13 @@ export function BringIn({ onReview, setLinks = () => {} }) {
     if (!kind) { setErr('Pick what this table is first.'); return; }
     const csv = src.csv ?? toCSV(...(() => { const t = gridToTable(src.grid, src.headerRow); return [t.headers, t.rows]; })());
     setFound((f) => ({ ...f, opened: { ...(f.opened || {}), [src.source]: true } }));
-    onReview({ kind, csv, source: src.source, id: `${src.source}-${Date.now()}` });
+    onReview({ kind, csv, source: src.source, via: found.viaLink ? 'link' : found.from === 'your paste' ? 'paste' : 'file', id: `${src.source}-${Date.now()}` });
   };
   const readPhoto = (m) => run(`photo:${m.name}`, async () => {
     const prepared = await prepareMedia(m.file);
     const j = await jfetch('/api/inputs/extract', { method: 'POST', body: JSON.stringify({ name: m.name, ...prepared }) });
     if (!j.rows.length) throw new Error('No rows could be read. Try a closer, straighter photo of just the table.');
-    onReview({ kind: j.kind, csv: toCSV(j.columns, j.rows), source: `${m.name} (read from the photo)`, notes: j.notes, id: `${m.name}-${Date.now()}` });
+    onReview({ kind: j.kind, csv: toCSV(j.columns, j.rows), source: `${m.name} (read from the photo)`, via: 'photo', notes: j.notes, id: `${m.name}-${Date.now()}` });
     cv.toast(`Read ${j.rows.length} rows from ${m.name}. Check them below before committing.`);
   });
   const keepLinked = () => run('keep', async () => {
@@ -178,7 +178,7 @@ export function BringIn({ onReview, setLinks = () => {} }) {
               <span><b>Link a Google Sheet or Dropbox file</b><span>{server ? 'Read now, and every morning if you keep it linked' : 'Needs the server'}</span></span>
             </span>
             <span className={st.wayLink}>
-              <input className="input" style={{ flex: 1, minWidth: 0, height: 32, fontSize: 'var(--text-sm)' }} placeholder="https://docs.google.com/spreadsheets/…" value={link} onChange={(e) => setLink(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && server && link && !busy) fetchLink(); }} aria-label="Google Sheets or Dropbox link" disabled={!server} />
+              <input id="inputs-link" className="input" style={{ flex: 1, minWidth: 0, height: 32, fontSize: 'var(--text-sm)' }} placeholder="https://docs.google.com/spreadsheets/…" value={link} onChange={(e) => setLink(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && server && link && !busy) fetchLink(); }} aria-label="Google Sheets or Dropbox link" disabled={!server} />
               <Button size="sm" variant="secondary" disabled={!server || !link || !!busy} onClick={fetchLink}>{busy === 'link' ? 'Fetching…' : 'Fetch'}</Button>
             </span>
           </div>

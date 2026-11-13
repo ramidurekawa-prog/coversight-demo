@@ -8,8 +8,8 @@ export async function POST(req: Request) {
   try {
     const db = getDb();
     const v = await viewerFor(req.headers, db);
-    const id = await commitChecked(db, v, await req.json().catch(() => null));
-    return Response.json({ id, ...(await scopedInputs(db, v)) });
+    const result = await commitChecked(db, v, await req.json().catch(() => null));
+    return Response.json({ ...result, ...(await scopedInputs(db, v)) });
   } catch (err) {
     return errorResponse(err);
   }

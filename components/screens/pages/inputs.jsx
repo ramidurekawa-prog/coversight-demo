@@ -3,9 +3,11 @@
 import * as React from 'react';
 
 import { Button, Icon } from '../../kit';
-import { CV_D, CV_ROOM, Callout, PageHead, Pill } from '../core';
+import { CV_D, CV_DS, CV_ROOM, Callout, PageHead, Pill } from '../core';
 import { useEngine } from '../../engine';
 import { KINDS } from '../../../lib/data/ingest';
+import { attention } from '../../../lib/data/page/inputs';
+import { Attention } from './inputs-attention';
 import { ToastImport } from '../toast-import';
 import { BringIn } from '../bring-in';
 import { StatusBoard, boardRows } from './inputs-board';
@@ -48,37 +50,46 @@ function ToastExports() {
 function CvInputs() {
   const eng = useEngine();
   const server = eng.mode === 'server';
+  const sample = !server || !!eng.org?.sample;
   const [kind, setKind] = React.useState('profile');
   const [seed, setSeed] = React.useState(null);
+  const [startMode, setStartMode] = React.useState(null);
+  const [boardOpen, setBoardOpen] = React.useState(false);
+  const [editing, setEditing] = React.useState(false);
   const { links, setLinks } = useLinks(server);
   // The board needs who made each room's current entry; the History card keeps its own filtered list.
   const roomHistory = useHistory({ server, roomId: CV_D.id, kind: null });
 
   React.useEffect(() => {
-    const read = () => { const h = window.location.hash.slice(1); if (KINDS.includes(h)) setKind(h); };
+    const read = () => { const h = window.location.hash.slice(1); if (KINDS.includes(h)) { setKind(h); setEditing(true); } };
     read();
     window.addEventListener('hashchange', read);
     return () => window.removeEventListener('hashchange', read);
   }, []);
   const setHash = (k) => { try { window.history.replaceState(null, '', `#${k}`); } catch { /* no history */ } };
-  const pick = (k) => {
-    setKind(k); setSeed(null); setHash(k);
-    requestAnimationFrame(() => document.getElementById('inputs-editor')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
-  };
+  const scrollTo = (id) => requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  const open = (k, m = null) => { setKind(k); setSeed(null); setStartMode(m); setEditing(true); setHash(k); scrollTo('inputs-editor'); };
+  const focusLink = () => { scrollTo('bring-in'); setTimeout(() => document.getElementById('inputs-link')?.focus(), 350); };
   const rows = boardRows(links, roomHistory.entries);
+  const linkedKinds = new Set(links.filter((l) => l.roomId === CV_D.id).flatMap((l) => l.picks.map((p) => p.kind)));
+  const items = attention(CV_D, CV_DS.rooms[CV_D.id], { windows: eng.windows, linkedKinds, server });
 
   return (
     <div className="cv-page wide">
-      <PageHead over={`Data inputs · ${CV_ROOM.name}`} q="Bring in what isn't connected yet"
-        sub="Drop a file, paste from a spreadsheet, link a Google Sheet, snap a photo, or type it in. Every row is checked before it lands, you see exactly which figures move, and the latest commit for each kind can be undone."
-        right={<Pill tone={server ? 'good' : 'neutral'} icon={server ? 'Cloud' : 'HardDrive'}>{server ? 'Saved to your account' : 'Saved in this browser only'}</Pill>} />
-      <StatusBoard rows={rows} kind={kind} onPick={pick} />
-      <BringIn setLinks={setLinks} onReview={(x) => { setSeed(x); setKind(x.kind); setHash(x.kind); }} />
-      <Editor key={`${CV_D.id}-${kind}-${seed?.id ?? ''}`} kind={kind} seed={seed?.kind === kind ? seed : null} />
+      <PageHead over={`Data inputs · ${CV_ROOM.name}`} q="Complete your restaurant data"
+        sub="Coversight uses this information to improve the accuracy of its recommendations."
+        right={<>{sample && <Pill tone="warn" icon="FlaskConical">Sample group</Pill>}<Pill tone={server ? 'good' : 'neutral'} icon={server ? 'Cloud' : 'HardDrive'}>{server ? 'Saved to your account' : 'Saved in this browser only'}</Pill></>} />
+      {sample && <Callout icon="FlaskConical">This is the sample restaurant group: its figures are sample data, not a real restaurant&apos;s. Anything you enter replaces the sample for that kind and is labelled as yours everywhere it&apos;s used.</Callout>}
+      <Attention items={items} server={server} onOpen={open} onLink={focusLink} />
+      <BringIn setLinks={setLinks} onReview={(x) => { setSeed(x); setKind(x.kind); setStartMode('csv'); setEditing(true); setHash(x.kind); }} />
+      {editing
+        ? <Editor key={`${CV_D.id}-${kind}-${seed?.id ?? ''}-${startMode ?? ''}`} kind={kind} seed={seed?.kind === kind ? seed : null} startMode={startMode} />
+        : null}
+      <StatusBoard rows={rows} kind={editing ? kind : null} onPick={(k) => open(k)} open={boardOpen} setOpen={setBoardOpen} />
       {server && <LinkedSheets links={links} setLinks={setLinks} />}
       <History server={server} onChanged={roomHistory.reload} />
       <ToastExports />
-      <Callout icon="ShieldCheck">Hand-entered data is labelled wherever it&apos;s used: its feed shows &quot;manual entry&quot; on Sources, and a quarantined test that was waiting on it restarts its window from the day it arrived. It never re-prices a verified result.</Callout>
+      <Callout icon="ShieldCheck">Data you bring in is labelled wherever it&apos;s used: its feed shows &quot;manual entry&quot; on Sources, running tests that read it are flagged for reassessment, and it never re-prices a verified saving.</Callout>
     </div>
   );
 }

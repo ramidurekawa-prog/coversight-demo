@@ -25,7 +25,7 @@ export function boardRows(links, history) {
   });
 }
 
-export function StatusBoard({ rows, kind, onPick }) {
+export function StatusBoard({ rows, kind, onPick, open, setOpen }) {
   const count = (k) => rows.filter((r) => r.src.key === k).length;
   const mine = count('hand'), linked = count('linked'), stale = count('stale');
   const total = rows.length;
@@ -35,7 +35,10 @@ export function StatusBoard({ rows, kind, onPick }) {
     <section className={`cv-card ${s.board}`} aria-labelledby="inputs-board">
       <div className={s.boardHead}>
         <div className="cv-col" style={{ gap: 4 }}>
-          <span className="cv-h4" id="inputs-board">What {CV_ROOM.short} runs on</span>
+          <button type="button" className={s.boardToggle} onClick={() => setOpen(!open)} aria-expanded={open} aria-controls="inputs-board-rows">
+            <span className="cv-h4" id="inputs-board" style={{ color: 'var(--fg-1)' }}>All seven kinds of data</span>
+            <Icon name={open ? 'ChevronUp' : 'ChevronDown'} size={16} />
+          </button>
           <span className="cv-small cv-muted" style={{ maxWidth: '68ch' }}>
             {mine + linked === 0
               ? <>Every kind below is sample data. Work down the numbered steps (about 15 minutes) and {CV_ROOM.short} runs on your own numbers; whatever you skip stays sample data, scaled to your sales.</>
@@ -56,7 +59,7 @@ export function StatusBoard({ rows, kind, onPick }) {
           </div>
         </div>
       </div>
-      <div className={s.rows} role="list" aria-label={`Data kinds for ${CV_ROOM.short}`}>
+      {open && <div className={s.rows} role="list" aria-label={`Data kinds for ${CV_ROOM.short}`} id="inputs-board-rows">
         <div className={`${s.row} ${s.rowHead}`} aria-hidden="true"><span>Step</span><span>Data</span><span>Source</span><span>Last change</span><span style={{ textAlign: 'right' }}>Rows</span><span /></div>
         {rows.map(({ kind: k, schema, entry, feed, src, last }) => {
           const step = STEP_ORDER.indexOf(k) + 1;
@@ -80,7 +83,7 @@ export function StatusBoard({ rows, kind, onPick }) {
             </button>
           );
         })}
-      </div>
+      </div>}
     </section>
   );
 }

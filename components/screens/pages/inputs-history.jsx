@@ -13,6 +13,7 @@ import { undoEntry, useHistory } from './inputs-data';
 import s from './inputs.module.css';
 
 const META = (k) => SCHEMAS[k] || (k === 'toast' ? { title: 'Toast exports', icon: 'PlugZap' } : { title: k, icon: 'FilePen' });
+const SOURCE = { grid: 'typed in', csv: 'pasted CSV', file: 'uploaded file', paste: 'pasted', link: 'linked sheet', photo: 'read from a photo', toast: 'Toast export' };
 const roomName = (id) => CV_DS.rooms[id]?.profile?.short || id;
 
 export function History({ server, onChanged }) {
@@ -72,7 +73,7 @@ export function History({ server, onChanged }) {
                 <span className="cv-q-ico" style={{ width: 32, height: 32 }}><Icon name={META(e.kind).icon} size={15} /></span>
                 <div className="cv-col" style={{ gap: 2, minWidth: 0 }}>
                   <span className={s.entryTitle}>{META(e.kind).title}{scope === 'all' ? ` · ${roomName(e.room)}` : ''} · {e.rows.toLocaleString('en-US')} row{e.rows === 1 ? '' : 's'} <Pill tone={status.tone} icon={status.icon}>{status.label}</Pill></span>
-                  <span className={s.entryMeta}>{e.at} · {e.by.kind === 'link' ? <><Icon name="Link2" size={11} /> read from a linked sheet</> : `by ${e.by.kind === 'you' ? 'you' : e.by.name}`}</span>
+                  <span className={s.entryMeta}>{e.at} · {e.by.kind === 'link' ? <><Icon name="Link2" size={11} /> read from a linked sheet</> : `by ${e.by.kind === 'you' ? 'you' : e.by.name}`}{e.source && e.by.kind !== 'link' ? ` · ${SOURCE[e.source] || e.source}${e.file ? ` (${e.file})` : ''}` : ''}{e.counts ? ` · ${e.counts.added ?? 0} new, ${e.counts.updated ?? 0} updated${e.counts.duplicates ? `, ${e.counts.duplicates} already logged` : ''}` : ''}{e.verified === true ? ' · verified' : e.verified === false ? ' · stored rows didn’t match' : ''}</span>
                   {e.summary && <span className={s.entrySum}>{e.summary}</span>}
                 </div>
                 {e.current && !e.undone && <Button size="sm" variant="secondary" icon="Undo2" disabled={!!busy} onClick={() => undo(e)}>{busy === e.id ? 'Undoing…' : 'Undo'}</Button>}
