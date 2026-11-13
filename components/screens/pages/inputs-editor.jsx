@@ -150,6 +150,28 @@ function Counts({ result, a }) {
   );
 }
 
+const num = (v) => { const n = parseFloat(String(v).replace(/[^0-9.\-]/g, '')); return Number.isFinite(n) ? n : null; };
+
+/* One figure that moves: big new value, the change, and a before/after pair of bars on one scale. */
+function MoveTile({ m }) {
+  const b = num(m.before), af = num(m.after);
+  const max = Math.max(Math.abs(b ?? 0), Math.abs(af ?? 0)) || 1;
+  const pct = b ? Math.round(((af - b) / Math.abs(b)) * 100) : null;
+  return (
+    <div className={s.move} role="group" aria-label={`${m.label}: ${m.before} now, ${m.after} after`}>
+      <span className={s.moveLabel}>{m.label} <Claim k={m.claim} /></span>
+      <b className={s.moveBig}>{m.after}</b>
+      <span className={s.moveDelta}><Icon name={m.up ? 'ArrowUp' : 'ArrowDown'} size={12} />{pct != null && Number.isFinite(pct) ? `${pct > 0 ? '+' : ''}${pct}%` : 'changed'} <span className="cv-faint">from {m.before}</span></span>
+      {b != null && af != null && (
+        <span className={s.moveBars} aria-hidden="true">
+          <span title={`Now ${m.before}`}><i style={{ width: `${(Math.abs(b) / max) * 100}%`, background: 'var(--neutral-300)' }} /></span>
+          <span title={`After ${m.after}`}><i style={{ width: `${(Math.abs(af) / max) * 100}%`, background: 'var(--accent)' }} /></span>
+        </span>
+      )}
+    </div>
+  );
+}
+
 function Preview({ a }) {
   if (!a) return null;
   const cols = 'minmax(0, 1.8fr) minmax(0, 1fr) minmax(0, 1fr)';
@@ -168,9 +190,18 @@ function Preview({ a }) {
         </details>
       )}
       {a.diff.removed.length > 0 && <Callout tone="warn" icon="TriangleAlert">Replacing the list drops {a.diff.removed.slice(0, 6).join(', ')}{a.diff.removed.length > 6 ? ` and ${a.diff.removed.length - 6} more` : ''}.</Callout>}
-      <div className="cv-grid g2" style={{ alignItems: 'start' }}>
-        <div className="cv-col" style={{ gap: 8 }}>
-          <span className="cv-over">Figures that change · {moved ? plural(moved, 'figure') : 'nothing moves'}</span>
+      {moved > 0 ? (
+        <div className={s.moves} aria-label="Figures that change">
+          {a.moves.filter((m) => m.changed).slice(0, 4).map((m) => <MoveTile key={m.label} m={m} />)}
+        </div>
+      ) : <span className="cv-small cv-muted"><Icon name="Minus" size={13} style={{ verticalAlign: -2 }} /> No figure moves with these rows.</span>}
+      <div className="cv-row" style={{ gap: 8 }}>
+        <Pill tone="neutral" icon="Lock">{plural(a.frozen.length, 'verified saving')} stay{a.frozen.length === 1 ? 's' : ''} frozen</Pill>
+        <Claim k="book" />
+      </div>
+      <details>
+        <summary className="cv-small" style={{ cursor: 'pointer', fontWeight: 600 }}>Every figure, before and after</summary>
+        <div className="cv-grid g2" style={{ alignItems: 'start', marginTop: 8 }}>
           <div className="cv-diff">
             <div className="r h" style={{ gridTemplateColumns: cols }}><span>Figure</span><span>Now</span><span>After</span></div>
             {a.moves.map((m) => (
@@ -181,16 +212,15 @@ function Preview({ a }) {
               </div>
             ))}
           </div>
-        </div>
-        <div className="cv-col" style={{ gap: 8 }}>
-          <span className="cv-over">What can&apos;t change</span>
-          <div className="cv-diff">
-            <div className="r h" style={{ gridTemplateColumns: 'minmax(0,1fr) 120px' }}><span>Figure</span><span>Stays</span></div>
-            {a.frozen.map((m) => <div key={m.label} className="r" style={{ gridTemplateColumns: 'minmax(0,1fr) 120px' }}><span className="cv-row" style={{ gap: 6 }}>{m.label} <Claim k="book" /></span><span className="now">{m.value} <Icon name="Lock" size={12} /></span></div>)}
+          <div className="cv-col" style={{ gap: 8 }}>
+            <div className="cv-diff">
+              <div className="r h" style={{ gridTemplateColumns: 'minmax(0,1fr) 120px' }}><span>Can&apos;t change</span><span>Stays</span></div>
+              {a.frozen.map((m) => <div key={m.label} className="r" style={{ gridTemplateColumns: 'minmax(0,1fr) 120px' }}><span className="cv-row" style={{ gap: 6 }}>{m.label} <Claim k="book" /></span><span className="now">{m.value} <Icon name="Lock" size={12} /></span></div>)}
+            </div>
+            <span className="cv-xs cv-faint">Verified savings are frozen when their test window closes. New data never moves them.</span>
           </div>
-          <span className="cv-xs cv-faint">Verified savings are frozen in their packets when the window closes. New data moves estimates and observed figures, never a verified number.</span>
         </div>
-      </div>
+      </details>
       {(f.unblocked.length + f.blocked.length + f.changed.length + f.added.length + f.gone.length > 0 || a.tests.length > 0) && (
         <div className="cv-col" style={{ gap: 6 }}>
           <span className="cv-over">Findings and tests affected</span>

@@ -6,15 +6,16 @@ import { Button, Icon } from '../../kit';
 import { CV_D, CV_DS, CV_ROOM, Callout, PageHead, Pill } from '../core';
 import { useEngine } from '../../engine';
 import { KINDS } from '../../../lib/data/ingest';
-import { attention } from '../../../lib/data/page/inputs';
-import { Attention } from './inputs-attention';
+import { attention, stakes } from '../../../lib/data/page/inputs';
+import { Coverage, FixNext, Hero, KindTiles, StakeBars } from './inputs-visual';
 import { ToastImport } from '../toast-import';
 import { BringIn } from '../bring-in';
-import { StatusBoard, boardRows } from './inputs-board';
+import { boardRows } from './inputs-board';
 import { Editor } from './inputs-editor';
 import { History } from './inputs-history';
 import { LinkedSheets } from './inputs-links';
 import { useHistory, useLinks } from './inputs-data';
+import s from './inputs.module.css';
 
 /* Data inputs: the manual ingestion layer. First, where each kind of this
  * room's data comes from now. Then the ways in: drop, paste, link, photo.
@@ -54,7 +55,6 @@ function CvInputs() {
   const [kind, setKind] = React.useState('profile');
   const [seed, setSeed] = React.useState(null);
   const [startMode, setStartMode] = React.useState(null);
-  const [boardOpen, setBoardOpen] = React.useState(false);
   const [editing, setEditing] = React.useState(false);
   const { links, setLinks } = useLinks(server);
   // The board needs who made each room's current entry; the History card keeps its own filtered list.
@@ -73,23 +73,44 @@ function CvInputs() {
   const rows = boardRows(links, roomHistory.entries);
   const linkedKinds = new Set(links.filter((l) => l.roomId === CV_D.id).flatMap((l) => l.picks.map((p) => p.kind)));
   const items = attention(CV_D, CV_DS.rooms[CV_D.id], { windows: eng.windows, linkedKinds, server });
+  const stake = stakes(CV_D, CV_DS.rooms[CV_D.id]);
 
   return (
     <div className="cv-page wide">
-      <PageHead over={`Data inputs · ${CV_ROOM.name}`} q="Complete your restaurant data"
-        sub="Coversight uses this information to improve the accuracy of its recommendations."
+      <PageHead over={`Data inputs · ${CV_ROOM.name}`} q="Your data, at a glance"
+        sub="The more of it is yours, the sharper every number in Coversight."
         right={<>{sample && <Pill tone="warn" icon="FlaskConical">Sample group</Pill>}<Pill tone={server ? 'good' : 'neutral'} icon={server ? 'Cloud' : 'HardDrive'}>{server ? 'Saved to your account' : 'Saved in this browser only'}</Pill></>} />
-      {sample && <Callout icon="FlaskConical">This is the sample restaurant group: its figures are sample data, not a real restaurant&apos;s. Anything you enter replaces the sample for that kind and is labelled as yours everywhere it&apos;s used.</Callout>}
-      <Attention items={items} server={server} onOpen={open} onLink={focusLink} />
-      <BringIn setLinks={setLinks} onReview={(x) => { setSeed(x); setKind(x.kind); setStartMode('csv'); setEditing(true); setHash(x.kind); }} />
+      {sample && <Callout icon="FlaskConical">Sample restaurant group. Anything you enter replaces the sample for that kind and is labelled as yours.</Callout>}
+      <Hero rows={rows} stakes={stake} items={items} />
+      <div className={s.split}>
+        <section className="cv-card" aria-labelledby="inputs-next">
+          <span className="cv-h4" id="inputs-next">Fix next</span>
+          <FixNext items={items} server={server} onOpen={open} onLink={focusLink} />
+        </section>
+        <section className="cv-card" aria-labelledby="inputs-cover">
+          <span className="cv-h4" id="inputs-cover">Where your data comes from</span>
+          <Coverage rows={rows} onPick={(k) => open(k)} />
+        </section>
+      </div>
+      <section className="cv-card" aria-labelledby="inputs-stakes">
+        <span className="cv-h4" id="inputs-stakes">What each kind of data unlocks</span>
+        <StakeBars stakes={stake} onPick={(k) => open(k)} />
+      </section>
+      <section className="cv-card" aria-labelledby="inputs-kinds">
+        <div className="cv-card-head">
+          <span className="cv-h4" id="inputs-kinds">All seven kinds</span>
+          <span className="cv-xs cv-faint">Tap one to view, enter or update it</span>
+        </div>
+        <KindTiles rows={rows} kind={editing ? kind : null} onPick={(k) => open(k)} />
+      </section>
       {editing
         ? <Editor key={`${CV_D.id}-${kind}-${seed?.id ?? ''}-${startMode ?? ''}`} kind={kind} seed={seed?.kind === kind ? seed : null} startMode={startMode} />
         : null}
-      <StatusBoard rows={rows} kind={editing ? kind : null} onPick={(k) => open(k)} open={boardOpen} setOpen={setBoardOpen} />
+      <BringIn setLinks={setLinks} onReview={(x) => { setSeed(x); setKind(x.kind); setStartMode('csv'); setEditing(true); setHash(x.kind); scrollTo('inputs-editor'); }} />
       {server && <LinkedSheets links={links} setLinks={setLinks} />}
       <History server={server} onChanged={roomHistory.reload} />
       <ToastExports />
-      <Callout icon="ShieldCheck">Data you bring in is labelled wherever it&apos;s used: its feed shows &quot;manual entry&quot; on Sources, running tests that read it are flagged for reassessment, and it never re-prices a verified saving.</Callout>
+      <span className="cv-xs cv-faint" style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}><Icon name="ShieldCheck" size={13} />Your data is labelled wherever it&apos;s used, and it never re-prices a verified saving.</span>
     </div>
   );
 }

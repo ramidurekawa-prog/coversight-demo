@@ -40,7 +40,7 @@ export function History({ server, onChanged }) {
       <div className="cv-card-head">
         <div className="cv-col" style={{ gap: 4 }}>
           <span className="cv-h4" id="inputs-history">History</span>
-          <span className="cv-small cv-muted">Every commit, who made it and which figures it moved. Undo puts back what the room held before.</span>
+          <span className="cv-small cv-muted">Who changed what. Undo the latest one per kind.</span>
         </div>
         <div className={s.filters}>
           {many && (
@@ -61,7 +61,7 @@ export function History({ server, onChanged }) {
       {!hist.entries.length && !hist.loading && !hist.error && (
         <div className="cv-row nowrap" style={{ gap: 12, padding: '6px 0' }}>
           <span className="cv-q-ico"><Icon name="History" size={16} /></span>
-          <span className="cv-small cv-muted">Nothing entered{kind ? ` for ${META(kind).title.toLowerCase()}` : ''}{scope === 'room' ? ` at ${CV_ROOM.short}` : ''} yet. Each commit lands here with what it moved, and the latest one per kind can be undone.</span>
+          <span className="cv-small cv-muted">Nothing entered{kind ? ` for ${META(kind).title.toLowerCase()}` : ''}{scope === 'room' ? ` at ${CV_ROOM.short}` : ''} yet.</span>
         </div>
       )}
       {hist.entries.length > 0 && (

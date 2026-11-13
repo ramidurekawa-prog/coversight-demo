@@ -146,7 +146,7 @@ export function BringIn({ onReview, setLinks = () => {} }) {
       <div className="cv-card-head">
         <div className="cv-col" style={{ gap: 4 }}>
           <span className="cv-h4" id="bring-in">Bring data in</span>
-          <span className="cv-small cv-muted" style={{ maxWidth: '72ch' }}>Drop whatever you have. Coversight works out what each file, tab or photo is and opens it below to check before anything changes. You don&apos;t need to rename columns or pick a template.</span>
+          <span className="cv-small cv-muted" style={{ maxWidth: '72ch' }}>Drop anything. We work out what it is and show you before anything changes.</span>
         </div>
         <Pill icon="ShieldCheck">Every lane, same checks</Pill>
       </div>
@@ -159,7 +159,7 @@ export function BringIn({ onReview, setLinks = () => {} }) {
           onPaste={(e) => { const t = e.clipboardData.getData('text'); if (t) { e.preventDefault(); onPasteText(t); } else if (e.clipboardData.files.length) onFiles(e.clipboardData.files); }}>
           <span className={st.dropIco}><Icon name="Upload" size={20} /></span>
           <div className="cv-h4">{busy === 'read' ? 'Reading…' : 'Drop files here, or click to choose'}</div>
-          <div className="cv-xs cv-faint" style={{ maxWidth: '52ch' }}>CSV · Excel (every tab) · a zip of Toast exports · a photo or PDF of an invoice, count sheet or statement. Or click here and paste rows (⌘V).</div>
+          <div className="cv-xs cv-faint" style={{ maxWidth: '52ch' }}>CSV · Excel · Toast zip · photo or PDF · or paste (⌘V)</div>
           <input ref={fileRef} type="file" multiple onChange={(e) => onFiles(e.target.files)} style={{ display: 'none' }} aria-hidden="true" tabIndex={-1} />
         </div>
         <div className={st.wayList}>
