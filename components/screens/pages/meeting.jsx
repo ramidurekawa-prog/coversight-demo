@@ -2,12 +2,13 @@
 
 import * as React from 'react';
 import { Icon, Button } from '../../kit';
-import { useCv, CV_D, CV_ROOM, Pill, PageHead, Claim, Callout } from '../core';
+import { useCv, CV_D, CV_ROOM, Pill, PageHead, Callout } from '../core';
 import { engine, useEngine, useSaved } from '../../engine';
 import {
   actionProgress, activeActions, buildAgenda, DAYS, DEFAULT_SCHEDULE, DISMISS_DAYS, draftAction, finalizeMeeting, finalizeProblems, HOLD_DAYS,
-  isoDay, MEETING_LIMITS as ML, meetingStats, nextMeeting, OUTCOMES, readiness, SEGMENTS, setOutcome, slotLabel, summaryEmail, summaryText,
+  isoDay, MEETING_LIMITS as ML, meetingStats, nextMeeting, OUTCOMES, readiness, SEGMENTS, setOutcome, slotLabel, summaryEmail, summaryText, usd,
 } from '../../../lib/data/page/meeting';
+import { BigNum, Drivers, MeetingWeeks, Ring, TimeBar, ValueBars, WeekBars } from './meeting.charts';
 import { localApi, serverApi } from './meeting.api';
 import s from './meeting.module.css';
 
@@ -33,17 +34,61 @@ function useNow(on) {
   return new Date();
 }
 
-function Figures({ figures }) {
-  if (!figures?.length) return null;
-  return (
-    <div className={s.figs}>
-      {figures.map((f) => (
-        <div key={f.label} className={s.fig}>
-          <span className={s.figLabel}>{f.label}</span>
-          <span className={s.figVal}>{f.value}</span>
-          {f.claim && <Claim k={f.claim} />}
+/** The candidate behind a decision item, for its value, range and chance. */
+const candidateFor = (item) => (item?.findingId ? CV_D.candidates.find((c) => c.id === item.findingId) : null);
+const rowsFor = () => CV_D.hist?.rows || [];
+
+/** The item's own visual: a chart where the data supports one, otherwise its headline number. */
+function ItemVisual({ item }) {
+  if (item.missing) return null;
+  if (item.id === 'fin') {
+    const rows = rowsFor();
+    const [first, second, third] = item.figures;
+    return (
+      <div className={s.visual}>
+        <div className={s.bigRow}>
+          {first && <BigNum label="Contribution after food and labour" value={first.value} claim={first.claim} />}
+          {second && <BigNum label="vs 4-week average" value={second.value} claim={second.claim} tone={second.value.startsWith('−') ? 'down' : 'up'} />}
+          {third && <BigNum label="Verified saving run-rate" value={third.value} claim={third.claim} sub=" not realized cash" />}
         </div>
-      ))}
+        {rows.length > 1 && <WeekBars rows={rows} />}
+        {rows.length > 4 && <Drivers rows={rows} />}
+      </div>
+    );
+  }
+  const c = candidateFor(item);
+  if (c && item.seg === 'D') {
+    return (
+      <div className={s.visual}>
+        <div className={s.bigRow}>
+          <BigNum label={c.prevent ? 'Cost prevented if done' : 'Potential opportunity'} value={<>{usd(c.value)}<small>/wk</small></>} claim={c.claim} />
+          {!c.prevent && <BigNum label="Chance it verifies" value={`${Math.round(c.p * 100)}%`} />}
+          <BigNum label="Manager time" value={`${Math.round(c.hours * 60)} min`} />
+        </div>
+        {!c.prevent && c.lo != null && <ValueBars rows={[{ ...c, title: `Likely range ${usd(c.lo)}–${usd(c.hi)} a week (dashed); the bar is the estimate` }]} />}
+      </div>
+    );
+  }
+  if (!item.figures?.length) return null;
+  const [first, ...rest] = item.figures;
+  return (
+    <div className={s.bigRow}>
+      <BigNum label={first.label} value={first.value} claim={first.claim} />
+      {rest.map((f) => <BigNum key={f.label} label={f.label} value={f.value} claim={f.claim} />)}
+    </div>
+  );
+}
+
+/** A short reveal: the long explanation stays one click away. */
+function More({ label = 'Why?', children, open: init = false }) {
+  const [open, setOpen] = React.useState(init);
+  const id = React.useId();
+  return (
+    <div className={s.more}>
+      <button type="button" className={s.moreBtn} aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}>
+        <Icon name="ChevronDown" size={14} className={s.moreChev} />{label}
+      </button>
+      {open && <div id={id} className={s.moreBody}>{children}</div>}
     </div>
   );
 }
@@ -77,7 +122,7 @@ function SummaryActions({ rec }) {
         <Button size="sm" variant="ghost" icon="Copy" onClick={copy}>Copy</Button>
         <Button size="sm" variant="ghost" icon="Download" onClick={download}>Download</Button>
       </div>
-      <span className="cv-xs cv-faint" role="status">{draft === 'saved' ? 'Saved to the outbox as a draft. Nothing has been sent.' : draft === 'failed' ? 'The draft wasn’t saved. Try again, or use Copy.' : 'Opening it in your email app sends nothing until you press send there.'}</span>
+      {draft && <span className="cv-xs cv-faint" role="status">{draft === 'saved' ? 'Saved to the outbox as a draft. Nothing has been sent.' : 'The draft wasn’t saved. Try again, or use Copy.'}</span>}
     </div>
   );
 }
@@ -87,46 +132,57 @@ function MeetingDetail({ rec }) {
   const dec = (rec.decisions || []).filter((x) => x.outcome !== 'discussed' && x.outcome !== 'kept');
   return (
     <div className={s.detail}>
-      {rec.summary && <p className="cv-small" style={{ margin: 0, fontWeight: 600 }}>{rec.summary}</p>}
-      {rec.observations?.length > 0 && <div className="cv-col" style={{ gap: 4 }}><h5>Performance</h5>{rec.observations.map((o) => <span key={o} className="cv-small cv-muted">{o}</span>)}</div>}
+      {rec.decisions && (
+        <div className={s.bigRow}>
+          <BigNum label="Minutes" value={rec.mins ?? '–'} />
+          <BigNum label="Decisions" value={dec.length} />
+          <BigNum label="Actions" value={rec.actions?.length || 0} />
+          <BigNum label="Deferred" value={rec.deferred?.length || 0} />
+        </div>
+      )}
       {rec.actions?.length > 0 && (
-        <div className="cv-col" style={{ gap: 6 }}>
-          <h5>Actions</h5>
-          <ul className={s.plainList}>{rec.actions.map((a) => (
-            <li key={a.title}><Icon name="ListChecks" size={14} /><span><b>{a.title}</b><span className="cv-faint"> · {a.owner || 'No owner'} · due {dayLabel(a.due)}</span>{a.findingId && <> · <button className="cv-link" onClick={() => cv.go('finding', { id: a.findingId })}>Evidence</button></>}</span></li>
-          ))}</ul>
-        </div>
+        <ul className={s.cards}>{rec.actions.map((a) => (
+          <li key={a.title} className={s.card}>
+            <b>{a.title}</b>
+            <span className={s.chipsRow}><span className={s.chip}><Icon name="Users" size={12} />{a.owner || 'No owner'}</span><span className={s.chip}><Icon name="CalendarClock" size={12} />{dayLabel(a.due)}</span>
+              {a.findingId && <button className="cv-link cv-xs" onClick={() => cv.go('finding', { id: a.findingId })}>Evidence</button>}</span>
+          </li>
+        ))}</ul>
       )}
-      {dec.length > 0 && (
-        <div className="cv-col" style={{ gap: 6 }}>
-          <h5>Decisions</h5>
-          <ul className={s.plainList}>{dec.map((x) => <li key={x.item}><Icon name="Gavel" size={14} /><span>{x.title}: <b>{OUTCOMES[x.outcome] || x.outcome}</b>{x.reason ? <span className="cv-faint"> ({x.reason})</span> : null}</span></li>)}</ul>
-        </div>
+      {(dec.length > 0 || rec.notes?.length > 0 || rec.observations?.length > 0) && (
+        <More label="Decisions and notes">
+          {rec.observations?.map((o) => <span key={o} className="cv-small cv-muted">{o}</span>)}
+          {dec.length > 0 && <ul className={s.plainList}>{dec.map((x) => <li key={x.item}><Icon name="Gavel" size={14} /><span>{x.title}: <b>{OUTCOMES[x.outcome] || x.outcome}</b>{x.reason ? <span className="cv-faint"> ({x.reason})</span> : null}</span></li>)}</ul>}
+          {rec.notes?.length > 0 && <ul className={s.plainList}>{rec.notes.map((n) => <li key={n.item}><Icon name="PencilLine" size={14} /><span><b>{n.title}.</b> {n.note}</span></li>)}</ul>}
+        </More>
       )}
-      {rec.deferred?.length > 0 && <div className="cv-col" style={{ gap: 6 }}><h5>Deferred</h5><ul className={s.plainList}>{rec.deferred.map((x) => <li key={x.title}><Icon name="Hourglass" size={14} /><span>{x.title}<span className="cv-faint"> · {x.reason}</span></span></li>)}</ul></div>}
-      {rec.evidence?.length > 0 && <div className="cv-col" style={{ gap: 6 }}><h5>Waiting on evidence</h5><ul className={s.plainList}>{rec.evidence.map((x) => <li key={x.title}><Icon name="Search" size={14} />{x.title}</li>)}</ul></div>}
-      {rec.notes?.length > 0 && <div className="cv-col" style={{ gap: 6 }}><h5>Notes</h5><ul className={s.plainList}>{rec.notes.map((n) => <li key={n.item}><Icon name="PencilLine" size={14} /><span><b>{n.title}.</b> {n.note}</span></li>)}</ul></div>}
       {!rec.decisions && rec.log?.length > 0 && <ul className={s.plainList}>{rec.log.map((l) => <li key={l}><Icon name="Check" size={14} />{l}</li>)}</ul>}
-      {rec.nextCheck && <span className="cv-xs cv-faint">Next check {dayLabel(rec.nextCheck)}, when the first action is due.{rec.dataThrough ? ` Data through ${dayLabel(rec.dataThrough)}.` : ''}</span>}
     </div>
   );
 }
 
 /* ------------------------------------------------------------------ follow-through */
+const STATE_COLOR = { done: 'var(--signal-good)', verified: 'var(--signal-good)', monitoring: 'var(--accent)', assigned: 'var(--accent)', overdue: 'var(--signal-warn)', deferred: 'var(--border-strong)' };
+const STATE_GROUP = { done: 'Done', verified: 'Done', monitoring: 'On track', assigned: 'On track', overdue: 'Overdue', deferred: 'Deferred' };
+
 function ActionRow({ a, onPatch, busy }) {
   const cv = useCv();
   const eng = useEngine();
   const [edit, setEdit] = React.useState(null);
   const p = actionProgress(a, { windows: eng.windows, candidates: CV_D.candidates });
   const live = a.status === 'open';
-  const label = { assigned: `Due ${dayLabel(a.due)}`, overdue: `Overdue since ${dayLabel(a.due)}`, deferred: `Back on ${dayLabel(a.due)}` }[p.state] || p.label;
+  const label = { assigned: `Due ${dayLabel(a.due)}`, overdue: `Overdue · ${dayLabel(a.due)}`, deferred: `Back ${dayLabel(a.due)}` }[p.state] || p.label;
   return (
     <li className={`${s.act} ${a.status === 'done' || a.status === 'cancelled' ? s.closed : ''}`}>
-      <span className={`${s.prio} ${s[a.priority] || ''}`} title={`${a.priority} priority`} aria-hidden="true" />
+      <span className={s.dot} style={{ background: STATE_COLOR[p.state] || 'var(--border)' }} aria-hidden="true" />
       <div className="cv-col" style={{ gap: 3, minWidth: 0 }}>
-        <span className={s.actTitle}>{a.title}</span>
-        <span className={s.actMeta}>{[a.owner || (a.status === 'deferred' ? null : 'No owner'), a.status === 'deferred' && a.reason ? `Deferred: ${a.reason}` : null].filter(Boolean).join(' · ')}</span>
-        {a.doneWhen && live && <span className={s.actMeta}>Done when: {a.doneWhen}</span>}
+        <span className={s.actTitle} title={a.doneWhen ? `Done when: ${a.doneWhen}` : undefined}>{a.title}</span>
+        <span className={s.chipsRow}>
+          {a.owner && <span className={s.chip}><Icon name="Users" size={12} />{a.owner}</span>}
+          <Pill tone={PROGRESS_TONE[p.state]}>{label}</Pill>
+          {a.findingId && <button className="cv-link cv-xs" onClick={() => cv.go('finding', { id: a.findingId })}>Evidence</button>}
+        </span>
+        {a.status === 'deferred' && a.reason && <span className={s.actMeta}>{a.reason}</span>}
         {edit && (
           <form className={s.inlineForm} onSubmit={(e) => { e.preventDefault(); onPatch(a.id, { ...(edit.owner.trim() && edit.owner !== a.owner ? { owner: edit.owner.trim() } : {}), ...(edit.due && edit.due !== a.due ? { due: edit.due } : {}) }).then(() => setEdit(null)); }}>
             <input className="input" value={edit.owner} onChange={(e) => setEdit({ ...edit, owner: e.target.value })} maxLength={ML.owner} aria-label="Owner" list="cv-meeting-owners" />
@@ -137,62 +193,67 @@ function ActionRow({ a, onPatch, busy }) {
         )}
       </div>
       <div className={s.actSide}>
-        <Pill tone={PROGRESS_TONE[p.state]}>{label}</Pill>
         {live && !edit && (
-          <div className="cv-row" style={{ gap: 2 }}>
-            <Button size="sm" variant="ghost" icon="Check" disabled={busy} onClick={() => onPatch(a.id, { status: 'done' })} aria-label={`Mark done: ${a.title}`}>Done</Button>
+          <>
+            <Button size="sm" variant="secondary" icon="Check" disabled={busy} onClick={() => onPatch(a.id, { status: 'done' })} aria-label={`Mark done: ${a.title}`}>Done</Button>
             <Button size="sm" variant="ghost" icon="PencilLine" disabled={busy} onClick={() => setEdit({ owner: a.owner || '', due: a.due })} aria-label={`Change owner or date: ${a.title}`} />
             <Button size="sm" variant="ghost" icon="Trash2" disabled={busy} onClick={() => onPatch(a.id, { status: 'cancelled' })} aria-label={`Cancel: ${a.title}`} />
-          </div>
+          </>
         )}
         {(a.status === 'done' || a.status === 'cancelled') && <Button size="sm" variant="ghost" icon="Undo2" disabled={busy} onClick={() => onPatch(a.id, { status: 'open' })}>Reopen</Button>}
-        {a.findingId && <button className="cv-link" onClick={() => cv.go('finding', { id: a.findingId })}>Evidence</button>}
       </div>
     </li>
   );
 }
 
 function FollowThrough({ actions, onPatch, busy }) {
+  const eng = useEngine();
+  const [filter, setFilter] = React.useState(null);
   const now = new Date();
   const live = activeActions(actions, CV_D.id, now);
-  const recent = (actions || []).filter((a) => a.roomId === CV_D.id && (a.status === 'done' || a.status === 'cancelled')).slice(-5).reverse();
-  const open = live.filter((a) => a.status === 'open');
-  const overdue = open.filter((a) => String(a.due) < isoDay(now)).length;
+  const recent = (actions || []).filter((a) => a.roomId === CV_D.id && a.status === 'done').slice(-6).reverse();
+  const all = [...live, ...recent].map((a) => ({ a, g: STATE_GROUP[actionProgress(a, { windows: eng.windows, candidates: CV_D.candidates, now }).state] }));
+  const groups = ['Overdue', 'On track', 'Deferred', 'Done'].map((g) => ({ label: g, n: all.filter((x) => x.g === g).length, color: { Overdue: 'var(--signal-warn)', 'On track': 'var(--accent)', Deferred: 'var(--border-strong)', Done: 'var(--signal-good)' }[g] }));
+  const shown = all.filter((x) => !filter || x.g === filter);
   return (
     <section className="cv-card" aria-labelledby="cv-meeting-ft">
-      <div className="cv-card-head">
-        <span className="cv-h4" id="cv-meeting-ft">Follow-through</span>
-        <span className="cv-row" style={{ gap: 6 }}>{overdue > 0 && <Pill tone="warn" icon="Clock">{overdue} overdue</Pill>}<span className="cv-xs cv-faint">{open.length} open</span></span>
-      </div>
-      {live.length || recent.length ? (
-        <ul className={s.acts}>
-          {[...live, ...recent].map((a) => <ActionRow key={a.id} a={a} onPatch={onPatch} busy={busy} />)}
-        </ul>
-      ) : <span className="cv-small cv-muted">Nothing assigned yet. Each decision you accept in a meeting lands here with its owner and due date, and stays until it&apos;s done.</span>}
-      <span className="cv-xs cv-faint">Agreeing in a meeting isn&apos;t proof a change happened. A test on the finding shows it; otherwise the owner confirms it against its definition of done.</span>
+      <div className="cv-card-head"><span className="cv-h4" id="cv-meeting-ft">Follow-through</span></div>
+      {all.length ? (
+        <>
+          <div className={s.ringRow}>
+            <Ring parts={groups} label="Actions" />
+            <div className={s.legend} role="group" aria-label="Filter actions">
+              {groups.map((g) => (
+                <button key={g.label} type="button" className={`${s.legendBtn} ${filter === g.label ? s.legendOn : ''}`} aria-pressed={filter === g.label} disabled={!g.n} onClick={() => setFilter(filter === g.label ? null : g.label)}>
+                  <span className={s.swatch} style={{ background: g.color }} aria-hidden="true" /><b>{g.n}</b> {g.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <ul className={s.acts}>{shown.map(({ a }) => <ActionRow key={a.id} a={a} onPatch={onPatch} busy={busy} />)}</ul>
+        </>
+      ) : <div className={s.empty}><Icon name="ListChecks" size={22} /><span>Accepted decisions land here with an owner and a due date.</span></div>}
     </section>
   );
 }
 
-function History({ history }) {
-  const [open, setOpen] = React.useState(null);
+function History({ history, pick, setPick }) {
   const st = meetingStats(history || []);
+  const sel = (history || []).find((m) => m.id === pick);
   return (
-    <section className="cv-card" aria-labelledby="cv-meeting-hist">
-      <div className="cv-card-head"><span className="cv-h4" id="cv-meeting-hist">Past meetings</span>{history?.length > 0 && <span className="cv-xs cv-faint">{st.held} of the last 8 weeks{st.avgMins != null ? ` · ${st.avgMins} min on average` : ''}</span>}</div>
-      {!history?.length ? <span className="cv-small cv-muted">None yet for {CV_ROOM.short || CV_ROOM.name}. Each finished meeting is kept here with its decisions and actions.</span> : (
-        <div className={s.hist}>
-          {history.slice(0, 8).map((m) => (
-            <div key={m.id}>
-              <button type="button" className={s.histBtn} aria-expanded={open === m.id} onClick={() => setOpen(open === m.id ? null : m.id)}>
-                <span className={s.histWhen}><b>{shortDate(m.at)}</b><span>{[m.mins != null && `${m.mins} min`, m.actions && `${m.actions.length} action${m.actions.length === 1 ? '' : 's'}`, m.by && `run by ${m.by}`].filter(Boolean).join(' · ') || 'Logged'}</span></span>
-                <Icon name="ChevronDown" size={16} className={s.chev} />
-              </button>
-              {open === m.id && <div className={s.histBody}><MeetingDetail rec={m} /><SummaryActions rec={m} /></div>}
-            </div>
-          ))}
+    <section className="cv-card" aria-labelledby="cv-meeting-hist" id="cv-meeting-history">
+      <div className="cv-card-head"><span className="cv-h4" id="cv-meeting-hist">Past meetings</span></div>
+      <div className={s.bigRow}>
+        <BigNum label="Weeks met" value={<>{st.held}<small>/8</small></>} />
+        <BigNum label="Average length" value={st.avgMins != null ? <>{st.avgMins}<small> min</small></> : '–'} />
+      </div>
+      <MeetingWeeks history={history} active={pick} onPick={setPick} />
+      {sel ? (
+        <div className={s.histBody}>
+          <span className="cv-h4">{shortDate(sel.at)}{sel.by ? <span className="cv-xs cv-faint"> · run by {sel.by}</span> : null}</span>
+          <MeetingDetail rec={sel} /><SummaryActions rec={sel} />
         </div>
-      )}
+      ) : history?.length ? <span className="cv-xs cv-faint">Tap a week to open that meeting.</span> : null}
     </section>
   );
 }
@@ -202,13 +263,12 @@ function SlotEditor({ schedule, onSave, onCancel }) {
   const [edit, setEdit] = React.useState({ ...DEFAULT_SCHEDULE, ...schedule });
   return (
     <form className={`cv-card ${s.panel}`} onSubmit={(e) => { e.preventDefault(); onSave(edit); }}>
-      <span className="cv-h4">Reschedule the weekly slot</span>
+      <span className="cv-h4">Reschedule</span>
       <div className={s.slotForm}>
         <select className="input" value={edit.day} onChange={(e) => setEdit({ ...edit, day: +e.target.value })} aria-label="Day">{DAYS.map((d, n) => <option key={d} value={n}>{d}</option>)}</select>
         <input className="input" type="time" step="900" value={edit.time} onChange={(e) => setEdit({ ...edit, time: e.target.value })} aria-label="Time" required />
         <select className="input" value={edit.mins ?? 15} onChange={(e) => setEdit({ ...edit, mins: +e.target.value })} aria-label="Planned length">{[10, 15, 20, 30, 45].map((m) => <option key={m} value={m}>{m} minutes</option>)}</select>
       </div>
-      <span className="cv-xs cv-faint">Everyone who can see this room gets a reminder on the day.</span>
       <div className="cv-row" style={{ gap: 6 }}><Button size="sm" type="submit" disabled={!/^\d\d:\d\d$/.test(edit.time)}>Save</Button><Button size="sm" variant="ghost" type="button" onClick={onCancel}>Cancel</Button></div>
     </form>
   );
@@ -221,7 +281,7 @@ function AttendeesEditor({ attendees, onSave, onCancel }) {
   return (
     <div className={`cv-card ${s.panel}`}>
       <span className="cv-h4">Who attends</span>
-      {list.length ? <ul className={s.chips}>{list.map((n) => <li key={n}>{n}<button type="button" className={s.iconBtn} aria-label={`Remove ${n}`} onClick={() => setList(list.filter((x) => x !== n))}><Icon name="Trash2" size={12} /></button></li>)}</ul> : <span className="cv-small cv-muted">Nobody named yet. Owners in the meeting can be picked from this list.</span>}
+      {list.length > 0 && <ul className={s.chips}>{list.map((n) => <li key={n}>{n}<button type="button" className={s.iconBtn} aria-label={`Remove ${n}`} onClick={() => setList(list.filter((x) => x !== n))}><Icon name="Trash2" size={12} /></button></li>)}</ul>}
       <form className={s.addRow} onSubmit={(e) => { e.preventDefault(); add(); }}>
         <input className="input" value={name} onChange={(e) => setName(e.target.value)} maxLength={ML.owner} placeholder="Name" aria-label="Attendee name" list="cv-meeting-owners" />
         <Button size="sm" variant="secondary" icon="Plus" type="submit" disabled={!name.trim()}>Add</Button>
@@ -231,82 +291,126 @@ function AttendeesEditor({ attendees, onSave, onCancel }) {
   );
 }
 
-function AgendaPreview({ agenda }) {
+function AgendaList({ items, compact }) {
   return (
     <ol className={s.preview}>
-      {agenda.items.map((x) => (
+      {items.map((x) => (
         <li key={x.id}>
-          <span className={s.segTag} aria-hidden="true">{x.seg}</span>
-          <span className="cv-col" style={{ gap: 2, minWidth: 0 }}><b className="cv-small">{x.title}</b><span className="cv-xs cv-faint">{SEGMENTS[x.seg].label} · {minsLabel(x.mins)}</span></span>
+          <span className={`${s.segTag} ${s[`tag${x.seg}`]}`} aria-hidden="true">{x.seg}</span>
+          <span className="cv-col" style={{ gap: 1, minWidth: 0 }}><b className="cv-small">{x.title}</b>{!compact && <span className="cv-xs cv-faint">{SEGMENTS[x.seg].label} · {minsLabel(x.mins)}</span>}</span>
+          {compact && <span className="cv-xs cv-faint cv-num">{minsLabel(x.mins)}</span>}
         </li>
       ))}
     </ol>
   );
 }
 
-function Ready({ agenda, actions, history, schedule, setSchedule, attendees, owners, onStart, starting, finished, onCloseFinished, onPatch, busy, sample, onResetSample }) {
+/** Last week, as a chart. */
+function LastWeek({ fin }) {
+  const cv = useCv();
+  if (!fin || fin.missing) {
+    return (
+      <section className="cv-card">
+        <span className="cv-over">Last week</span>
+        <div className={s.empty}><Icon name="Unplug" size={22} /><span>No sales data yet, so nothing is estimated.</span><Button size="sm" icon="Plug" onClick={() => cv.go(fin?.go || 'connect')}>Connect Toast</Button></div>
+      </section>
+    );
+  }
+  return (
+    <section className="cv-card" aria-label="Last week">
+      <span className="cv-over">Last week</span>
+      <ItemVisual item={fin} />
+      {fin.risks?.length > 0 && <ul className={s.risks}>{fin.risks.map((r) => <li key={r}><Icon name="TriangleAlert" size={13} />{r}</li>)}</ul>}
+    </section>
+  );
+}
+
+function Ready({ agenda, actions, history, schedule, setSchedule, attendees, onStart, starting, finished, onCloseFinished, onPatch, busy, sample, onResetSample }) {
+  const cv = useCv();
   const [panel, setPanel] = React.useState(null);
+  const [seg, setSeg] = React.useState(null);
+  const [dec, setDec] = React.useState(null);
+  const [pick, setPick] = React.useState(null);
   const now = new Date();
   const r = readiness(agenda, actions, CV_D.id, now);
   const next = nextMeeting(schedule, now);
   const today = next.toDateString() === now.toDateString();
   const last = history?.[0];
-  const lastActs = last?.id ? (actions || []).filter((a) => a.meetingId === last.id && a.status !== 'deferred') : [];
-  const lastDone = lastActs.filter((a) => a.status === 'done').length;
   const toggle = (p) => setPanel(panel === p ? null : p);
+  const fin = agenda.items.find((x) => x.id === 'fin');
+  const decisions = agenda.items.filter((x) => x.seg === 'D').map((x) => ({ x, c: candidateFor(x) })).filter((d) => d.c);
   const tiles = [
-    ['Decisions to discuss', r.decisions, r.decisions ? 'Urgent first, then value per manager-hour' : 'Nothing needs a decision this week'],
-    ['Unfinished from earlier', r.unfinished, r.overdue ? `${r.overdue} overdue` : r.unfinished ? 'None overdue' : 'All caught up'],
-    ['Operating risks', r.risks, r.risks ? 'Only what the data supports' : 'Nothing crossed a limit'],
-    ['Expected length', minsLabel(r.mins), `Planned for ${schedule.mins ?? 15} min`],
+    { k: 'D', label: 'Decisions', v: r.decisions, icon: 'Gavel' },
+    { k: 'C', label: 'Unfinished', v: r.unfinished, icon: 'ListChecks', tone: r.overdue ? 'down' : null, sub: r.overdue ? `${r.overdue} overdue` : null },
+    { k: 'B', label: 'Risks', v: r.risks, icon: 'TriangleAlert', tone: r.risks ? 'down' : null },
+    { k: null, label: 'Minutes', v: Math.round(r.mins), icon: 'Clock', sub: `plan ${schedule.mins ?? 15}` },
   ];
+  const listed = agenda.items.filter((x) => !seg || x.seg === seg);
   return (
     <>
       <PageHead over={`${CV_ROOM.name} · ${today ? 'Today' : shortDate(next.toISOString())} · ${slotLabel(schedule)}`} q="Ready for this week’s meeting"
-        sub="Coversight has prepared the most important decisions from this week’s operating data."
         right={<Button icon="Play" onClick={onStart} disabled={starting || !agenda.items.length}>{starting ? 'Starting…' : 'Start meeting'}</Button>} />
 
       <div className={s.context}>
         <span><Icon name="Users" size={14} />{attendees.length ? attendees.join(', ') : `Owner + ${CV_ROOM.gm || 'GM'}`}</span>
-        <span><Icon name="Clock" size={14} />{minsLabel(r.mins)} planned</span>
-        <span><Icon name="Database" size={14} />{agenda.dataThrough ? `Data through ${dayLabel(agenda.dataThrough)}` : 'No sales data connected'}</span>
-        <span><Icon name="ListChecks" size={14} />{last ? (lastActs.length ? `Last meeting: ${lastDone} of ${lastActs.length} actions done` : `Last meeting ${shortDate(last.at)}`) : 'First meeting here'}</span>
+        <span><Icon name="Database" size={14} />{agenda.dataThrough ? `Data to ${dayLabel(agenda.dataThrough)}` : 'No sales data'}</span>
         {sample && <Pill icon="FlaskConical">Sample data</Pill>}
+        <span className={s.ctxBtns}>
+          <Button size="sm" variant="ghost" icon="Users" aria-expanded={panel === 'people'} onClick={() => toggle('people')}>Attendees</Button>
+          <Button size="sm" variant="ghost" icon="CalendarClock" aria-expanded={panel === 'slot'} onClick={() => toggle('slot')}>Reschedule</Button>
+          <Button size="sm" variant="ghost" icon="Clock" disabled={!last} onClick={() => { setPick(last?.id || null); document.getElementById('cv-meeting-history')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}>Last meeting</Button>
+        </span>
       </div>
+      {panel === 'people' && <AttendeesEditor attendees={attendees} onCancel={() => setPanel(null)} onSave={(list) => { setSchedule({ ...schedule, attendees: list }, `Weekly meeting attendees: ${list.join(', ') || 'none'}`); setPanel(null); }} />}
+      {panel === 'slot' && <SlotEditor schedule={schedule} onCancel={() => setPanel(null)} onSave={(v) => { setSchedule(v, `Weekly meeting moved to ${slotLabel(v)}`); setPanel(null); }} />}
 
       {finished && (
-        <section className="cv-card" aria-live="polite">
-          <div className="cv-card-head"><span className="cv-h4">Meeting saved · {shortDate(finished.at)}, {finished.mins} min</span><Button size="sm" variant="ghost" onClick={onCloseFinished}>Close</Button></div>
-          {finished.mins > (finished.plannedMins || 15) && <span className="cv-xs cv-faint">Ran {finished.mins - Math.round(finished.plannedMins || 15)} min over the plan.</span>}
+        <section className={`cv-card ${s.finished}`} aria-live="polite">
+          <div className="cv-card-head"><span className="cv-h4"><Icon name="CircleCheck" size={16} /> Meeting saved · {shortDate(finished.at)}</span><Button size="sm" variant="ghost" onClick={onCloseFinished}>Close</Button></div>
           <MeetingDetail rec={finished} />
           <SummaryActions rec={finished} />
         </section>
       )}
 
-      <div className={s.tiles}>
-        {tiles.map(([k, v, sub]) => <div key={k} className={s.tile}><span className={s.tileLabel}>{k}</span><span className={s.tileVal}>{v}</span><span className={s.tileSub}>{sub}</span></div>)}
+      <div className={s.tiles} role="group" aria-label="This meeting at a glance. Pick one to filter the agenda.">
+        {tiles.map((t) => (
+          <button key={t.label} type="button" className={`${s.tile} ${seg && seg === t.k ? s.tileOn : ''}`} disabled={!t.k} aria-pressed={t.k ? seg === t.k : undefined} onClick={() => setSeg(seg === t.k ? null : t.k)}>
+            <span className={s.tileLabel}><Icon name={t.icon} size={14} />{t.label}</span>
+            <span className={`${s.tileVal} ${t.tone ? s[t.tone] : ''}`}>{t.v}</span>
+            {t.sub && <span className={s.tileSub}>{t.sub}</span>}
+          </button>
+        ))}
       </div>
 
-      <div className={s.secondary}>
-        <Button size="sm" variant="secondary" icon="LayoutList" aria-expanded={panel === 'agenda'} onClick={() => toggle('agenda')}>Preview agenda</Button>
-        <Button size="sm" variant="secondary" icon="Users" aria-expanded={panel === 'people'} onClick={() => toggle('people')}>Change attendees</Button>
-        <Button size="sm" variant="secondary" icon="Clock" aria-expanded={panel === 'last'} onClick={() => toggle('last')} disabled={!last}>Review last meeting</Button>
-        <Button size="sm" variant="secondary" icon="CalendarClock" aria-expanded={panel === 'slot'} onClick={() => toggle('slot')}>Reschedule</Button>
+      <div className={s.hero}>
+        <LastWeek fin={fin} />
+        <section className="cv-card" aria-label="Agenda">
+          <div className="cv-card-head"><span className="cv-over">Agenda · {minsLabel(r.mins)}</span>{seg && <button className="cv-link cv-xs" onClick={() => setSeg(null)}>Show all</button>}</div>
+          <TimeBar items={agenda.items} segments={SEGMENTS} active={seg} onPick={setSeg} />
+          <AgendaList items={listed} compact />
+        </section>
       </div>
-      {panel === 'agenda' && (
-        <section className="cv-card">
-          <span className="cv-h4">This week&apos;s agenda</span>
-          <AgendaPreview agenda={agenda} />
-          {(agenda.more.issues > 0 || agenda.more.follow > 0) && <span className="cv-xs cv-faint">{[agenda.more.issues && `${agenda.more.issues} smaller issue${agenda.more.issues === 1 ? '' : 's'} left for Today`, agenda.more.follow && `${agenda.more.follow} more open action${agenda.more.follow === 1 ? '' : 's'} in Follow-through`].filter(Boolean).join('; ')}.</span>}
+
+      {decisions.length > 0 && (
+        <section className="cv-card" aria-labelledby="cv-meeting-dec">
+          <div className="cv-card-head"><span className="cv-h4" id="cv-meeting-dec">Decisions on the table</span><span className="cv-xs cv-faint">Potential, not saved</span></div>
+          <ValueBars rows={decisions.map(({ x, c }) => ({ ...c, id: x.id, title: x.title }))} active={dec} onPick={setDec} />
+          {dec && (() => {
+            const d = decisions.find((y) => y.x.id === dec);
+            return d ? (
+              <div className={s.decMore}>
+                <div className={s.recommend}><Icon name="Lightbulb" size={14} /><span>Do: <b>{OPTION_LABEL[d.x.recommend]}</b>{d.x.action?.approval && d.x.action.approval !== 'None' ? ` · needs ${d.x.action.approval.toLowerCase()}` : ''}</span></div>
+                {d.x.body && <p className={s.para}>{d.x.body}</p>}
+                <button className="cv-link cv-xs" onClick={() => cv.go('finding', { id: d.x.findingId })}>Open the evidence</button>
+              </div>
+            ) : null;
+          })()}
         </section>
       )}
-      {panel === 'people' && <AttendeesEditor attendees={attendees} onCancel={() => setPanel(null)} onSave={(list) => { setSchedule({ ...schedule, attendees: list }, `Weekly meeting attendees: ${list.join(', ') || 'none'}`); setPanel(null); }} />}
-      {panel === 'last' && last && <section className="cv-card"><span className="cv-h4">Last meeting · {shortDate(last.at)}</span><MeetingDetail rec={last} /><SummaryActions rec={last} /></section>}
-      {panel === 'slot' && <SlotEditor schedule={schedule} onCancel={() => setPanel(null)} onSave={(v) => { setSchedule(v, `Weekly meeting moved to ${slotLabel(v)}`); setPanel(null); }} />}
 
       <div className={s.cols}>
         <FollowThrough actions={actions} onPatch={onPatch} busy={busy} />
-        <History history={history} />
+        <History history={history} pick={pick} setPick={setPick} />
       </div>
       {sample && history?.length > 0 && onResetSample && <div><Button size="sm" variant="ghost" icon="Undo2" onClick={onResetSample}>Clear the sample meeting record</Button></div>}
     </>
@@ -315,7 +419,21 @@ function Ready({ agenda, actions, history, schedule, setSchedule, attendees, own
 
 /* ------------------------------------------------------------------ during the meeting */
 function ActionEditor({ value, onChange }) {
+  const [open, setOpen] = React.useState(!value.owner?.trim());
   const set = (k) => (e) => onChange({ ...value, [k]: e.target.value });
+  if (!open) {
+    return (
+      <div className={s.actSummary}>
+        <span className={s.chipsRow}>
+          <span className={s.chip}><Icon name="Users" size={12} />{value.owner}</span>
+          <span className={s.chip}><Icon name="CalendarClock" size={12} />{dayLabel(value.due)}</span>
+          <span className={s.chip}><Icon name="Flag" size={12} />{{ high: 'High', normal: 'Normal', low: 'Low' }[value.priority] || value.priority} priority</span>
+          {value.approval && value.approval !== 'None' && <span className={s.chip}><Icon name="Lock" size={12} />{value.approval}</span>}
+        </span>
+        <Button size="sm" variant="ghost" icon="PencilLine" onClick={() => setOpen(true)}>Edit</Button>
+      </div>
+    );
+  }
   return (
     <fieldset className={s.editor}>
       <legend className="cv-xs cv-faint">The action</legend>
@@ -325,25 +443,26 @@ function ActionEditor({ value, onChange }) {
       <label><span>Priority</span><select className="input" value={value.priority} onChange={set('priority')}><option value="high">High</option><option value="normal">Normal</option><option value="low">Low</option></select></label>
       <label className={s.wide}><span>Done when</span><input className="input" value={value.doneWhen} onChange={set('doneWhen')} maxLength={ML.doneWhen} /></label>
       <span className={`${s.wide} cv-xs cv-faint`}><Icon name="Lock" size={12} /> Approval needed: {value.approval || 'None'}</span>
+      {value.owner?.trim() && <div className={s.wide}><Button size="sm" variant="secondary" onClick={() => setOpen(false)}>Done</Button></div>}
     </fieldset>
   );
 }
 
 function Consequence({ item, o }) {
   const text = {
-    rejected: item.findingId ? `Takes it off the plan for ${DISMISS_DAYS} days, the same as “Not for us” on the finding.` : 'Recorded as rejected. Nothing is assigned.',
-    deferred: `Comes back in ${HOLD_DAYS} days with the reason you give.`,
-    evidence: 'Assigns someone to bring the evidence. The decision comes back next meeting.',
-    accepted: item.action?.approval && item.action.approval !== 'None' ? `Assigns it. Needs: ${item.action.approval}.` : 'Assigns it with an owner and a due date.',
-    changed: 'Assigns it with your changes.',
-    done: 'Closes it as done. If it has a test, the test still decides whether anything is saved.',
-    kept: 'Stays open with its current owner and date.',
-    reassigned: 'Keeps it open with a new owner or date.',
-    cancelled: 'Cancels it. It stays on the record.',
-    continue: 'The test keeps running. Nothing books until it closes and verifies.',
-    adjust: 'Assigns someone to make the adjustment.',
-    stop: 'Assigns someone to stop it. A person stops it on the test itself.',
-    investigate: 'Assigns someone to look into it.',
+    rejected: item.findingId ? `Off the plan for ${DISMISS_DAYS} days.` : 'Recorded as rejected.',
+    deferred: `Back in ${HOLD_DAYS} days with your reason.`,
+    evidence: 'Someone brings the evidence; it comes back next meeting.',
+    accepted: 'Becomes an action with an owner and a due date.',
+    changed: 'Becomes an action with your changes.',
+    done: 'Closed. A test, if any, still decides what is saved.',
+    kept: 'Stays open as it is.',
+    reassigned: 'Stays open with a new owner or date.',
+    cancelled: 'Cancelled, kept on the record.',
+    continue: 'The test keeps running. Nothing books until it verifies.',
+    adjust: 'Someone makes the adjustment.',
+    stop: 'Someone stops it on the test itself.',
+    investigate: 'Someone looks into it.',
     discussed: 'Recorded as discussed.',
   }[o.status];
   return text ? <span className={s.hint}><Icon name="Info" size={13} />{text}</span> : null;
@@ -351,32 +470,32 @@ function Consequence({ item, o }) {
 
 function ConfirmPlan({ preview, problems, items, onGo }) {
   const byId = Object.fromEntries(items.map((x, n) => [x.id, n]));
-  const open = preview.upserts.filter((u) => u.status === 'open');
+  const open = preview.upserts.filter((u) => u.status === 'open').sort((a, b) => String(a.due).localeCompare(String(b.due)));
   const undecided = items.filter((x) => x.seg !== 'E' && x.seg !== 'A' && !preview.record.decisions.some((d) => d.item === x.id));
   return (
     <div className="cv-col" style={{ gap: 14 }}>
-      <p className={s.para}>{preview.record.summary} Check each one has the right owner and date, then finish. Coversight follows them up: a reminder the day before each is due, and on this page until it&apos;s done.</p>
-      {problems.length > 0 && <Callout tone="warn" icon="TriangleAlert">{problems.length === 1 ? 'One thing' : `${problems.length} things`} to fix first: {problems.map((p) => <React.Fragment key={p.id}><button className="cv-link" onClick={() => onGo(byId[p.id])}>{items[byId[p.id]]?.title}</button>: {p.problem} </React.Fragment>)}</Callout>}
-      {open.length > 0 ? (
-        <div className={s.tableWrap}>
-          <table className={s.table}>
-            <caption className="sr-only">Actions from this meeting</caption>
-            <thead><tr><th scope="col">Action</th><th scope="col">Owner</th><th scope="col">Due</th><th scope="col">How it&apos;s checked</th></tr></thead>
-            <tbody>{open.map((u) => (
-              <tr key={u.sourceKey}>
-                <td><b>{u.title}</b><span className="cv-xs cv-faint" style={{ display: 'block' }}>Done when: {u.doneWhen}{u.approval && u.approval !== 'None' ? ` · Needs: ${u.approval}` : ''}</span></td>
-                <td>{u.owner || <span className={s.missing}>No owner</span>}</td>
-                <td className="cv-num">{dayLabel(u.due)}</td>
-                <td className="cv-xs">{u.findingId ? 'Its test on the finding, once a person starts it' : 'The owner, against “done when”'}</td>
-              </tr>
-            ))}</tbody>
-          </table>
-        </div>
-      ) : <span className="cv-small cv-muted">No new actions. That&apos;s fine if nothing needed one.</span>}
-      {preview.updates.length > 0 && <span className="cv-small">{preview.updates.length} earlier action{preview.updates.length === 1 ? '' : 's'} updated (done, cancelled or reassigned).</span>}
-      {preview.record.deferred.length > 0 && <span className="cv-small">Deferred: {preview.record.deferred.map((d) => `${d.title} (${d.reason || 'no reason yet'})`).join('; ')}.</span>}
-      {Object.keys(preview.dismiss).length > 0 && <span className="cv-small">Off the plan for {DISMISS_DAYS} days: {Object.keys(preview.dismiss).length} finding{Object.keys(preview.dismiss).length === 1 ? '' : 's'}.</span>}
-      {undecided.length > 0 && <span className="cv-xs cv-faint">Not decided: {undecided.map((x) => x.title).join('; ')}. They&apos;ll be recorded as not discussed.</span>}
+      <div className={s.bigRow}>
+        <BigNum label="New actions" value={open.length} />
+        <BigNum label="Updated" value={preview.updates.length} />
+        <BigNum label="Deferred" value={preview.record.deferred.length} />
+        <BigNum label="Off the plan" value={Object.keys(preview.dismiss).length} />
+      </div>
+      {problems.length > 0 && <Callout tone="warn" icon="TriangleAlert">Fix first: {problems.map((p) => <React.Fragment key={p.id}><button className="cv-link" onClick={() => onGo(byId[p.id])}>{items[byId[p.id]]?.title}</button> ({p.problem}) </React.Fragment>)}</Callout>}
+      {open.length > 0 && (
+        <ul className={s.cards} aria-label="Actions from this meeting, soonest first">
+          {open.map((u) => (
+            <li key={u.sourceKey} className={s.card}>
+              <b>{u.title}</b>
+              <span className={s.chipsRow}>
+                <span className={`${s.chip} ${u.owner ? '' : s.missing}`}><Icon name="Users" size={12} />{u.owner || 'No owner'}</span>
+                <span className={s.chip}><Icon name="CalendarClock" size={12} />{dayLabel(u.due)}</span>
+                <span className={s.chip}><Icon name={u.findingId ? 'FlaskConical' : 'CircleCheck'} size={12} />{u.findingId ? 'Checked by its test' : 'Owner confirms'}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {undecided.length > 0 && <span className="cv-xs cv-faint">{undecided.length} item{undecided.length === 1 ? '' : 's'} not decided; recorded as not discussed.</span>}
     </div>
   );
 }
@@ -450,15 +569,17 @@ function Runner({ session, onFinalized, onDiscarded, owners, api }) {
       setFinalizing(false);
     }
   };
+  const others = item.options.filter((k) => k !== item.recommend);
+  const itemPct = Math.max(0, Math.min(1, 1 - left / (item.mins * 60)));
 
   return (
     <>
-      <PageHead over={`${CV_ROOM.name} · weekly meeting in progress`} q="The weekly meeting"
+      <PageHead over={`${CV_ROOM.name} · meeting in progress`} q="Weekly meeting"
         right={(
           <div className="cv-row" style={{ gap: 14 }}>
             <div className={s.clock} aria-label={`Meeting time ${clock(total)} of ${clock(planned)} planned`}>
               <span className={`${s.total} ${total > planned ? s.over : ''}`}>{clock(total)}</span>
-              <span className="cv-xs cv-faint">{total > planned ? `${clock(total - planned)} over the plan` : `of ${clock(planned)} planned`}</span>
+              <span className="cv-xs cv-faint">{total > planned ? `${clock(total - planned)} over` : `of ${clock(planned)}`}</span>
             </div>
             {discard
               ? <span className="cv-row" style={{ gap: 6 }}><Button size="sm" variant="destructive" onClick={() => api.discard(session.id).then(onDiscarded).catch((e) => setSave({ state: 'error', message: e.message }))}>Discard meeting</Button><Button size="sm" variant="ghost" onClick={() => setDiscard(false)}>Keep it</Button></span>
@@ -468,15 +589,19 @@ function Runner({ session, onFinalized, onDiscarded, owners, api }) {
 
       <div className={s.progress} role="list" aria-label="Agenda progress">
         {items.map((x, n) => (
-          <span key={x.id} role="listitem" className={`${s.seg} ${n === i ? s.now : st.outcomes[x.id] ? s.done : ''}`} style={{ flex: Math.max(0.5, x.mins) }} aria-label={`${x.title}${st.outcomes[x.id] ? ', decided' : ''}${n === i ? ', current' : ''}`} />
+          <button key={x.id} type="button" role="listitem" className={`${s.seg} ${n === i ? s.now : st.outcomes[x.id] ? s.done : ''}`} style={{ flex: Math.max(0.5, x.mins) }} onClick={() => go(n)}
+            aria-label={`${n + 1}. ${x.title}${st.outcomes[x.id] ? ', decided' : ''}${n === i ? ', current' : ''}`} aria-current={n === i ? 'step' : undefined} />
         ))}
       </div>
 
       <div className={s.runGrid}>
         <section className={`cv-card ${s.current}`} aria-labelledby="cv-meeting-item">
           <div className="cv-card-head">
-            <span className="cv-over">{SEGMENTS[item.seg].label} · {i + 1} of {items.length}</span>
-            <span className={`${s.left} ${left < 0 ? s.over : ''}`}>{left < 0 ? `${clock(left)} over` : `${clock(left)} left`}</span>
+            <span className={s.segLabel}><span className={`${s.segTag} ${s[`tag${item.seg}`]}`} aria-hidden="true">{item.seg}</span>{SEGMENTS[item.seg].label}</span>
+            <span className={`${s.left} ${left < 0 ? s.over : ''}`}>
+              <span className={s.leftBar} aria-hidden="true"><span style={{ width: `${itemPct * 100}%` }} /></span>
+              {left < 0 ? `${clock(left)} over` : `${clock(left)} left`}
+            </span>
           </div>
           <h3 className={s.itemTitle} id="cv-meeting-item">{item.title}</h3>
 
@@ -484,44 +609,52 @@ function Runner({ session, onFinalized, onDiscarded, owners, api }) {
             <ConfirmPlan preview={preview} problems={problems} items={items} onGo={go} />
           ) : (
             <>
-              <p className={s.para}>{item.body}</p>
-              {item.missing && <Callout tone="warn" icon="TriangleAlert">Not enough data to say more. Nothing is estimated to fill the gap.</Callout>}
-              <Figures figures={item.figures} />
+              {item.missing && <Callout tone="warn" icon="TriangleAlert">No data to show. Nothing is estimated to fill the gap.</Callout>}
+              <ItemVisual item={item} />
               {item.risks?.length > 0 && <ul className={s.risks}>{item.risks.map((r) => <li key={r}><Icon name="TriangleAlert" size={13} />{r}</li>)}</ul>}
-              <div className={s.recommend}><Icon name="Lightbulb" size={14} /><span>Coversight recommends: <b>{OPTION_LABEL[item.recommend]}</b></span></div>
-              <div className={s.choices} role="group" aria-label="Decision">
-                {item.options.map((k) => (
-                  <Button key={k} size="sm" aria-pressed={o?.status === k} variant={o?.status === k ? 'primary' : 'secondary'} onClick={() => choose(k)}>{OPTION_LABEL[k]}</Button>
-                ))}
+
+              <div className={s.todo} role="group" aria-label="What to do">
+                <span className={s.todoLabel}><Icon name="Lightbulb" size={14} />What to do</span>
+                <div className={s.choices}>
+                  <Button aria-pressed={o?.status === item.recommend} variant={!o || o.status === item.recommend ? 'primary' : 'secondary'} icon={o?.status === item.recommend ? 'Check' : undefined} onClick={() => choose(item.recommend)}>{OPTION_LABEL[item.recommend]}</Button>
+                  {others.map((k) => (
+                    <Button key={k} size="sm" aria-pressed={o?.status === k} variant={o?.status === k ? 'primary' : 'ghost'} onClick={() => choose(k)}>{OPTION_LABEL[k]}</Button>
+                  ))}
+                </div>
+                {o && <Consequence item={item} o={o} />}
               </div>
-              {o && <Consequence item={item} o={o} />}
               {o?.status === 'deferred' && (
-                <label className={s.reason}><span className="cv-xs">Why defer it? It comes back in {HOLD_DAYS} days with this reason.</span>
-                  <input className="input" value={o.reason || ''} maxLength={ML.reason} onChange={(e) => editOutcome({ reason: e.target.value })} placeholder="Reason" aria-invalid={!o.reason?.trim()} /></label>
+                <label className={s.reason}><span className="cv-xs">Why defer it?</span>
+                  <input className="input" value={o.reason || ''} maxLength={ML.reason} onChange={(e) => editOutcome({ reason: e.target.value })} placeholder="Reason (required)" aria-invalid={!o.reason?.trim()} /></label>
               )}
               {o && NEEDS_ACTION.has(o.status) && o.action && (item.follow
                 ? <div className={s.inlineForm}><input className="input" value={o.action.owner || ''} onChange={(e) => editOutcome({ action: { ...o.action, owner: e.target.value } })} placeholder="New owner" aria-label="New owner" list="cv-meeting-owners" /><input className="input" type="date" value={o.action.due || ''} onChange={(e) => editOutcome({ action: { ...o.action, due: e.target.value } })} aria-label="New due date" /></div>
-                : <ActionEditor value={o.action} onChange={(action) => editOutcome({ action })} />)}
-              <textarea className={`input ${s.note}`} rows={2} value={st.notes[item.id] || ''} maxLength={ML.note} placeholder="Notes for the record (optional)" aria-label={`Notes on ${item.title}`}
-                onChange={(e) => { const v = e.target.value; update((cur) => ({ ...cur, notes: { ...cur.notes, [item.id]: v } })); }} />
+                : <ActionEditor key={`${item.id}:${o.status}`} value={o.action} onChange={(action) => editOutcome({ action })} />)}
+              <div className={s.moreRow}>
+                {item.body && <More label="Why?"><p className={s.para}>{item.body}</p>{item.findingId && <button className="cv-link cv-xs" onClick={() => cv.go('finding', { id: item.findingId })}>Open the evidence</button>}</More>}
+                <More label={st.notes[item.id] ? 'Note' : 'Add a note'} open={!!st.notes[item.id]}>
+                  <textarea className={`input ${s.note}`} rows={2} value={st.notes[item.id] || ''} maxLength={ML.note} placeholder="For the record" aria-label={`Notes on ${item.title}`}
+                    onChange={(e) => { const v = e.target.value; update((cur) => ({ ...cur, notes: { ...cur.notes, [item.id]: v } })); }} />
+                </More>
+              </div>
             </>
           )}
 
           <div className={s.stepper}>
-            <span className={`cv-xs ${save.state === 'error' ? '' : 'cv-faint'}`} role="status">{save.state === 'saving' ? 'Saving…' : save.state === 'error' ? `Not saved: ${save.message}` : 'Saved'}</span>
+            <span className={`cv-xs ${save.state === 'error' ? '' : 'cv-faint'}`} role="status"><Icon name={save.state === 'error' ? 'TriangleAlert' : 'Check'} size={12} /> {save.state === 'saving' ? 'Saving…' : save.state === 'error' ? `Not saved: ${save.message}` : 'Saved'}</span>
             <div className="cv-row" style={{ gap: 6 }}>
               {i > 0 && <Button size="sm" variant="ghost" icon="ArrowLeft" onClick={() => go(i - 1)}>Back</Button>}
               {item.seg === 'E'
                 ? <Button icon="CircleCheck" onClick={finalize} disabled={finalizing || problems.length > 0}>{finalizing ? 'Saving…' : 'Finish and assign'}</Button>
-                : <Button size="sm" iconRight="ArrowRight" onClick={() => go(i + 1)}>{o ? 'Next' : 'Skip for now'}</Button>}
+                : <Button size="sm" variant={o ? 'primary' : 'secondary'} iconRight="ArrowRight" onClick={() => go(i + 1)}>{o ? 'Next' : 'Skip'}</Button>}
             </div>
           </div>
-          {save.conflict && <Callout tone="warn" icon="TriangleAlert">Someone else changed or took over this meeting. <button className="cv-link" onClick={() => window.location.reload()}>Reload to see the latest</button>.</Callout>}
+          {save.conflict && <Callout tone="warn" icon="TriangleAlert">Someone else changed or took over this meeting. <button className="cv-link" onClick={() => window.location.reload()}>Reload</button>.</Callout>}
         </section>
 
         <aside className={s.side}>
           <section className="cv-card">
-            <span className="cv-h4">Agenda</span>
+            <span className="cv-over">Agenda</span>
             <ol className={s.mini}>
               {items.map((x, n) => {
                 const oc = st.outcomes[x.id];
@@ -529,17 +662,13 @@ function Runner({ session, onFinalized, onDiscarded, owners, api }) {
                   <li key={x.id}>
                     <button type="button" className={n === i ? s.miniNow : ''} onClick={() => go(n)} aria-current={n === i ? 'step' : undefined}>
                       <Icon name={oc ? 'CircleCheck' : n === i ? 'CircleDot' : 'Circle'} size={14} />
-                      <span className="cv-col" style={{ gap: 1, minWidth: 0 }}><span className={s.miniTitle}>{x.title}</span><span className="cv-xs cv-faint">{oc ? OUTCOMES[oc.status] : `${SEGMENTS[x.seg].label} · ${minsLabel(x.mins)}`}</span></span>
+                      <span className="cv-col" style={{ gap: 1, minWidth: 0 }}><span className={s.miniTitle}>{x.title}</span>{oc && <span className="cv-xs cv-faint">{OUTCOMES[oc.status]}</span>}</span>
                     </button>
                   </li>
                 );
               })}
             </ol>
-          </section>
-          <section className="cv-card">
-            <span className="cv-h4">In the room</span>
-            <span className="cv-small cv-muted">{st.attendees.length ? st.attendees.join(', ') : `Owner + ${CV_ROOM.gm || 'GM'}`}</span>
-            {session.agenda.dataThrough && <span className="cv-xs cv-faint">Agenda built from data through {dayLabel(session.agenda.dataThrough)}.</span>}
+            <span className="cv-xs cv-faint"><Icon name="Users" size={12} /> {st.attendees.length ? st.attendees.join(', ') : `Owner + ${CV_ROOM.gm || 'GM'}`}</span>
           </section>
         </aside>
       </div>
@@ -550,10 +679,10 @@ function Runner({ session, onFinalized, onDiscarded, owners, api }) {
 function Watching({ session, onTakeOver, onReload }) {
   return (
     <>
-      <PageHead over={`${CV_ROOM.name} · weekly meeting in progress`} q={`${session.editor || 'Someone'} is running this week’s meeting`}
-        sub="One person edits at a time, so nobody overwrites anyone. It saves as it goes; refresh to follow along."
+      <PageHead over={`${CV_ROOM.name} · meeting in progress`} q={`${session.editor || 'Someone'} is running the meeting`}
+        sub="One person edits at a time. Refresh to follow along."
         right={<div className="cv-row" style={{ gap: 6 }}><Button variant="secondary" icon="RefreshCcw" onClick={onReload}>Refresh</Button>{session.canTakeOver && <Button onClick={onTakeOver}>Take over</Button>}</div>} />
-      <section className="cv-card"><span className="cv-h4">Agenda</span><AgendaPreview agenda={session.agenda} /></section>
+      <section className="cv-card"><TimeBar items={session.agenda.items} segments={SEGMENTS} active={null} onPick={() => {}} /><AgendaList items={session.agenda.items} /></section>
     </>
   );
 }
