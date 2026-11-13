@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { applyInputs } from '../lib/data/apply.js';
 import { deriveRoom } from '../lib/data/model.js';
 import {
-  applyOp, cardState, DECLINE, hoursToMinutes, localDay, nextDay, queueChanges, queueHistory, queueSummary, queueView, RANK_POLICY, todayCards,
+  applyOp, cardState, DECLINE, hoursToMinutes, localDay, nextDay, queueChanges, queueHistory, queueSummary, queueView, RANK_POLICY, todayCards, unlocksOf, upNextOrder, worthOf,
 } from '../lib/data/page/today.js';
 import { SEED } from '../lib/data/seed.js';
 import { readToastExports } from '../lib/data/toast.js';
@@ -249,5 +249,58 @@ describe('the Today API', () => {
     await loadToday(db, owner(), 'oakland', new Date(later.getTime() - 36e5 * 2));
     const t3 = await loadToday(db, owner(), 'oakland', later);
     expect(t3.cards[0].id).toMatch(/^stale:/);
+  });
+});
+
+describe('today’s counts and money labels', () => {
+  it('every count on the page adds up: total = to decide + waiting on data + handled', () => {
+    for (const room of ROOMS) {
+      const cards = todayCards(deriveRoom(SEED, room), { today });
+      let stored: any = null;
+      const ctx = { cards, today, own: true, now: at };
+      for (const op of [null, 'done', 'snooze']) {
+        const ready = cards.filter((c) => isActiveCard(c, stored, ctx) && !c.approval && !c.task && !c.start && c.deadline !== 'today');
+        if (op && ready[0]) stored = applyOp(stored, { op, cardId: ready[0].id }, ctx);
+        const sum = queueSummary(cards, queueView(stored, ctx));
+        expect(sum.ready + sum.blocked + sum.handled).toBe(sum.total);
+        expect(sum.left).toBe(sum.ready + sum.blocked);
+      }
+    }
+  });
+
+  it('every dollar figure on a card says what the money is', () => {
+    for (const room of ROOMS) {
+      for (const c of todayCards(deriveRoom(SEED, room), { today })) {
+        const w = worthOf(c);
+        if (/^(about\s+)?[−-]?\$/.test(c.value)) {
+          expect(w.figure, `${room}/${c.id}`).toBeTruthy();
+          expect(w.means, `${room}/${c.id}`).toBeTruthy();
+        } else {
+          expect(w.figure).toBeNull();
+          expect(w.note).toBe(c.value);
+        }
+      }
+    }
+    expect(worthOf({ value: '$37 tonight' }).figure).toBeNull(); // no meaning written down: not a headline figure
+    expect(worthOf({ value: 'about $146/wk', means: 'Extra profit a week' })).toMatchObject({ figure: '$146', about: true });
+  });
+});
+
+function isActiveCard(c: C, stored: unknown, ctx: { cards: C[]; today: string; own: boolean; now: number }) {
+  const st = cardState(c, queueView(stored as never, ctx));
+  return st === 'ready' || st === 'needs_review';
+}
+
+describe('up next, by the money at stake', () => {
+  const cards = todayCards(deriveRoom(SEED, 'oakland'), { today });
+  it('the recipe upload shows the salmon price it unlocks', () => {
+    const recipes = cards.find((c) => c.id === 'recipes')!;
+    expect(unlocksOf(recipes, cards)).toMatchObject({ figure: '$146', unit: '/wk', claim: 'mod' });
+  });
+  it('orders by money times urgency, then the least time', () => {
+    const [, ...rest] = cards.filter((c) => !c.blocked);
+    const ids = upNextOrder(rest, cards).map((c) => c.id);
+    expect(ids.slice(0, 2)).toEqual(['recipes', 'ot']);
+    expect(ids.indexOf('7shifts')).toBeLessThan(ids.indexOf('count')); // no dollars: 1 min before 15 min
   });
 });

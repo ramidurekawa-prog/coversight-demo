@@ -9,12 +9,39 @@ import { Button, Icon } from './kit';
 import { ApprovalModal, Claim, cvApproval, CV_CLAIM, CV_D, CV_LOCS, CV_NOW, CvCtx, DerivDrawer, Pill } from './screens/core';
 import { engine, useEngine } from './engine';
 import { CV_PAGE_DEPS, CvAsk } from './screens/extra';
+import { useTodayCounts } from './screens/pages/today.badge';
+import './shell.css';
 
-/* The app chrome around every screen: a strip that switches between the
- * finished product and the build plan, the sidebar grouped by how often each
- * screen is used, and a top bar with claim-strength legend, feed health,
- * room switcher and role switcher. Drawers, the approval modal and toasts
- * live here so any screen can open them through CvCtx. */
+/* The app chrome around every screen: the sidebar grouped by how often each
+ * screen is used, and a top bar with the page, Ask, one data-health notice
+ * (only when something needs updating), the room switcher and quiet
+ * utilities. Demo tools (finished product / build plan, view-as roles,
+ * build gaps) sit in a strip that's hidden unless turned on with ?tools=1
+ * (remembered in this browser; ?tools=0 hides it again) and always on the
+ * build plan. Drawers, the approval modal and toasts live here so any
+ * screen can open them through CvCtx. */
+
+/** Demo tools on or off: ?tools=1 / ?tools=0, remembered per browser. Off by default. */
+function useDemoTools() {
+  const [on, setOn] = React.useState(false);
+  React.useEffect(() => {
+    let v = null;
+    try {
+      const q = new URLSearchParams(window.location.search).get('tools');
+      if (q === '1' || q === '0') localStorage.setItem('cv-tools', q);
+      v = localStorage.getItem('cv-tools');
+    } catch {}
+    setOn(v === '1');
+  }, []);
+  return on;
+}
+
+/** Today's badge: decisions left to make today, by the Today page's own rules. */
+function TodayCount() {
+  const c = useTodayCounts();
+  if (!c.ready) return null;
+  return <span className="count" title={`${c.ready} to decide today`} aria-label={`${c.ready} to decide today`}>{c.ready}</span>;
+}
 
 function Sidebar({ page, role, onNavigate }) {
   const base = CV_ROLES[role];
@@ -53,9 +80,7 @@ function Sidebar({ page, role, onNavigate }) {
                     <Icon name={p.icon} size={18} />
                   </span>
                   {p.title}
-                  {id === 'today' && <span className="count">{CV_D.queue.length}</span>}
-                  {p.isNew && <span className="cv-new">New</span>}
-                  {p.dot && <span className="cv-dot" title="2 feeds stale" />}
+                  {id === 'today' && <TodayCount />}
                 </Link>
               );
             })}
@@ -81,7 +106,7 @@ function LegendPop({ onClose }) {
   return (
     <div className="cv-pop" style={{ width: 320, padding: 14 }} role="dialog" aria-label="Claim strength">
       <div className="cv-col" style={{ gap: 10 }}>
-        <span className="cv-over">Every dollar carries one strength</span>
+        <span className="cv-over">How sure each dollar figure is</span>
         {['est', 'mod', 'cau', 'book', 'obs'].map((k) => (
           <div key={k} className="cv-col" style={{ gap: 4 }}>
             <Claim k={k} />
@@ -99,7 +124,7 @@ function LegendPop({ onClose }) {
   );
 }
 
-function TopBar({ page, loc, onLoc, role, onRole, go, onMenu, onAsk }) {
+function TopBar({ page, loc, onLoc, role, onRole, go, onMenu, onAsk, tools }) {
   const [pop, setPop] = React.useState(null);
   const ref = React.useRef(null);
   React.useEffect(() => {
@@ -118,35 +143,24 @@ function TopBar({ page, loc, onLoc, role, onRole, go, onMenu, onAsk }) {
       </button>
       <div className="col" style={{ lineHeight: 1.25, minWidth: 0 }}>
         <h1>{CV_PAGES[page].title}</h1>
-        <span className="sub">{CV_NOW.label}</span>
+        <span className="sub">{CV_NOW.label}<SampleTag /></span>
       </div>
       <div className="spacer" />
-      {deps && (
+      {tools && deps && (
         <Link className="cv-health cv-hide-sm" href={`/build#${page}`} title="What has to be built behind this screen">
           <Icon name="Wrench" size={15} />
           Needs {deps.length} platform gap{deps.length === 1 ? '' : 's'}
         </Link>
       )}
+      {CV_D.staleCount > 0 && (
+        <button className="cv-health cv-warnchip" onClick={() => go('sources')} aria-label={`${CV_D.staleCount} source${CV_D.staleCount === 1 ? ' needs' : 's need'} updating`} title="Some figures use data that is out of date. Open Sources to update it.">
+          <i /><span className="cv-wl">{CV_D.staleCount} source{CV_D.staleCount === 1 ? ' needs' : 's need'} updating</span><span className="cv-ws" aria-hidden="true">{CV_D.staleCount}</span>
+        </button>
+      )}
       <button className="cv-health" onClick={onAsk} aria-label="Ask">
         <Icon name="MessageCircle" size={15} />
         <span className="cv-hide-sm">Ask</span>
       </button>
-      <div className="cv-pop-wrap cv-hide-sm">
-        <button className="cv-health" onClick={() => setPop(pop === 'legend' ? null : 'legend')} aria-expanded={pop === 'legend'}>
-          <Icon name="Scale" size={15} />
-          Claim strength
-        </button>
-        {pop === 'legend' && <LegendPop onClose={() => setPop(null)} />}
-      </div>
-      {CV_D.staleCount > 0 ? (
-        <button className="cv-health cv-hide-sm" onClick={() => go('sources')} title={`${CV_D.staleCount} feeds stale`}>
-          <i />{CV_D.staleCount} feed{CV_D.staleCount === 1 ? '' : 's'} stale
-        </button>
-      ) : (
-        <button className="cv-health cv-hide-sm" onClick={() => go('sources')} title="All feeds fresh">
-          <Icon name="CircleCheck" size={15} color="var(--success-600)" />Feeds fresh
-        </button>
-      )}
       <div className="cv-pop-wrap">
         <button className="locpick" onClick={() => setPop(pop === 'loc' ? null : 'loc')} aria-expanded={pop === 'loc'}>
           <Icon name="MapPin" size={15} color="var(--accent)" />
@@ -175,13 +189,21 @@ function TopBar({ page, loc, onLoc, role, onRole, go, onMenu, onAsk }) {
           </div>
         )}
       </div>
-      <div className="cv-role" role="tablist" aria-label="View as">
+      <div className="cv-pop-wrap cv-hide-sm">
+        <button className="iconbtn cv-quiet" data-tip="What Observed, Estimated and Modeled mean" onClick={() => setPop(pop === 'legend' ? null : 'legend')} aria-expanded={pop === 'legend'} aria-label="What the money labels mean">
+          <Icon name="CircleHelp" size={17} />
+        </button>
+        {pop === 'legend' && <LegendPop onClose={() => setPop(null)} />}
+      </div>
+      {!tools && <ThemeButton />}
+      <AccountControls />
+      {tools && <div className="cv-role" role="tablist" aria-label="View as">
         {Object.entries(CV_ROLES).map(([k, r]) => (
           <button key={k} role="tab" aria-selected={role === k} className={role === k ? 'on' : ''} onClick={() => onRole(k)}>
             {r.label}
           </button>
         ))}
-      </div>
+      </div>}
     </header>
   );
 }
@@ -229,10 +251,48 @@ function AccountPill() {
   return (
     <span className="cv-strip-pill cv-row" style={{ gap: 8 }}>
       <Pill icon={eng.org?.sample ? 'FlaskConical' : 'Building2'}>{eng.org?.sample ? 'Sample group' : eng.org?.name}{eng.viewer?.anonymous ? ' · guest' : ''}</Pill>
-      {eng.saving && <span className="cv-xs cv-faint">Saving…</span>}
-      <Bell />
-      <Button size="sm" variant="ghost" icon="LogOut" onClick={() => engine.signOut()}>Sign out</Button>
     </span>
+  );
+}
+
+/** Signed in: notifications and sign out, in the top bar. The sample demo has neither. */
+function AccountControls() {
+  const eng = useEngine();
+  if (eng.mode !== 'server') return null;
+  return (
+    <span className="cv-row nowrap" style={{ gap: 4 }}>
+      {eng.saving && <span className="cv-xs cv-faint cv-hide-sm">Saving…</span>}
+      <Bell />
+      <Button size="sm" variant="ghost" icon="LogOut" onClick={() => engine.signOut()} aria-label="Sign out" title="Sign out" />
+    </span>
+  );
+}
+
+/** "Sample data" beside the date when the group in view is the sample. */
+function SampleTag() {
+  const eng = useEngine();
+  if (eng.mode === 'pending') return null;
+  const sample = eng.mode !== 'server' || eng.org?.sample;
+  if (!sample) return null;
+  return <span className="cv-sampletag">{eng.viewer?.anonymous ? 'Sample data · guest' : 'Sample data'}</span>;
+}
+
+const THEMES = [['auto', 'Monitor', 'Match this device'], ['light', 'Sun', 'Light'], ['dark', 'Moon', 'Dark']];
+function applyTheme(v) {
+  try { v === 'auto' ? localStorage.removeItem('cv-theme') : localStorage.setItem('cv-theme', v); } catch {}
+  if (v === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = v;
+}
+/** One quiet button that steps Auto → Light → Dark. */
+function ThemeButton() {
+  const [t, setT] = React.useState('auto');
+  React.useEffect(() => { try { setT(localStorage.getItem('cv-theme') || 'auto'); } catch {} }, []);
+  const i = Math.max(0, THEMES.findIndex(([v]) => v === t));
+  const nextT = THEMES[(i + 1) % THEMES.length];
+  const label = `Appearance: ${THEMES[i][2]}. Switch to ${nextT[2].toLowerCase()}`;
+  return (
+    <button type="button" className="iconbtn cv-quiet cv-hide-sm" aria-label={label} data-tip={`Theme: ${THEMES[i][2].toLowerCase()}`} onClick={() => { setT(nextT[0]); applyTheme(nextT[0]); }}>
+      <Icon name={THEMES[i][1]} size={17} />
+    </button>
   );
 }
 
@@ -240,11 +300,7 @@ function AccountPill() {
 function ThemeSwitch() {
   const [t, setT] = React.useState('auto');
   React.useEffect(() => { try { setT(localStorage.getItem('cv-theme') || 'auto'); } catch {} }, []);
-  const pick = (v) => {
-    setT(v);
-    try { v === 'auto' ? localStorage.removeItem('cv-theme') : localStorage.setItem('cv-theme', v); } catch {}
-    if (v === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = v;
-  };
+  const pick = (v) => { setT(v); applyTheme(v); };
   return (
     <span className="cv-theme" role="radiogroup" aria-label="Appearance">
       {[['auto', 'Auto'], ['light', 'Light'], ['dark', 'Dark']].map(([v, l]) => (
@@ -295,6 +351,7 @@ function AppShell({ children }) {
   const pathname = usePathname();
   const { page } = pageFromPath(pathname);
   const eng = useEngine();
+  const tools = useDemoTools();
   const [allMode, setAllMode] = React.useState(false);
   const loc = allMode ? 'all' : eng.room;
   const [role, setRole] = React.useState('owner');
@@ -374,18 +431,20 @@ function AppShell({ children }) {
 
   return (
     <CvCtx.Provider value={ctx}>
-      <ModeStrip build={false} />
+      <div className={tools ? 'cv-shellwrap' : 'cv-shellwrap cv-notools'}>
+      {tools && <ModeStrip build={false} />}
       <div className="cv-host">
         <div className={`app cv-app ${navOpen ? 'nav-open' : ''}`}>
           <Sidebar page={page} role={role} onNavigate={() => setNavOpen(false)} />
           {navOpen && <div className="cv-scrim" style={{ zIndex: 'calc(var(--z-drawer) - 1)' }} onClick={() => setNavOpen(false)} />}
           <div className="content">
-            <TopBar page={page} loc={loc} onLoc={chooseLoc} role={role} onRole={chooseRole} go={go} onMenu={() => setNavOpen(true)} onAsk={() => setAsk(true)} />
+            <TopBar page={page} loc={loc} onLoc={chooseLoc} role={role} onRole={chooseRole} go={go} onMenu={() => setNavOpen(true)} onAsk={() => setAsk(true)} tools={tools} />
             <main className="scroll" ref={scrollRef} tabIndex={0} aria-label="Screen">
               <React.Fragment key={`${eng.room}-${eng.version}`}>{children}</React.Fragment>
             </main>
           </div>
         </div>
+      </div>
       </div>
       {ask && <CvAsk onClose={() => setAsk(false)} go={go} />}
       {deriv && <DerivDrawer id={deriv} onClose={() => setDeriv(null)} />}
@@ -398,7 +457,7 @@ function AppShell({ children }) {
             engine.act('approvals', { ...(engine.saved('approvals') || {}), [id]: { at: new Date().toISOString() } }, { summary: `${cvApproval(id).title}: approved` });
             approval.onOk && approval.onOk();
             void engine.createTask(id, cvApproval(id));
-            showToast(`${cvApproval(id).title}: approved. The steps are on Today under "Approved changes to make".`);
+            showToast(`${cvApproval(id).title}: approved. The steps are on Today under "Changes to make".`);
           }}
         />
       )}

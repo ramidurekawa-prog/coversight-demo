@@ -3,7 +3,8 @@
 import * as React from 'react';
 
 import { Button, Icon } from '../kit';
-import { CV_D, CV_ROOM, Callout, Pill, useCv } from './core';
+import { CV_D, CV_ROOM, useCv } from './core';
+import s from './tasks.module.css';
 import { engine, useEngine } from '../engine';
 
 /* Approved changes waiting to be made in another system. Each one: the exact
@@ -11,7 +12,7 @@ import { engine, useEngine } from '../engine';
  * upload that guests really paid the new price. */
 
 const STATUS = {
-  open: { tone: 'warn', icon: 'CircleDashed', label: 'To do' },
+  open: { tone: 'todo', icon: 'CircleDashed', label: 'To do' },
   done: { tone: 'info', icon: 'Hourglass', label: 'Done · waiting for the data' },
   verified: { tone: 'good', icon: 'BadgeCheck', label: 'Confirmed by the data' },
   mismatch: { tone: 'warn', icon: 'MessageSquareWarning', label: 'Data doesn’t show it yet' },
@@ -20,41 +21,45 @@ const STATUS = {
 
 function TaskRow({ t }) {
   const cv = useCv();
-  const [open, setOpen] = React.useState(t.status === 'open' || t.status === 'mismatch');
+  const live = t.status === 'open' || t.status === 'mismatch';
+  const [open, setOpen] = React.useState(live);
   const [ticked, setTicked] = React.useState({});
-  const s = STATUS[t.status] || STATUS.open;
+  const st = STATUS[t.status] || STATUS.open;
   const manual = t.expect?.type !== 'price';
   const act = (action, msg) => engine.taskAction(t.id, action).then((r) => r && cv.toast(msg));
+  const id = `task-${t.id}`;
+  const done = Object.values(ticked).filter(Boolean).length;
   return (
-    <div className="cv-col" style={{ gap: 8, padding: '12px 0', borderTop: '1px solid var(--border)' }}>
-      <div className="cv-row nowrap" style={{ gap: 10, alignItems: 'flex-start' }}>
-        <span className={`cv-q-ico ${s.tone}`} style={{ width: 30, height: 30 }}><Icon name={s.icon} size={15} /></span>
-        <div className="cv-col" style={{ gap: 2, flex: 1 }}>
-          <span className="cv-small" style={{ fontWeight: 600 }}>{t.title}</span>
-          <span className="cv-xs cv-faint">{t.system} · {s.label}{t.note ? ` · ${t.note}` : ''}</span>
-        </div>
-        <Button size="sm" variant="ghost" icon={open ? 'ChevronUp' : 'ChevronDown'} onClick={() => setOpen(!open)} aria-expanded={open}>{open ? 'Hide' : 'Steps'}</Button>
-      </div>
+    <li className={`${s.task} ${open ? s.open : ''}`}>
+      <button type="button" className={s.head} aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}>
+        <Icon name={st.icon} size={15} className={s[st.tone]} />
+        <span className={s.text}>
+          <span className={s.title}>{t.title}</span>
+          <span className={s.sub}>{t.system} · {st.label}{t.note ? ` · ${t.note}` : ''}</span>
+        </span>
+        {live && <span className={s.steps}>{done}/{t.steps.length} steps</span>}
+        <Icon name={open ? 'ChevronUp' : 'ChevronDown'} size={15} className={s.chev} />
+      </button>
       {open && (
-        <div className="cv-col" style={{ gap: 8, paddingLeft: 40 }}>
-          <ol className="cv-col" style={{ gap: 6, margin: 0, paddingLeft: 18 }}>
+        <div id={id} className={s.body}>
+          <ol className={s.list}>
             {t.steps.map((step, i) => (
-              <li key={i} className="cv-small">
-                <label className="cv-row nowrap" style={{ gap: 8, alignItems: 'flex-start' }}>
-                  {(t.status === 'open' || t.status === 'mismatch') && <input type="checkbox" checked={!!ticked[i]} onChange={(e) => setTicked({ ...ticked, [i]: e.target.checked })} aria-label={`Step ${i + 1} done`} />}
+              <li key={i}>
+                <label className={ticked[i] ? s.ticked : undefined}>
+                  {live ? <input type="checkbox" checked={!!ticked[i]} onChange={(e) => setTicked({ ...ticked, [i]: e.target.checked })} aria-label={`Step ${i + 1} done`} /> : <span className={s.num}>{i + 1}</span>}
                   <span>{step}</span>
                 </label>
               </li>
             ))}
           </ol>
-          <div className="cv-row" style={{ gap: 8 }}>
-            {(t.status === 'open' || t.status === 'mismatch') && <Button size="sm" icon="Check" onClick={() => act('done', manual ? 'Marked done. Logged with your name and the time.' : 'Marked done. The next Toast upload confirms the new price.')}>Done, it’s made</Button>}
+          <div className={s.acts}>
+            {live && <Button size="sm" icon="Check" onClick={() => act('done', manual ? 'Marked done. Logged with your name and the time.' : 'Marked done. The next Toast upload confirms the new price.')}>Done, it’s made</Button>}
             {t.status === 'done' && <Button size="sm" variant="secondary" icon="Undo2" onClick={() => act('reopen', 'Reopened.')}>Not done after all</Button>}
-            {(t.status === 'open' || t.status === 'mismatch') && <Button size="sm" variant="ghost" onClick={() => act('cancel', 'Cancelled. Nothing was changed.')}>Cancel</Button>}
+            {live && <Button size="sm" variant="ghost" onClick={() => act('cancel', 'Cancelled. Nothing was changed.')}>Cancel</Button>}
           </div>
         </div>
       )}
-    </div>
+    </li>
   );
 }
 
@@ -66,18 +71,16 @@ export function TasksPanel({ all = false }) {
   if (!live.length && !recent.length) return null;
   const todo = mine.filter((t) => t.status === 'open' || t.status === 'mismatch').length;
   return (
-    <section className="cv-card" aria-labelledby="tasks-head">
-      <div className="cv-card-head">
-        <div className="cv-col" style={{ gap: 4 }}>
-          <span className="cv-h4" id="tasks-head">Approved changes to make</span>
-          <span className="cv-small cv-muted">Coversight can’t write to these systems yet, so each approval comes with the exact steps. Tick it off when it’s made{all ? '' : ` at ${CV_ROOM.short}`}.</span>
-        </div>
-        <Pill tone={todo ? 'warn' : 'good'} icon={todo ? 'ListChecks' : 'CircleCheck'}>{todo ? `${todo} to do` : 'All made'}</Pill>
+    <section className={s.panel} aria-labelledby="tasks-head">
+      <div className={s.top}>
+        <h3 className={s.h} id="tasks-head">Changes to make</h3>
+        <span className={s.count}>{todo ? `${todo} to do` : 'All made'}</span>
+        <span className={s.note}>Approved here, made by hand in the other system{all ? '' : ` for ${CV_ROOM.short}`}.</span>
       </div>
-      <div className="cv-col" style={{ gap: 0 }}>
+      <ul className={s.tasks}>
         {[...live, ...recent].map((t) => <TaskRow key={`${t.id}-${t.status}`} t={t} />)}
-      </div>
-      {eng.mode === 'local' && <Callout icon="Info">Saved in this browser only until the server is set up.</Callout>}
+      </ul>
+      {eng.mode === 'local' && <p className={s.local}><Icon name="Info" size={13} />Saved in this browser only until the server is set up.</p>}
     </section>
   );
 }
