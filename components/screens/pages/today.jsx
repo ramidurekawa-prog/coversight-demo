@@ -2,14 +2,14 @@
 
 import * as React from 'react';
 
-import { Icon, Button, Tabs } from '../../kit';
+import { Icon, Button } from '../../kit';
 import { engine, useEngine, useSaved } from '../../engine';
 import {
   applyOp, cardState, DECLINE, DEFAULT_TZ, FIRST_SCREEN, isActive, localDay, queueSummary, queueView, TEST_DAYS, todayCards,
 } from '../../../lib/data/page/today';
 import { TasksPanel } from '../tasks';
-import { useCv, CV_CLAIM, CV_D, CV_ROOM, CV_NOW, Claim, PageHead, Pill } from '../core';
-import { DenseToday } from '../dense-sections';
+import { useCv, CV_CLAIM, CV_D, CV_ROOM, CV_NOW, Claim, cvMoney } from '../core';
+import { useDense, pct } from '../dense-ui';
 import s from './today.module.css';
 
 /* ================================================================ Today (work queue)
@@ -20,7 +20,6 @@ import s from './today.module.css';
  * tasks (the same record Service and Meeting create), shown under "Approved
  * changes to make". With no server it's saved in this browser by the same rules. */
 
-const KIND = { decide: 'Decision', data: 'Keep the numbers right', test: 'Start a test' };
 const STATE = {
   ready: null,
   needs_review: { tone: 'info', icon: 'ShieldCheck', label: 'Needs your approval' },
@@ -106,187 +105,198 @@ const shortDate = (at, tz) => new Date(at).toLocaleDateString('en-US', { month: 
 const whoLabel = (by) => (by?.you ? 'You' : by?.name || 'A guest');
 const OP_LABEL = { done: 'Marked done', refuse: 'Turned down', snooze: 'Snoozed', undo: 'Put back on the queue', reset: 'Showed today’s cards again' };
 
-function StatePill({ state }) {
-  const st = STATE[state];
-  return st ? <Pill tone={st.tone} icon={st.icon}>{st.label}</Pill> : null;
+/** "$37 tonight" → big "$37", small "tonight"; a value with no dollar figure stays a short note. */
+function Worth({ value, big }) {
+  const m = /^(about\s+)?(\$[\d,.]+(?:k)?(?:\/wk)?)(.*)$/i.exec(value || '');
+  if (!m) return <span className={s.worthNote}>{value}</span>;
+  const rest = m[3].trim();
+  return <span className={big ? s.leadFig : s.rowFig}>{m[1] && <span className={s.worthRest}>about </span>}{m[2]}{rest && <span className={s.worthRest}> {rest}</span>}</span>;
 }
+
+const dueLabel = (q) => (q.deadline === 'today' ? 'Due today' : q.deadline ? 'Due this week' : null);
 
 function Details({ q, history, tz, fix }) {
   const claim = CV_CLAIM[q.claim] || CV_CLAIM.none;
-  const what = q.approval ? 'Opens the approval: exactly what changes, the fence, what would stop it, and how to undo it. Approving adds the steps under “Approved changes to make”; it isn’t done until the change is made.'
-    : q.start ? `Starts a ${TEST_DAYS}-day test. The baseline is frozen and each new week of data is a checkpoint; nothing is booked unless the test verifies. No manager time while it runs.`
-      : q.task ? `Adds step-by-step instructions to make the change in ${q.task.system}, under “Approved changes to make”. Tick it off when it’s made.`
-        : q.go ? 'Opens the screen where this is done. Mark it done here once it is.'
+  const what = q.approval ? 'You’ll see exactly what changes, the limits it stays inside and how to undo it. Approving adds the steps to make it; it isn’t done until it’s made.'
+    : q.start ? `Starts a ${TEST_DAYS}-day test that runs on its own. Nothing is counted as saved unless the test proves it.`
+      : q.task ? `Adds the steps to make this change in ${q.task.system}. Tick it off when it’s made.`
+        : q.go ? 'Opens the screen where this is done.'
           : 'Records that it’s done, with your name and the time.';
   const mine = history.filter((h) => h.cardId === q.id);
   return (
     <dl className={s.details}>
-      <dt>Why it’s here</dt><dd>{q.body} <span className="cv-faint">{q.why}</span></dd>
-      <dt>What it’s worth</dt><dd><Claim k={q.claim} /> <span className="cv-num">{q.value}</span>. {claim.tip}{q.worth ? ' It’s a potential figure until a test verifies it.' : ''}</dd>
-      <dt>Evidence</dt><dd>{q.source.kind === 'toast' ? `Your Toast data through ${q.source.through}.` : 'Sample restaurant data, not a real restaurant.'}</dd>
-      {q.blocked && <><dt>Waiting on</dt><dd>{q.blocked}{fix ? ` Do “${fix.title}” first.` : ''}</dd></>}
-      <dt>What happens when you act</dt><dd>{what}</dd>
-      <dt>Your time</dt><dd>About {q.effort.manager} min of your time{q.effort.waitDays ? `, then ${q.effort.waitDays} days of measuring in the background` : ''}.</dd>
-      {mine.length > 0 && <><dt>History</dt><dd>{mine.map((h, i) => <div key={i}>{OP_LABEL[h.op]}{h.reason ? ` (${DECLINE[h.reason]?.label.toLowerCase()})` : ''} · {whoLabel(h.by)}{h.at ? ` · ${clock(h.at, tz)}` : ''}</div>)}</dd></>}
+      <dt>Why</dt><dd>{q.body}</dd>
+      {q.blocked && <><dt>Waiting on</dt><dd>{fix ? fix.title : q.blocked}</dd></>}
+      <dt>Worth</dt><dd>{q.value}, {claim.label.toLowerCase()}. {claim.tip}</dd>
+      <dt>If you act</dt><dd>{what}</dd>
+      <dt>Source</dt><dd>{q.source.kind === 'toast' ? `Your Toast data through ${q.source.through}` : 'Sample restaurant data'} · {q.why}</dd>
+      {mine.length > 0 && <><dt>History</dt><dd>{mine.map((h, i) => <div key={i}>{OP_LABEL[h.op]}{h.reason ? ` (${DECLINE[h.reason]?.label.toLowerCase()})` : ''}, {whoLabel(h.by).toLowerCase() === 'you' ? 'you' : whoLabel(h.by)}{h.at ? `, ${clock(h.at, tz)}` : ''}</div>)}</dd></>}
     </dl>
   );
 }
 
-const KIND_COLOR = { decide: 'var(--cat-1)', data: 'var(--cat-3)', test: 'var(--cat-2)' };
-const KIND_SHORT = { decide: 'Decisions', data: 'Data fixes', test: 'Tests' };
-
-function QueueCard({ q, lead, state, busy, isNew, fix, history, tz, open, onToggle, onPrimary, onDone, onSnooze, onDecline }) {
-  const [declining, setDeclining] = React.useState(false);
+/** The quiet choices: snooze, not for us (with why), already done. */
+function Secondary({ q, busy, onSnooze, onDecline, onDone }) {
+  const [asking, setAsking] = React.useState(false);
   const canSnooze = !q.critical && q.deadline !== 'today';
+  if (asking) {
+    return (
+      <div className={s.ask} role="group" aria-label="Why isn’t this for you?">
+        <span className={s.askQ}>Why not?</span>
+        {Object.entries(DECLINE).map(([k, d]) => <button key={k} type="button" className={s.choice} disabled={busy} onClick={() => { setAsking(false); onDecline(k); }}>{d.label}</button>)}
+        <button type="button" className={s.textBtn} onClick={() => setAsking(false)}>Cancel</button>
+      </div>
+    );
+  }
   return (
-    <article id={`card-${q.id}`} className={`${s.card} ${lead ? s.lead : ''} ${q.blocked ? s.blocked : ''}`} aria-labelledby={`q-${q.id}`} aria-busy={busy || undefined}>
-      <span className={s.stripe} style={{ background: KIND_COLOR[q.kind] }} aria-hidden="true" />
-      <span className={`cv-q-ico ${q.tone}`}><Icon name={q.blocked ? 'Lock' : q.icon} size={18} /></span>
-      <div className={s.main}>
-        <div className={s.tags}>
-          {lead ? <span className={s.nextTag}><Icon name="ArrowRight" size={12} />Do this first</span> : <span className={s.kind}>{KIND[q.kind]}</span>}
-          {isNew && <span className={s.newTag}>New</span>}
-          {q.deadline && <Pill tone="warn" icon="CalendarClock">{q.deadline === 'today' ? 'Due today' : 'Due soon'}</Pill>}
-          <StatePill state={state} />
-        </div>
-        <span id={`q-${q.id}`} className={lead ? s.leadTitle : s.title}>{q.title}</span>
-        <div className={s.meta}>
-          <span className={s.mins}><Icon name="Clock" size={12} />{q.effort.manager} min</span>
-          <button type="button" className={s.more} aria-expanded={open} onClick={onToggle}><Icon name={open ? 'ChevronUp' : 'ChevronDown'} size={13} />{open ? 'Less' : 'Why?'}</button>
-        </div>
-      </div>
-      <div className={s.worth}>
-        <span className={/\$/.test(q.value) ? `cv-num ${s.worthFig}` : s.worthText}>{q.value}</span>
-        <Claim k={q.claim} />
-      </div>
-      <div className={s.acts}>
-        {q.refuse && !q.critical && <Button variant="ghost" size="sm" disabled={busy} aria-expanded={declining} onClick={() => setDeclining(!declining)}>Not for us</Button>}
-        {!q.refuse && canSnooze && <Button variant="ghost" size="sm" icon="CalendarClock" disabled={busy} onClick={onSnooze}>Tomorrow</Button>}
-        <Button size="sm" variant={lead ? 'primary' : 'secondary'} disabled={busy} onClick={onPrimary}>{q.blocked && fix ? `First: ${fix.primary}` : q.primary}</Button>
-      </div>
-      {(declining || open) && (
-        <div className={s.below}>
-          {declining && (
-            <div className={s.decline} role="group" aria-label="Why isn’t this for you?">
-              <span className="cv-xs cv-muted">Why isn’t this for you?</span>
-              <div className="cv-row" style={{ gap: 6, flexWrap: 'wrap' }}>
-                {Object.entries(DECLINE).map(([k, d]) => <Button key={k} size="sm" variant="secondary" disabled={busy} onClick={() => { setDeclining(false); onDecline(k); }}>{d.label}</Button>)}
-                <Button size="sm" variant="ghost" onClick={() => setDeclining(false)}>Cancel</Button>
-              </div>
-            </div>
-          )}
-          {open && <Details q={q} history={history} tz={tz} fix={fix} />}
-          {open && q.go && !q.blocked && <Button variant="ghost" size="sm" icon="Check" disabled={busy} onClick={onDone}>Already done? Mark it done</Button>}
-        </div>
-      )}
-    </article>
-  );
-}
-
-/** Decided out of total, as a ring: done or approved, snoozed, declined, left. Each arc says what it is on hover. */
-function Ring({ sum }) {
-  const R = 34, C = 2 * Math.PI * R;
-  const parts = [
-    ['Done or approved', sum.cleared, 'var(--success-600)'],
-    ['Snoozed', sum.snoozed, 'var(--info-600)'],
-    ['Not for us', sum.refused, 'var(--fg-3)'],
-  ];
-  let off = 0;
-  const decided = sum.cleared + sum.snoozed + sum.refused;
-  return (
-    <svg width="84" height="84" viewBox="0 0 84 84" role="img" aria-label={`${decided} of ${sum.total} decided: ${parts.map(([l, n]) => `${n} ${l.toLowerCase()}`).join(', ')}, ${sum.left} left`}>
-      <circle cx="42" cy="42" r={R} fill="none" stroke="var(--surface-sunken)" strokeWidth="9" />
-      {parts.map(([l, n, c]) => {
-        if (!n) return null;
-        const len = (n / Math.max(1, sum.total)) * C;
-        const el = <circle key={l} cx="42" cy="42" r={R} fill="none" stroke={c} strokeWidth="9" strokeDasharray={`${Math.max(0, len - 2)} ${C}`} strokeDashoffset={-off} transform="rotate(-90 42 42)"><title>{`${l}: ${n}`}</title></circle>;
-        off += len;
-        return el;
-      })}
-      <text x="42" y="47" textAnchor="middle" className={s.ringText}>{decided}/{sum.total}</text>
-    </svg>
-  );
-}
-
-/** Where your time goes: one segment per card, sized by your minutes, coloured by kind. Hover or focus for what it is; click to open it. */
-function TimeBar({ cards, onPick }) {
-  const [tip, setTip] = React.useState(null);
-  const total = cards.filter((c) => !c.blocked).reduce((m, c) => m + c.effort.manager, 0);
-  const waiting = cards.filter((c) => c.blocked).reduce((m, c) => m + c.effort.manager, 0);
-  const kinds = ['decide', 'data', 'test'].filter((k) => cards.some((c) => c.kind === k));
-  return (
-    <div className={s.timebar}>
-      <div className={s.tbTrack} onMouseLeave={() => setTip(null)}>
-        {cards.map((c) => (
-          <button key={c.id} type="button" className={`${s.seg} ${c.blocked ? s.segBlocked : ''}`} style={{ flexGrow: c.effort.manager, background: KIND_COLOR[c.kind] }}
-            aria-label={`${c.title}: ${c.effort.manager} min, ${c.value}${c.blocked ? ', waiting on data' : ''}`}
-            onMouseEnter={() => setTip(c)} onFocus={() => setTip(c)} onBlur={() => setTip(null)} onClick={() => onPick(c.id)} />
-        ))}
-      </div>
-      <div className={s.tbFoot} aria-live="polite">
-        {tip ? (
-          <span className={s.tbTip}><b>{tip.title}</b> · {tip.effort.manager} min · {tip.value} <Claim k={tip.claim} />{tip.blocked ? ' · waiting on data' : ''}</span>
-        ) : (
-          <span className={s.legend}>
-            {kinds.map((k) => <span key={k}><i style={{ background: KIND_COLOR[k] }} />{KIND_SHORT[k]} {cards.filter((c) => c.kind === k).reduce((m, c) => m + c.effort.manager, 0)} min</span>)}
-            {cards.some((c) => c.blocked) && <span><i className={s.hatch} />Waiting on data</span>}
-          </span>
-        )}
-        <span className="cv-xs cv-faint cv-num">{total} min{waiting ? ` + ${waiting} later` : ''}</span>
-      </div>
+    <div className={s.secondary}>
+      {canSnooze && !q.refuse && <button type="button" className={s.textBtn} disabled={busy} onClick={onSnooze}>Snooze to tomorrow</button>}
+      {q.refuse && !q.critical && <button type="button" className={s.textBtn} disabled={busy} onClick={() => setAsking(true)}>Not for us</button>}
+      {q.go && !q.blocked && <button type="button" className={s.textBtn} disabled={busy} onClick={onDone}>Already done</button>}
     </div>
   );
 }
 
-function OffQueue({ cards, view, history, tz, busy, onUndo, onReset, own }) {
+/** The one thing to do first: big, with its value and one button. */
+function Lead({ q, busy, fix, history, tz, isNew, actions }) {
+  const [open, setOpen] = React.useState(false);
+  const due = dueLabel(q);
+  const overline = ['Do this first', q.approval && !q.blocked ? 'needs your approval' : null, due?.toLowerCase(), isNew ? 'new' : null].filter(Boolean).join(' · ');
+  return (
+    <section id={`card-${q.id}`} className={s.lead} aria-labelledby={`q-${q.id}`} aria-busy={busy || undefined}>
+      <span className={s.overline}>{overline}</span>
+      <h3 id={`q-${q.id}`} className={s.leadTitle}>{q.title}</h3>
+      <p className={s.leadWhy}>{q.blocked || q.body}</p>
+      <div className={s.leadFoot}>
+        <div className={s.leadWorth}>
+          <Worth value={q.value} big />
+          <span className={s.leadMeta}><Claim k={q.claim} /><span>{q.effort.manager} min of your time</span></span>
+        </div>
+        <div className={s.leadActs}>
+          <Button size="lg" disabled={busy} onClick={actions.primary}>{q.blocked && fix ? `First: ${fix.primary}` : q.primary}</Button>
+        </div>
+      </div>
+      <div className={s.leadBottom}>
+        <button type="button" className={s.textBtn} aria-expanded={open} onClick={() => setOpen(!open)}>{open ? 'Hide details' : 'Details'}<Icon name={open ? 'ChevronUp' : 'ChevronDown'} size={13} /></button>
+        <Secondary q={q} busy={busy} onSnooze={actions.snooze} onDecline={actions.decline} onDone={actions.done} />
+      </div>
+      {open && <Details q={q} history={history} tz={tz} fix={fix} />}
+    </section>
+  );
+}
+
+/** Everything after the first: one quiet row each, details on click. */
+function Row({ q, busy, fix, history, tz, isNew, open, onToggle, actions }) {
+  return (
+    <li id={`card-${q.id}`} className={`${s.item} ${q.blocked ? s.itemBlocked : ''} ${open ? s.itemOpen : ''}`} aria-busy={busy || undefined}>
+      <div className={s.rowMain}>
+        <button type="button" className={s.rowHit} aria-expanded={open} aria-controls={`d-${q.id}`} onClick={onToggle}>
+          {q.blocked && <Icon name="Lock" size={14} className={s.lock} />}
+          <span className={s.rowText}>
+            <span className={s.rowTitle}>{q.title}{isNew && <span className={s.newTag}>New</span>}</span>
+            <span className={s.rowSub}>{q.blocked ? `Waiting on ${fix ? fix.title.toLowerCase() : 'data'}` : [`${q.effort.manager} min`, dueLabel(q)].filter(Boolean).join(' · ')}</span>
+          </span>
+        </button>
+        <span className={s.rowWorth}><Worth value={q.value} /><Claim k={q.claim} /></span>
+        <Button size="sm" variant="secondary" disabled={busy} onClick={actions.primary}>{q.blocked && fix ? `First: ${fix.primary}` : q.primary}</Button>
+      </div>
+      {open && (
+        <div id={`d-${q.id}`} className={s.rowMore}>
+          <Details q={q} history={history} tz={tz} fix={fix} />
+          <Secondary q={q} busy={busy} onSnooze={actions.snooze} onDecline={actions.decline} onDone={actions.done} />
+        </div>
+      )}
+    </li>
+  );
+}
+
+/** Today's progress as one line: a segment per card, as wide as its minutes. Hover to name it, click to open it. */
+function Progress({ cards, view, onPick }) {
+  const [tip, setTip] = React.useState(null);
+  const cls = (c) => {
+    const st = cardState(c, view);
+    if (st === 'blocked') return s.pWait;
+    if (st === 'ready' || st === 'needs_review') return s.pLeft;
+    if (st === 'snoozed' || st === 'declined') return s.pSet;
+    return s.pDone;
+  };
+  const label = (c) => { const st = cardState(c, view); return st === 'ready' || st === 'needs_review' ? 'to do' : (STATE[st]?.label || st).toLowerCase(); };
+  return (
+    <div className={s.progress}>
+      <div className={s.pTrack} onMouseLeave={() => setTip(null)}>
+        {cards.map((c) => (
+          <button key={c.id} type="button" className={`${s.pSeg} ${cls(c)}`} style={{ flexGrow: Math.max(2, c.effort.manager) }}
+            aria-label={`${c.title}: ${label(c)}, ${c.effort.manager} min`}
+            onMouseEnter={() => setTip(c)} onFocus={() => setTip(c)} onBlur={() => setTip(null)} onClick={() => onPick(c)} />
+        ))}
+      </div>
+      <span className={s.pTip} aria-live="polite">{tip ? `${tip.title} · ${label(tip)} · ${tip.effort.manager} min` : ' '}</span>
+    </div>
+  );
+}
+
+/** What's been decided, folded into one line until asked for. */
+function Decided({ cards, view, history, tz, busy, onUndo, onReset, own }) {
+  const [open, setOpen] = React.useState(false);
   const titleOf = (id) => cards.find((c) => c.id === id)?.title
     || (id.startsWith('find:') && CV_D.candidates.find((c) => c.id === id.slice(5))?.title) || id;
   const last = (id, op) => [...history].reverse().find((h) => h.cardId === id && h.op === op);
-  const linked = cards.filter((c) => c.linked).map((c) => ({ id: c.id, state: cardState(c, view), note: 'Steps under “Approved changes to make”', undo: false }));
-  const groups = {
-    done: [
-      ...linked,
-      ...Object.keys(view.done).map((id) => ({ id, state: 'completed', note: `${whoLabel(last(id, 'done')?.by)} · ${clock(view.done[id], tz)}`, undo: true })),
-    ],
-    snoozed: Object.keys(view.snoozed).map((id) => ({ id, state: 'snoozed', note: `${whoLabel(last(id, 'snooze')?.by)} · back ${view.snoozed[id] <= localDay(Date.now() + 864e5, tz) ? 'tomorrow' : shortDate(`${view.snoozed[id]}T12:00:00Z`, 'UTC')}`, undo: true })),
-    refused: Object.keys(view.refused).map((id) => {
+  const rows = [
+    ...cards.filter((c) => c.linked).map((c) => ({ id: c.id, state: cardState(c, view), note: 'Steps are under Approved changes', undo: false })),
+    ...Object.keys(view.done).map((id) => ({ id, state: 'completed', note: `${whoLabel(last(id, 'done')?.by)}, ${clock(view.done[id], tz)}`, undo: true })),
+    ...Object.keys(view.snoozed).map((id) => ({ id, state: 'snoozed', note: `Back ${view.snoozed[id] <= localDay(Date.now() + 864e5, tz) ? 'tomorrow' : shortDate(`${view.snoozed[id]}T12:00:00Z`, 'UTC')}`, undo: true })),
+    ...Object.keys(view.refused).map((id) => {
       const m = view.meta?.[id] || {};
       const days = DECLINE[m.reason]?.days ?? 90;
-      return { id, state: 'declined', note: `${whoLabel(last(id, 'refuse')?.by)}${m.reason ? `: ${DECLINE[m.reason].label.toLowerCase()}` : ''} · ${shortDate(view.refused[id], tz)}. Comes back after ${shortDate(Date.parse(view.refused[id]) + days * 864e5, tz)}, or sooner if it’s worth half as much again.`, undo: true };
+      return { id, state: 'declined', note: `${m.reason ? DECLINE[m.reason].label : 'Not for us'} · back ${shortDate(Date.parse(view.refused[id]) + days * 864e5, tz)}`, undo: true };
     }),
-  };
-  const first = Object.keys(groups).find((k) => groups[k].length) || 'done';
-  const [tab, setTab] = React.useState(first);
-  const total = groups.done.length + groups.snoozed.length + groups.refused.length;
-  if (!total) return null;
-  const shown = groups[tab].length ? tab : first;
+  ];
+  if (!rows.length) return null;
+  const count = (st) => rows.filter((r) => st.includes(r.state)).length;
+  const parts = [[count(['completed', 'approved', 'prepared', 'executed', 'confirmed', 'mismatch']), 'done'], [count(['snoozed']), 'snoozed'], [count(['declined']), 'not for us']].filter(([n]) => n);
   return (
-    <section className="cv-card" aria-labelledby="off-head">
-      <div className="cv-card-head">
-        <div className="cv-col" style={{ gap: 4 }}>
-          <span className="cv-h4" id="off-head">Off the queue</span>
-          <span className="cv-small cv-muted">What’s been decided {own ? 'today' : ''}, and by whom. Done, snoozed and turned-down cards can go back on the queue; an approval is undone by cancelling its steps.</span>
-        </div>
-        <Button size="sm" variant="ghost" icon="RotateCcw" disabled={!!busy} onClick={onReset}>{own ? 'Show today’s cards again' : 'Reset the demo'}</Button>
-      </div>
-      <Tabs value={shown} onChange={setTab} tabs={[
-        { value: 'done', label: own ? 'Done today' : 'Done', count: groups.done.length },
-        { value: 'snoozed', label: 'Snoozed', count: groups.snoozed.length },
-        { value: 'refused', label: 'Not for us', count: groups.refused.length },
-      ]} />
-      <div className={s.list} role="tabpanel">
-        {groups[shown].map((r) => (
-          <div key={r.id} className={s.row}>
-            <span className={`cv-q-ico ${STATE[r.state].tone === 'neutral' ? '' : STATE[r.state].tone} ${s.rowIco}`}><Icon name={STATE[r.state].icon} size={15} /></span>
-            <div className="cv-col" style={{ gap: 2, minWidth: 0 }}>
-              <span className="cv-small" style={{ fontWeight: 600 }}>{titleOf(r.id)}</span>
-              <span className="cv-xs cv-faint">{STATE[r.state].label} · {r.note}</span>
-            </div>
-            {r.undo ? <Button size="sm" variant="ghost" icon="Undo2" disabled={busy === r.id} onClick={() => onUndo(r.id)}>{shown === 'done' ? 'Undo' : 'Bring back'}</Button> : <span />}
-          </div>
-        ))}
-      </div>
+    <section className={s.decided} aria-labelledby="decided-head">
+      <button type="button" id="decided-head" className={s.decidedHead} aria-expanded={open} onClick={() => setOpen(!open)}>
+        <Icon name="CircleCheck" size={15} />
+        <span>{parts.map(([n, l]) => `${n} ${l}`).join(' · ')}{own ? ' today' : ''}</span>
+        <Icon name={open ? 'ChevronUp' : 'ChevronDown'} size={14} />
+      </button>
+      {open && (
+        <>
+          <ul className={s.decidedList}>
+            {rows.map((r) => (
+              <li key={`${r.state}-${r.id}`}>
+                <Icon name={STATE[r.state].icon} size={14} className={s[`st_${STATE[r.state].tone}`]} />
+                <span className={s.decidedTitle}>{titleOf(r.id)}</span>
+                <span className={s.decidedNote}>{STATE[r.state].label} · {r.note}</span>
+                {r.undo ? <button type="button" className={s.textBtn} disabled={busy === r.id} onClick={() => onUndo(r.id)}>Undo</button> : <span />}
+              </li>
+            ))}
+          </ul>
+          <button type="button" className={s.textBtn} disabled={!!busy} onClick={onReset}>{own ? 'Put today’s cards back' : 'Reset the demo'}</button>
+        </>
+      )}
     </section>
+  );
+}
+
+/** Yesterday in one line, for context; the full day is on Daily detail. Sample rooms only (real rooms have no hourly detail here). */
+function Yesterday() {
+  const cv = useCv();
+  const dense = useDense();
+  if (!dense) return null;
+  const day = dense.days.at(-1), wk = dense.days.at(-8);
+  const up = day.net >= wk.net;
+  return (
+    <button type="button" className={s.yesterday} onClick={() => cv.go('daily')}>
+      <span className={s.yLabel}>{day.dow}</span>
+      <span className={s.yFig}>{cvMoney(Math.round(day.net))}</span>
+      <span className={up ? s.yUp : s.yDown}>{pct(day.net, wk.net)} vs last {day.dow}</span>
+      <span className={s.ySep} />
+      <span className={s.yFig}>{day.covers}</span><span className={s.yLabel}>covers</span>
+      <Claim k="obs" />
+      <span className={s.yGo}>Daily detail<Icon name="ArrowRight" size={13} /></span>
+    </button>
   );
 }
 
@@ -298,7 +308,6 @@ function CvToday() {
   const own = !!CV_D.room.fromToast;
   const [dismissed, setDismissed] = useSaved('findings', {});
   const [showAll, setShowAll] = React.useState(false);
-  const [filter, setFilter] = React.useState('all');
   const [openId, setOpenId] = React.useState(null);
   const testing = (eng.windows || []).filter((w) => w.roomId === CV_D.id && (w.status === 'running' || w.status === 'waiting')).map((w) => w.lever);
   const cards = todayCards(CV_D, { today, testing, dismissed, tasks: (eng.tasks || []).filter((t) => t.roomId === CV_D.id) });
@@ -318,115 +327,90 @@ function CvToday() {
       return cv.toast(q.blocked);
     }
     if (q.approval) return cv.approve(q.approval);
-    if (q.start) return engine.startWindow(q.start).then((r) => cv.toast(r.ok ? `Test started. It’s on Test windows; nothing is booked unless it verifies after ${TEST_DAYS} days.` : r.error));
+    if (q.start) return engine.startWindow(q.start).then((r) => cv.toast(r.ok ? `Test started. Nothing is counted as saved unless it proves out in ${TEST_DAYS} days.` : r.error));
     if (q.task) {
       return engine.createTask(`today:${q.id}`, { title: q.title, system: q.task.system, diff: q.task.diff })
-        .then((t) => t && cv.toast(`The steps to do it in ${q.task.system} are under “Approved changes to make”. Tick it off when it’s made.`));
+        .then((t) => t && cv.toast(`Added the steps for ${q.task.system}. Tick it off when it’s made.`));
     }
     if (q.go === 'finding') return cv.go('finding', { id: q.goId });
     if (q.go) return cv.go(q.go, q.input ? { kind: q.input } : undefined);
     return decide('done', q, { summary: `${q.title}: done` }, 'Done. Logged with your name and the time.');
   };
-  const decline = (q, reason) => decide('refuse', q, { reason, summary: `${q.title}: not for us` }, `Noted. We won’t suggest this again for ${DECLINE[reason].days} days, unless it becomes worth much more.`).then((ok) => {
+  const decline = (q, reason) => decide('refuse', q, { reason, summary: `${q.title}: not for us` }, `Got it. Hidden for ${DECLINE[reason].days} days unless it becomes worth much more.`).then((ok) => {
     const id = findingId(q);
     if (ok && id) setDismissed((f) => ({ ...(f || {}), [id]: new Date(Date.now() + DECLINE[reason].days * 864e5).toISOString() }), `${q.title}: not for us`);
   });
   const undo = (id) => {
     const q = byId(id) || { id, title: id };
-    return decide('undo', q, { summary: `${q.title}: back on the queue` }, 'Back on the queue.').then((ok) => {
+    return decide('undo', q, { summary: `${q.title}: back on the queue` }, 'Back on the list.').then((ok) => {
       const fid = findingId(q);
       if (ok && fid && dismissed?.[fid]) setDismissed((f) => { const n = { ...(f || {}) }; delete n[fid]; return n; }, `${q.title}: back on the queue`);
     });
   };
-  const reset = () => decide('reset', null, { summary: own ? 'Today’s cards shown again' : 'Queue reset' }, own ? 'Today’s cards are back.' : 'The demo queue is reset.');
+  const reset = () => decide('reset', null, { summary: own ? 'Today’s cards shown again' : 'Queue reset' }, own ? 'Today’s cards are back.' : 'The demo is reset.');
+  const actionsFor = (q) => ({
+    primary: () => primary(q),
+    done: () => decide('done', q, { summary: `${q.title}: done` }, 'Done. Logged with your name and the time.'),
+    snooze: () => decide('snooze', q, { summary: `${q.title}: snoozed` }, 'Snoozed until tomorrow.'),
+    decline: (reason) => decline(q, reason),
+  });
 
   const day = own ? new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: tz }) : CV_NOW.label;
   const checksOk = !CV_D.staleCount && !left.some((c) => c.blocked);
-  const head = sum.left ? 'Here’s what needs you today' : checksOk ? 'Everything important is handled' : 'Nothing to decide, but some data needs attention';
-  const kinds = ['decide', 'data', 'test'].filter((k) => left.some((c) => c.kind === k));
-  const shownLeft = filter === 'all' ? left : left.filter((c) => c.kind === filter);
-  const visible = showAll || filter !== 'all' ? shownLeft : shownLeft.slice(0, FIRST_SCREEN);
-  const hidden = shownLeft.length - visible.length;
-  const pick = (id) => {
-    const i = left.findIndex((c) => c.id === id);
-    setFilter('all');
-    if (i >= FIRST_SCREEN) setShowAll(true);
-    setOpenId(id);
-    setTimeout(() => document.getElementById(`card-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
+  const [lead, ...rest] = left;
+  const shownRest = showAll ? rest : rest.slice(0, FIRST_SCREEN - 1);
+  const hiddenRest = rest.length - shownRest.length;
+  const pick = (c) => {
+    if (!isActive(c, view)) return;
+    if (rest.indexOf(c) >= FIRST_SCREEN - 1) setShowAll(true);
+    if (c !== lead) setOpenId(c.id);
+    setTimeout(() => document.getElementById(`card-${c.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
   };
+  const waitingOn = left.filter((c) => c.blocked).length;
+
   return (
-    <div className="cv-page" style={{ maxWidth: 880 }}>
-      <PageHead over={`${CV_ROOM.name} · ${day}`} q={head} />
-
-      <div className={s.context} aria-label="Where this queue comes from">
-        {own ? <span><Icon name="Database" size={13} />Toast data through {remote?.dataThrough || CV_D.room.fromToast.end}</span>
-          : <span><Icon name="FlaskConical" size={13} />Sample restaurant · not real data</span>}
-        {remote?.changes?.builtAt && <span><Icon name="Clock" size={13} />Built {clock(remote.changes.builtAt, tz)}{remote.changes.added.length ? ` · ${remote.changes.added.length} new` : ''}{remote.changes.gone.length ? ` · ${remote.changes.gone.length} cleared by new data` : ''}</span>}
-        {CV_D.staleCount > 0 && <button type="button" className={s.ctxLink} onClick={() => cv.go('sources')}><Icon name="TriangleAlert" size={13} />{CV_D.staleCount} feed{CV_D.staleCount === 1 ? '' : 's'} stale</button>}
-      </div>
-
-      <section className={s.hero} aria-label="Today at a glance">
-        <div className={s.tile}>
-          <span className={s.label}>To do</span>
-          <span className={s.big}>{sum.ready}</span>
-          <span className="cv-xs cv-faint">{sum.blocked ? `+${sum.blocked} waiting on data` : 'ready now'}</span>
-        </div>
-        <div className={s.tile}>
-          <span className={s.label}>Your time</span>
-          <span className={s.big}>{sum.minsLeft}<small> min</small></span>
-          <span className="cv-xs cv-faint">only what needs you</span>
-        </div>
-        <div className={`${s.tile} ${s.ringTile}`}>
-          <Ring sum={sum} />
-          <div className="cv-col" style={{ gap: 2 }}>
-            <span className={s.label}>{own ? 'Decided today' : 'Decided'}</span>
-            <span className="cv-xs cv-faint">{sum.cleared} done · {sum.snoozed} snoozed<br />{sum.refused} not for us</span>
-          </div>
-        </div>
-        {left.length > 0 && (
-          <div className={s.heroChart}>
-            <div className={s.chartHead}><span className="cv-h4">Where your time goes</span><span className="cv-xs cv-faint">Tap a block to open it</span></div>
-            <TimeBar cards={left} onPick={pick} />
-          </div>
+    <div className={`cv-page ${s.page}`}>
+      <header className={s.head}>
+        <span className={s.where}>
+          {CV_ROOM.name} · {day}
+          {!own && <span className={s.sample}>Sample data</span>}
+          {CV_D.staleCount > 0 && <button type="button" className={s.stale} onClick={() => cv.go('sources')}>{CV_D.staleCount} feed{CV_D.staleCount === 1 ? '' : 's'} out of date</button>}
+        </span>
+        {sum.left ? (
+          <h2 className={s.answer}>
+            <span className={s.answerFig}>{sum.ready}</span> thing{sum.ready === 1 ? '' : 's'} to do,{' '}
+            <span className={s.answerFig}>{sum.minsLeft}</span> minutes
+          </h2>
+        ) : (
+          <h2 className={s.answer}>{checksOk ? 'All done for today.' : 'Nothing to decide.'}</h2>
         )}
-      </section>
+        {sum.left > 0 && waitingOn > 0 && <span className={s.answerSub}>{waitingOn} more once the data comes in.</span>}
+        {!sum.left && !checksOk && <span className={s.answerSub}>But a data feed is out of date, so some numbers can’t be trusted yet. <button type="button" className={s.inlineLink} onClick={() => cv.go('sources')}>Fix it in Sources</button></span>}
+        {cards.length > 0 && <Progress cards={cards} view={view} onPick={pick} />}
+      </header>
 
-      {left.length === 0 ? (
-        <div className="cv-empty">
-          <span className="ico"><Icon name={checksOk ? 'Check' : 'TriangleAlert'} size={22} /></span>
-          <span className="cv-h3">{checksOk ? 'Queue clear' : 'Queue clear, data needs a look'}</span>
-          {!checksOk && <Button size="sm" variant="secondary" onClick={() => cv.go('sources')}>Open Sources</Button>}
-        </div>
-      ) : (
-        <div className="cv-col" style={{ gap: 10 }}>
-          {kinds.length > 1 && (
-            <div className={s.chips} role="group" aria-label="Show">
-              {[['all', 'All', left.length], ...kinds.map((k) => [k, KIND_SHORT[k], left.filter((c) => c.kind === k).length])].map(([k, l, n]) => (
-                <button key={k} type="button" className={`${s.chip} ${filter === k ? s.chipOn : ''}`} aria-pressed={filter === k} onClick={() => setFilter(k)}>
-                  {k !== 'all' && <i style={{ background: KIND_COLOR[k] }} />}{l}<span className="cv-num">{n}</span>
-                </button>
-              ))}
-            </div>
+      {lead && <Lead q={lead} busy={busy === lead.id} fix={lead.blockedBy ? byId(lead.blockedBy) : null} history={history} tz={tz} isNew={added.has(lead.id)} actions={actionsFor(lead)} />}
+
+      {rest.length > 0 && (
+        <section aria-labelledby="then-head">
+          <h3 id="then-head" className={s.sectionLabel}>Then</h3>
+          <ul className={s.list}>
+            {shownRest.map((q) => (
+              <Row key={q.id} q={q} busy={busy === q.id} fix={q.blockedBy ? byId(q.blockedBy) : null} history={history} tz={tz} isNew={added.has(q.id)}
+                open={openId === q.id} onToggle={() => setOpenId(openId === q.id ? null : q.id)} actions={actionsFor(q)} />
+            ))}
+          </ul>
+          {rest.length > FIRST_SCREEN - 1 && (
+            <button type="button" className={s.moreBtn} aria-expanded={showAll} onClick={() => setShowAll(!showAll)}>
+              {showAll ? 'Show less' : `${hiddenRest} more`}<Icon name={showAll ? 'ChevronUp' : 'ChevronDown'} size={14} />
+            </button>
           )}
-          {visible.map((q) => (
-            <QueueCard key={q.id} q={q} lead={q.id === left[0].id} state={cardState(q, view)} busy={busy === q.id} isNew={added.has(q.id)} fix={q.blockedBy ? byId(q.blockedBy) : null} history={history} tz={tz}
-              open={openId === q.id} onToggle={() => setOpenId(openId === q.id ? null : q.id)}
-              onPrimary={() => primary(q)}
-              onDone={() => decide('done', q, { summary: `${q.title}: done` }, 'Done. Logged with your name and the time.')}
-              onSnooze={() => decide('snooze', q, { summary: `${q.title}: snoozed` }, 'Snoozed. It’s back on tomorrow’s queue.')}
-              onDecline={(reason) => decline(q, reason)} />
-          ))}
-          {filter === 'all' && left.length > FIRST_SCREEN && (
-            <Button variant="secondary" icon={showAll ? 'ChevronUp' : 'ChevronDown'} aria-expanded={showAll} onClick={() => setShowAll(!showAll)}>
-              {showAll ? 'Show the top three' : `${hidden} more · ${left.slice(FIRST_SCREEN).filter((c) => !c.blocked).reduce((m, c) => m + c.effort.manager, 0)} min`}
-            </Button>
-          )}
-        </div>
+        </section>
       )}
 
       <TasksPanel />
-      <OffQueue cards={cards} view={view} history={history} tz={tz} busy={busy} own={own} onUndo={undo} onReset={reset} />
-      <DenseToday />
+      <Decided cards={cards} view={view} history={history} tz={tz} busy={busy} own={own} onUndo={undo} onReset={reset} />
+      <Yesterday />
     </div>
   );
 }
