@@ -5,11 +5,12 @@ import * as React from 'react';
 import { Icon, Button } from '../../kit';
 import { engine, useEngine, useSaved } from '../../engine';
 import {
-  applyOp, cardState, DECLINE, DEFAULT_TZ, FIRST_SCREEN, isActive, localDay, queueSummary, queueView, TEST_DAYS, todayCards,
+  applyOp, cardState, DECLINE, DEFAULT_TZ, FIRST_SCREEN, isActive, localDay, queueSummary, queueView, TEST_DAYS, todayCards, worthOf,
 } from '../../../lib/data/page/today';
 import { TasksPanel } from '../tasks';
-import { useCv, CV_CLAIM, CV_D, CV_ROOM, CV_NOW, Claim, cvMoney } from '../core';
+import { useCv, CV_CLAIM, CV_D, Claim, cvMoney } from '../core';
 import { useDense, pct } from '../dense-ui';
+import { reportTodayView } from './today.badge';
 import s from './today.module.css';
 
 /* ================================================================ Today (work queue)
@@ -58,7 +59,7 @@ function useQueue({ cards, today, own, tz }) {
   const [saved, setSaved] = useSaved('queue', null);
   const [remote, setRemote] = React.useState(() => remoteCache.get(key) || null);
   const [busy, setBusy] = React.useState(null);
-  const keep = React.useCallback((b) => { remoteCache.set(key, b); setRemote(b); }, [key]);
+  const keep = React.useCallback((b) => { remoteCache.set(key, b); setRemote(b); reportTodayView(CV_D.id, b.state); }, [key]);
   // Re-read when the room, or a task's status, changes (an approval on another screen updates the queue here).
   const taskSig = (eng.tasks || []).filter((t) => t.roomId === CV_D.id).map((t) => `${t.approvalId}:${t.status}`).join('|');
 
@@ -105,18 +106,25 @@ const shortDate = (at, tz) => new Date(at).toLocaleDateString('en-US', { month: 
 const whoLabel = (by) => (by?.you ? 'You' : by?.name || 'A guest');
 const OP_LABEL = { done: 'Marked done', refuse: 'Turned down', snooze: 'Snoozed', undo: 'Put back on the queue', reset: 'Showed today’s cards again' };
 
-/** "$37 tonight" → big "$37", small "tonight"; a value with no dollar figure stays a short note. */
-function Worth({ value, big }) {
-  const m = /^(about\s+)?(\$[\d,.]+(?:k)?(?:\/wk)?)(.*)$/i.exec(value || '');
-  if (!m) return <span className={s.worthNote}>{value}</span>;
-  const rest = m[3].trim();
-  return <span className={big ? s.leadFig : s.rowFig}>{m[1] && <span className={s.worthRest}>about </span>}{m[2]}{rest && <span className={s.worthRest}> {rest}</span>}</span>;
-}
-
 const dueLabel = (q) => (q.deadline === 'today' ? 'Due today' : q.deadline ? 'Due this week' : null);
+const actLabel = (q, fix) => (q.blocked && fix ? `First: ${fix.primary}` : q.primary);
+
+/** What a card is worth, in words: the money and what it is, with its claim strength. A value that isn't money stays a short note. */
+function Worth({ q, big }) {
+  const w = worthOf(q);
+  if (!w.figure) return <span className={s.worthNote}>{w.note}</span>;
+  return (
+    <span className={big ? s.worthBig : s.worth}>
+      <span className={s.worthMeans}>{w.means}</span>
+      <span className={big ? s.leadFig : s.rowFig}>{w.about && <span className={s.about}>about </span>}{w.figure}</span>
+      <Claim k={q.claim} />
+    </span>
+  );
+}
 
 function Details({ q, history, tz, fix }) {
   const claim = CV_CLAIM[q.claim] || CV_CLAIM.none;
+  const w = worthOf(q);
   const what = q.approval ? 'You’ll see exactly what changes, the limits it stays inside and how to undo it. Approving adds the steps to make it; it isn’t done until it’s made.'
     : q.start ? `Starts a ${TEST_DAYS}-day test that runs on its own. Nothing is counted as saved unless the test proves it.`
       : q.task ? `Adds the steps to make this change in ${q.task.system}. Tick it off when it’s made.`
@@ -127,9 +135,10 @@ function Details({ q, history, tz, fix }) {
     <dl className={s.details}>
       <dt>Why</dt><dd>{q.body}</dd>
       {q.blocked && <><dt>Waiting on</dt><dd>{fix ? fix.title : q.blocked}</dd></>}
-      <dt>Worth</dt><dd>{q.value}, {claim.label.toLowerCase()}. {claim.tip}</dd>
+      <dt>{w.figure ? 'The money' : 'Why it matters'}</dt>
+      <dd>{w.figure ? <>{q.value}: {w.means.toLowerCase()}. {claim.label}: {claim.tip}</> : w.note}</dd>
       <dt>If you act</dt><dd>{what}</dd>
-      <dt>Source</dt><dd>{q.source.kind === 'toast' ? `Your Toast data through ${q.source.through}` : 'Sample restaurant data'} · {q.why}</dd>
+      <dt>Source</dt><dd>{q.source.kind === 'toast' ? `Your Toast data through ${q.source.through}` : 'Sample restaurant data'}. {q.why}</dd>
       {mine.length > 0 && <><dt>History</dt><dd>{mine.map((h, i) => <div key={i}>{OP_LABEL[h.op]}{h.reason ? ` (${DECLINE[h.reason]?.label.toLowerCase()})` : ''}, {whoLabel(h.by).toLowerCase() === 'you' ? 'you' : whoLabel(h.by)}{h.at ? `, ${clock(h.at, tz)}` : ''}</div>)}</dd></>}
     </dl>
   );
@@ -148,60 +157,68 @@ function Secondary({ q, busy, onSnooze, onDecline, onDone }) {
       </div>
     );
   }
+  const any = (canSnooze && !q.refuse) || (q.refuse && !q.critical) || (q.go && !q.blocked);
+  if (!any) return null;
   return (
     <div className={s.secondary}>
-      {canSnooze && !q.refuse && <button type="button" className={s.textBtn} disabled={busy} onClick={onSnooze}>Snooze to tomorrow</button>}
-      {q.refuse && !q.critical && <button type="button" className={s.textBtn} disabled={busy} onClick={() => setAsking(true)}>Not for us</button>}
-      {q.go && !q.blocked && <button type="button" className={s.textBtn} disabled={busy} onClick={onDone}>Already done</button>}
+      {canSnooze && !q.refuse && <Button size="sm" variant="secondary" disabled={busy} onClick={onSnooze}>Snooze to tomorrow</Button>}
+      {q.refuse && !q.critical && <Button size="sm" variant="secondary" disabled={busy} onClick={() => setAsking(true)}>Not for us</Button>}
+      {q.go && !q.blocked && <Button size="sm" variant="secondary" disabled={busy} onClick={onDone}>Already done</Button>}
     </div>
   );
 }
 
-/** The one thing to do first: big, with its value and one button. */
-function Lead({ q, busy, fix, history, tz, isNew, actions }) {
+/** The one thing to do first: its money and what that money is, one button. */
+function Lead({ q, n, busy, fix, history, tz, isNew, actions }) {
   const [open, setOpen] = React.useState(false);
   const due = dueLabel(q);
-  const overline = ['Do this first', q.approval && !q.blocked ? 'needs your approval' : null, isNew ? 'new' : null].filter(Boolean).join(' · ');
   return (
     <section id={`card-${q.id}`} className={s.lead} aria-labelledby={`q-${q.id}`} aria-busy={busy || undefined}>
-      <span className={s.overline}>{overline}{due && <span className={q.deadline === 'today' ? s.dueToday : s.due}>{due}</span>}</span>
+      <div className={s.overline}>
+        <span>Do this first{n > 1 ? ` · 1 of ${n}` : ''}</span>
+        {q.approval && <span className={s.tag}>Needs your approval</span>}
+        {due && <span className={q.deadline === 'today' ? s.dueToday : s.due}>{due}</span>}
+        {isNew && <span className={s.tag}>New since this morning</span>}
+      </div>
       <h3 id={`q-${q.id}`} className={s.leadTitle}>{q.title}</h3>
-      <p className={s.leadWhy}>{q.blocked || q.body}</p>
+      <p className={s.leadWhy}>{q.body}</p>
       <div className={s.leadFoot}>
         <div className={s.leadWorth}>
-          <Worth value={q.value} big />
-          <span className={s.leadMeta}><Claim k={q.claim} /><span>{q.effort.manager} min of your time</span></span>
+          <Worth q={q} big />
+          <span className={s.leadMeta}>{q.effort.manager} min of your time</span>
         </div>
-        <div className={s.leadActs}>
-          <Button disabled={busy} onClick={actions.primary}>{q.blocked && fix ? `First: ${fix.primary}` : q.primary}</Button>
-        </div>
+        <Button size="lg" className={s.leadBtn} disabled={busy} onClick={actions.primary}>{actLabel(q, fix)}</Button>
       </div>
       <div className={s.leadBottom}>
-        <button type="button" className={s.textBtn} aria-expanded={open} onClick={() => setOpen(!open)}>{open ? 'Hide details' : 'Details'}<Icon name={open ? 'ChevronUp' : 'ChevronDown'} size={13} /></button>
+        <button type="button" className={s.detailsBtn} aria-expanded={open} aria-controls={`d-${q.id}`} onClick={() => setOpen(!open)}>{open ? 'Hide details' : 'Details'}<Icon name={open ? 'ChevronUp' : 'ChevronDown'} size={14} /></button>
         <Secondary q={q} busy={busy} onSnooze={actions.snooze} onDecline={actions.decline} onDone={actions.done} />
       </div>
-      {open && <Details q={q} history={history} tz={tz} fix={fix} />}
+      {open && <div id={`d-${q.id}`}><Details q={q} history={history} tz={tz} fix={fix} /></div>}
     </section>
   );
 }
 
-/** Everything after the first: one quiet row each, details on click. */
+/** One action row: what, why, how long; what it's worth; one button. Details open in place. */
 function Row({ q, busy, fix, history, tz, isNew, open, onToggle, actions }) {
+  const meta = q.blocked ? [`Needs: ${fix ? fix.title : 'new data'}`] : [`${q.effort.manager} min`, dueLabel(q)].filter(Boolean);
   return (
     <li id={`card-${q.id}`} className={`${s.item} ${q.blocked ? s.itemBlocked : ''} ${open ? s.itemOpen : ''}`} aria-busy={busy || undefined}>
       <div className={s.rowMain}>
-        <button type="button" className={s.rowHit} aria-expanded={open} aria-controls={`d-${q.id}`} onClick={onToggle}>
-          {q.blocked && <Icon name="Lock" size={14} className={s.lock} />}
-          <span className={s.rowText}>
-            <span className={s.rowTitle}>{q.title}{isNew && <span className={s.newTag}>New</span>}</span>
-            <span className={s.rowSub}>{q.blocked ? `Waiting on ${fix ? fix.title.toLowerCase() : 'data'}` : [`${q.effort.manager} min`, dueLabel(q)].filter(Boolean).join(' · ')}</span>
-          </span>
-        </button>
-        <span className={s.rowWorth}><Worth value={q.value} /><Claim k={q.claim} /></span>
-        <Button size="sm" variant="secondary" disabled={busy} onClick={actions.primary}>{q.blocked && fix ? `First: ${fix.primary}` : q.primary}</Button>
+        <div className={s.rowText}>
+          <span className={s.rowTitle}>{q.blocked && <Icon name="Lock" size={13} className={s.lock} aria-label="Waiting on data" />}{q.title}{isNew && <span className={s.newTag}>New</span>}</span>
+          <span className={s.rowWhy}>{q.body}</span>
+          <span className={s.rowSub}>{meta.join(' · ')}</span>
+        </div>
+        <div className={s.rowWorth}><Worth q={q} /></div>
+        <div className={s.rowActs}>
+          <Button size="sm" variant="secondary" className={s.rowBtn} disabled={busy} onClick={actions.primary}>{actLabel(q, fix)}</Button>
+          <button type="button" className={s.rowMore} aria-expanded={open} aria-controls={`d-${q.id}`} onClick={onToggle}>
+            {open ? 'Less' : 'More'}<Icon name={open ? 'ChevronUp' : 'ChevronDown'} size={13} />
+          </button>
+        </div>
       </div>
       {open && (
-        <div id={`d-${q.id}`} className={s.rowMore}>
+        <div id={`d-${q.id}`} className={s.rowOpen}>
           <Details q={q} history={history} tz={tz} fix={fix} />
           <Secondary q={q} busy={busy} onSnooze={actions.snooze} onDecline={actions.decline} onDone={actions.done} />
         </div>
@@ -210,17 +227,16 @@ function Row({ q, busy, fix, history, tz, isNew, open, onToggle, actions }) {
   );
 }
 
-/** Today's progress as one line: a segment per card, as wide as its minutes. Hover to name it, click to open it. */
-function Progress({ cards, view, onPick }) {
+/** Today's list as one line: a segment per card, as wide as its minutes, with the counts that add up to the whole. */
+function Progress({ cards, view, sum, onPick }) {
   const [tip, setTip] = React.useState(null);
   const cls = (c) => {
     const st = cardState(c, view);
     if (st === 'blocked') return s.pWait;
     if (st === 'ready' || st === 'needs_review') return s.pLeft;
-    if (st === 'snoozed' || st === 'declined') return s.pSet;
     return s.pDone;
   };
-  const label = (c) => { const st = cardState(c, view); return st === 'ready' || st === 'needs_review' ? 'to do' : (STATE[st]?.label || st).toLowerCase(); };
+  const label = (c) => { const st = cardState(c, view); return st === 'ready' || st === 'needs_review' ? 'to decide' : (STATE[st]?.label || st).toLowerCase(); };
   return (
     <div className={s.progress}>
       <div className={s.pTrack} onMouseLeave={() => setTip(null)}>
@@ -230,9 +246,17 @@ function Progress({ cards, view, onPick }) {
             onMouseEnter={() => setTip(c)} onFocus={() => setTip(c)} onBlur={() => setTip(null)} onClick={() => onPick(c)} />
         ))}
       </div>
-      <div className={s.pFoot}>
-        <span className={s.pTip} aria-live="polite">{tip ? `${tip.title} · ${label(tip)} · ${tip.effort.manager} min` : `${cards.filter((c) => cls(c) === s.pDone || cls(c) === s.pSet).length} of ${cards.length} handled`}</span>
-        <span className={s.legend} aria-hidden="true"><i className={s.pDone} />Done<i className={s.pLeft} />To do<i className={s.pWait} />Waiting on data</span>
+      <div className={s.pFoot} aria-live="polite">
+        {tip ? <span>{tip.title} · {label(tip)} · {tip.effort.manager} min</span> : (
+          <>
+            <span><b>{sum.total}</b> on today’s list</span>
+            <span className={s.legend}>
+              <span><i className={s.pLeft} /><b>{sum.ready}</b> to decide</span>
+              {sum.blocked > 0 && <span><i className={s.pWait} /><b>{sum.blocked}</b> waiting on data</span>}
+              <span><i className={s.pDone} /><b>{sum.handled}</b> handled</span>
+            </span>
+          </>
+        )}
       </div>
     </div>
   );
@@ -245,7 +269,7 @@ function Decided({ cards, view, history, tz, busy, onUndo, onReset, own }) {
     || (id.startsWith('find:') && CV_D.candidates.find((c) => c.id === id.slice(5))?.title) || id;
   const last = (id, op) => [...history].reverse().find((h) => h.cardId === id && h.op === op);
   const rows = [
-    ...cards.filter((c) => c.linked).map((c) => ({ id: c.id, state: cardState(c, view), note: 'Steps are under Approved changes', undo: false })),
+    ...cards.filter((c) => c.linked).map((c) => ({ id: c.id, state: cardState(c, view), note: 'Steps are under Changes to make', undo: false })),
     ...Object.keys(view.done).map((id) => ({ id, state: 'completed', note: `${whoLabel(last(id, 'done')?.by)}, ${clock(view.done[id], tz)}`, undo: true })),
     ...Object.keys(view.snoozed).map((id) => ({ id, state: 'snoozed', note: `Back ${view.snoozed[id] <= localDay(Date.now() + 864e5, tz) ? 'tomorrow' : shortDate(`${view.snoozed[id]}T12:00:00Z`, 'UTC')}`, undo: true })),
     ...Object.keys(view.refused).map((id) => {
@@ -283,7 +307,21 @@ function Decided({ cards, view, history, tz, busy, onUndo, onReset, own }) {
   );
 }
 
-/** Yesterday against the same weekday in recent weeks: two numbers with their comparison, and the run of weeks as bars. Sample rooms only (real rooms have no daily detail here). */
+
+const niceMax = (v) => {
+  const raw = v * 1.08;
+  const step = 10 ** Math.floor(Math.log10(raw)) / 2;
+  return Math.ceil(raw / step) * step;
+};
+const shortMoney = (v) => (v >= 1000 ? `$${(v / 1000).toFixed(v % 1000 ? 1 : 0)}k` : `$${Math.round(v)}`);
+const dayLabel = (iso) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+
+/**
+ * Yesterday's sales against the same weekday in the weeks before: the two
+ * numbers, and the last eight of that weekday on a labelled chart with the
+ * range and average of the seven before it. Colour only marks a day outside
+ * that range. Sample rooms only (real rooms have no daily detail here).
+ */
 function Yesterday() {
   const cv = useCv();
   const dense = useDense();
@@ -291,38 +329,86 @@ function Yesterday() {
   if (!dense) return null;
   const day = dense.days.at(-1);
   const same = dense.days.filter((d) => d.dow === day.dow).slice(-8);
-  const prev = same.at(-2);
-  if (!prev) return null;
-  const hi = Math.max(...same.map((d) => d.net)) || 1;
-  const shown = hover ?? same.length - 1;
-  const date = (iso) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
-  const delta = (a, b) => <span className={a >= b ? s.up : s.down}><Icon name={a >= b ? 'ArrowUp' : 'ArrowDown'} size={12} />{pct(a, b)}</span>;
+  if (same.length < 3) return null;
+  const prior = same.slice(0, -1);
+  const prev = prior.at(-1);
+  const stat = (k) => {
+    const vals = prior.map((d) => d[k]);
+    return { lo: Math.min(...vals), hi: Math.max(...vals), avg: vals.reduce((a, b) => a + b, 0) / vals.length };
+  };
+  const net = stat('net'), cov = stat('covers');
+  const tone = (v, st) => (v > st.hi ? s.up : v < st.lo ? s.down : s.flat);
+  const top = niceMax(Math.max(...same.map((d) => d.net)));
+  const y = (v) => `${(v / top) * 100}%`;
+  const verdict = day.net > net.hi ? `Higher than any of the ${prior.length} ${day.dow}s before`
+    : day.net < net.lo ? `Lower than any of the ${prior.length} ${day.dow}s before`
+      : `Normal for a ${day.dow}: inside the range of the ${prior.length} before`;
+  const vsAvg = (day.net - net.avg) / net.avg;
+  const shown = hover == null ? null : same[hover];
   return (
     <section className={s.pulse} aria-labelledby="y-head">
       <div className={s.sectionHead}>
         <h3 id="y-head" className={s.sectionTitle}>Yesterday</h3>
-        <span className={s.sectionSub}>{day.dow} {date(day.iso)}, against the {day.dow} before</span>
+        <span className={s.sectionSub}>{day.dow}, {dayLabel(day.iso)}</span>
         <span className={s.headEnd}><Claim k="obs" /></span>
       </div>
       <div className={s.pulseBody}>
-        <dl className={s.kpis}>
-          <div><dt>Net sales</dt><dd><span className={s.kpiFig}>{cvMoney(Math.round(day.net))}</span>{delta(day.net, prev.net)}</dd></div>
-          <div><dt>Covers</dt><dd><span className={s.kpiFig}>{day.covers}</span>{delta(day.covers, prev.covers)}</dd></div>
-        </dl>
-        <figure className={s.weeks}>
-          <div className={s.weekBars} role="img" aria-label={`Net sales on the last ${same.length} ${day.dow}s, ${cvMoney(Math.round(Math.min(...same.map((d) => d.net))))} to ${cvMoney(Math.round(hi))}`} onMouseLeave={() => setHover(null)}>
-            {same.map((d, i) => (
-              <span key={d.iso} className={`${s.weekBar} ${i === same.length - 1 ? s.weekNow : ''} ${i === shown ? s.weekOn : ''}`}
-                style={{ height: `${Math.max(6, (d.net / hi) * 100)}%` }} onMouseEnter={() => setHover(i)} />
-            ))}
-          </div>
-          <figcaption className={s.weekCap}>
-            <span>{hover == null || hover === same.length - 1 ? 'Yesterday' : date(same[shown].iso)} <b>{cvMoney(Math.round(same[shown].net))}</b></span>
-            <span>Last {same.length} {day.dow}s</span>
+        <div className={s.kpiCol}>
+          <dl className={s.kpis}>
+            <div>
+              <dt>Net sales</dt>
+              <dd><span className={s.kpiFig}>{cvMoney(Math.round(day.net))}</span></dd>
+              <dd className={tone(day.net, net)}>{pct(day.net, prev.net)} vs {dayLabel(prev.iso)}</dd>
+            </div>
+            <div>
+              <dt>Covers</dt>
+              <dd><span className={s.kpiFig}>{day.covers}</span></dd>
+              <dd className={tone(day.covers, cov)}>{pct(day.covers, prev.covers)} vs {dayLabel(prev.iso)}</dd>
+            </div>
+          </dl>
+          <p className={s.verdict}><b>{verdict}.</b> {Math.abs(vsAvg) < 0.005 ? 'Right on' : `${(Math.abs(vsAvg) * 100).toFixed(1)}% ${vsAvg > 0 ? 'above' : 'below'}`} their average of {cvMoney(Math.round(net.avg))}.</p>
+        </div>
+        <figure className={s.chart}>
+          <figcaption className={s.chartHead}>
+            <span>Net sales, last {same.length} {day.dow}s</span>
+            <span className={s.chartTip} aria-live="polite">{shown ? `${dayLabel(shown.iso)}: ${cvMoney(Math.round(shown.net))}` : ''}</span>
           </figcaption>
+          <div className={s.plotWrap}>
+            <div className={s.axis} aria-hidden="true">
+              <span style={{ bottom: '100%' }}>{shortMoney(top)}</span>
+              <span style={{ bottom: '50%' }}>{shortMoney(top / 2)}</span>
+              <span style={{ bottom: 0 }}>$0</span>
+            </div>
+            <div className={s.plot} onMouseLeave={() => setHover(null)}>
+              <span className={s.grid} style={{ bottom: '100%' }} />
+              <span className={s.grid} style={{ bottom: '50%' }} />
+              <span className={s.band} style={{ bottom: y(net.lo), height: `calc(${y(net.hi)} - ${y(net.lo)})` }} title={`Range of the ${prior.length} ${day.dow}s before: ${cvMoney(Math.round(net.lo))} to ${cvMoney(Math.round(net.hi))}`} />
+              <span className={s.avg} style={{ bottom: y(net.avg) }}><em>avg {shortMoney(net.avg)}</em></span>
+              {same.map((d, i) => {
+                const last = i === same.length - 1;
+                return (
+                  <button key={d.iso} type="button" className={`${s.col} ${hover === i ? s.colOn : ''}`}
+                    aria-label={`${dayLabel(d.iso)}: ${cvMoney(Math.round(d.net))} net sales`}
+                    onMouseEnter={() => setHover(i)} onFocus={() => setHover(i)} onBlur={() => setHover(null)}>
+                    <span className={`${s.bar} ${last ? s.barNow : ''}`} style={{ height: y(d.net) }}>
+                      {last && <span className={s.barVal}>{shortMoney(d.net)}</span>}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <span />
+            <div className={s.xLabels} aria-hidden="true">
+              {same.map((d, i) => <span key={d.iso} className={i === same.length - 1 ? s.xNow : undefined}>{i === same.length - 1 ? 'Yest.' : dayLabel(d.iso)}</span>)}
+            </div>
+          </div>
+          <div className={s.chartKey} aria-hidden="true">
+            <span><i className={s.keyBand} />Range of the {prior.length} before</span>
+            <span><i className={s.keyAvg} />Their average</span>
+          </div>
         </figure>
       </div>
-      <button type="button" className={s.textLink} onClick={() => cv.go('daily')}>Open daily detail<Icon name="ArrowRight" size={13} /></button>
+      <button type="button" className={s.textLink} onClick={() => cv.go('daily')}>Every day and hour in Daily detail<Icon name="ArrowRight" size={13} /></button>
     </section>
   );
 }
@@ -341,6 +427,8 @@ function CvToday() {
   const { view, history, run, busy, remote } = useQueue({ cards, today, own, tz });
   const sum = queueSummary(cards, view);
   const left = cards.filter((c) => isActive(c, view));
+  const ready = left.filter((c) => !c.blocked);
+  const waiting = left.filter((c) => c.blocked);
   const byId = (id) => cards.find((c) => c.id === id);
   const added = new Set(remote?.changes?.added || []);
 
@@ -382,62 +470,63 @@ function CvToday() {
     decline: (reason) => decline(q, reason),
   });
 
-  const day = own ? new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: tz }) : CV_NOW.label;
-  const checksOk = !CV_D.staleCount && !left.some((c) => c.blocked);
-  const [lead, ...rest] = left;
-  const shownRest = showAll ? rest : rest.slice(0, FIRST_SCREEN - 1);
-  const hiddenRest = rest.length - shownRest.length;
+  const checksOk = !CV_D.staleCount && !waiting.length;
+  const [lead, ...next] = ready;
+  const LIMIT = FIRST_SCREEN + 1;
+  const shownNext = showAll ? next : next.slice(0, LIMIT);
   const pick = (c) => {
     if (!isActive(c, view)) return;
-    if (rest.indexOf(c) >= FIRST_SCREEN - 1) setShowAll(true);
+    if (next.indexOf(c) >= LIMIT) setShowAll(true);
     if (c !== lead) setOpenId(c.id);
     setTimeout(() => document.getElementById(`card-${c.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
   };
-  const waitingOn = left.filter((c) => c.blocked).length;
+  const rowProps = (q) => ({ q, busy: busy === q.id, fix: q.blockedBy ? byId(q.blockedBy) : null, history, tz, isNew: added.has(q.id),
+    open: openId === q.id, onToggle: () => setOpenId(openId === q.id ? null : q.id), actions: actionsFor(q) });
 
   return (
     <div className={`cv-page ${s.page}`}>
       <header className={s.head}>
-        <span className={s.where}>
-          {CV_ROOM.name} · {day}
-          {!own && <span className={s.sample}>Sample data</span>}
-          {CV_D.staleCount > 0 && <button type="button" className={s.stale} onClick={() => cv.go('sources')}>{CV_D.staleCount} feed{CV_D.staleCount === 1 ? '' : 's'} out of date</button>}
-        </span>
-        {sum.left ? (
+        {sum.ready ? (
           <h2 className={s.answer}>
             {sum.ready} thing{sum.ready === 1 ? '' : 's'} to decide
             <span className={s.answerMins}>about {sum.minsLeft} min of your time</span>
           </h2>
         ) : (
-          <h2 className={s.answer}>{checksOk ? 'All done for today.' : 'Nothing to decide.'}</h2>
+          <h2 className={s.answer}>{!sum.left && checksOk ? 'All done for today.' : 'Nothing to decide right now.'}</h2>
         )}
-        {sum.left > 0 && waitingOn > 0 && <span className={s.answerSub}>{waitingOn} more once the data comes in.</span>}
-        {!sum.left && !checksOk && <span className={s.answerSub}>But a data feed is out of date, so some numbers can’t be trusted yet. <button type="button" className={s.inlineLink} onClick={() => cv.go('sources')}>Fix it in Sources</button></span>}
-        {cards.length > 0 && <Progress cards={cards} view={view} onPick={pick} />}
+        {!sum.ready && sum.blocked > 0 && <span className={s.answerSub}>{sum.blocked} more {sum.blocked === 1 ? 'is' : 'are'} waiting on data, below.</span>}
+        {cards.length > 0 && <Progress cards={cards} view={view} sum={sum} onPick={pick} />}
       </header>
 
-      {lead && <Lead q={lead} busy={busy === lead.id} fix={lead.blockedBy ? byId(lead.blockedBy) : null} history={history} tz={tz} isNew={added.has(lead.id)} actions={actionsFor(lead)} />}
+      {lead && <Lead q={lead} n={ready.length} busy={busy === lead.id} fix={null} history={history} tz={tz} isNew={added.has(lead.id)} actions={actionsFor(lead)} />}
 
-      <Yesterday />
-
-      {rest.length > 0 && (
-        <section aria-labelledby="then-head">
-          <div className={s.sectionHead}><h3 id="then-head" className={s.sectionTitle}>Up next</h3><span className={s.count}>{rest.length}</span></div>
-          <ul className={s.list}>
-            {shownRest.map((q) => (
-              <Row key={q.id} q={q} busy={busy === q.id} fix={q.blockedBy ? byId(q.blockedBy) : null} history={history} tz={tz} isNew={added.has(q.id)}
-                open={openId === q.id} onToggle={() => setOpenId(openId === q.id ? null : q.id)} actions={actionsFor(q)} />
-            ))}
-          </ul>
-          {rest.length > FIRST_SCREEN - 1 && (
+      {next.length > 0 && (
+        <section aria-labelledby="next-head">
+          <div className={s.sectionHead}>
+            <h3 id="next-head" className={s.sectionTitle}>Up next</h3>
+            <span className={s.sectionSub}>{next.length} more to decide, in order</span>
+          </div>
+          <ul className={s.list}>{shownNext.map((q) => <Row key={q.id} {...rowProps(q)} />)}</ul>
+          {next.length > LIMIT && (
             <button type="button" className={s.moreBtn} aria-expanded={showAll} onClick={() => setShowAll(!showAll)}>
-              {showAll ? 'Show less' : `${hiddenRest} more`}<Icon name={showAll ? 'ChevronUp' : 'ChevronDown'} size={14} />
+              {showAll ? 'Show fewer' : `Show ${next.length - LIMIT} more`}<Icon name={showAll ? 'ChevronUp' : 'ChevronDown'} size={14} />
             </button>
           )}
         </section>
       )}
 
+      {waiting.length > 0 && (
+        <section aria-labelledby="wait-head">
+          <div className={s.sectionHead}>
+            <h3 id="wait-head" className={s.sectionTitle}>Waiting on data</h3>
+            <span className={s.sectionSub}>{waiting.length === 1 ? 'Can’t be decided until its data arrives' : `${waiting.length} can’t be decided until their data arrives`}</span>
+          </div>
+          <ul className={s.list}>{waiting.map((q) => <Row key={q.id} {...rowProps(q)} />)}</ul>
+        </section>
+      )}
+
       <TasksPanel />
+      <Yesterday />
       <Decided cards={cards} view={view} history={history} tz={tz} busy={busy} own={own} onUndo={undo} onReset={reset} />
     </div>
   );

@@ -1,0 +1,34 @@
+/* Shell refinements (components/shell.jsx). Loaded after the theme. */
+
+/* Demo tools strip: hidden unless ?tools=1. With it hidden the app takes the full height. */
+.cv-shellwrap { display: contents; }
+.cv-notools { --strip-h: 0px; }
+
+/* Top bar: one data-health notice, quiet icon utilities. */
+.topbar .sub { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; color: var(--fg-2); }
+.cv-sampletag { padding: 1px 6px; border-radius: var(--radius-sm); background: var(--surface-sunken); font-size: 11px; font-weight: 600; color: var(--fg-2); }
+.cv-warnchip { color: var(--fg-1); }
+.cv-warnchip i { width: 7px; height: 7px; border-radius: 50%; background: var(--warning-500); display: inline-block; }
+.iconbtn.cv-quiet { width: 36px; height: 36px; display: inline-grid; place-items: center; border: 0; background: none; color: var(--fg-2); border-radius: var(--radius-md); cursor: pointer; }
+.iconbtn.cv-quiet:hover { background: var(--surface-sunken); color: var(--fg-1); }
+.iconbtn.cv-quiet:focus-visible { outline: none; box-shadow: var(--ring); }
+
+/* Sidebar: readable group labels, calmer rhythm, room before the account. */
+.sidebar .cv-navgroup { margin-top: 18px; padding: 0 11px 6px; font: 600 11px/1.2 var(--font-sans); letter-spacing: 0.06em; text-transform: uppercase; color: #AEB4BF; }
+[data-theme="dark"] .sidebar .cv-navgroup { color: #9EA2AE; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .sidebar .cv-navgroup { color: #9EA2AE; } }
+.sidebar .navsec:first-child .cv-navgroup { margin-top: 4px; }
+.sidebar .navitem .count { margin-left: auto; min-width: 22px; padding: 1px 7px; border-radius: 99px; text-align: center; font: 700 11px/1.5 var(--font-sans); font-variant-numeric: tabular-nums; color: var(--side-bg); background: var(--side-active-fg); }
+.sidebar .foot { margin-top: auto; padding-top: 16px; border-top: 1px solid var(--side-line); }
+.sidebar .sb-scroll { padding-bottom: 20px; }
+.cv-warnchip .cv-ws { display: none; }
+@media (max-width: 640px) {
+  .cv-warnchip .cv-wl, .topbar .cv-sampletag { display: none; }
+  .cv-warnchip .cv-ws { display: inline; }
+}
+@media (max-width: 640px) {
+  .iconbtn.cv-quiet.cv-hide-sm { display: none; }
+  .topbar { gap: 8px; padding-left: 12px; padding-right: 12px; }
+  .cv-top .sub { display: none; }
+}
+.cv-health { white-space: nowrap; }
