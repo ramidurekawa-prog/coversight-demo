@@ -161,10 +161,10 @@ function Secondary({ q, busy, onSnooze, onDecline, onDone }) {
 function Lead({ q, busy, fix, history, tz, isNew, actions }) {
   const [open, setOpen] = React.useState(false);
   const due = dueLabel(q);
-  const overline = ['Do this first', q.approval && !q.blocked ? 'needs your approval' : null, due?.toLowerCase(), isNew ? 'new' : null].filter(Boolean).join(' · ');
+  const overline = ['Do this first', q.approval && !q.blocked ? 'needs your approval' : null, isNew ? 'new' : null].filter(Boolean).join(' · ');
   return (
     <section id={`card-${q.id}`} className={s.lead} aria-labelledby={`q-${q.id}`} aria-busy={busy || undefined}>
-      <span className={s.overline}>{overline}</span>
+      <span className={s.overline}>{overline}{due && <span className={q.deadline === 'today' ? s.dueToday : s.due}>{due}</span>}</span>
       <h3 id={`q-${q.id}`} className={s.leadTitle}>{q.title}</h3>
       <p className={s.leadWhy}>{q.blocked || q.body}</p>
       <div className={s.leadFoot}>
@@ -173,7 +173,7 @@ function Lead({ q, busy, fix, history, tz, isNew, actions }) {
           <span className={s.leadMeta}><Claim k={q.claim} /><span>{q.effort.manager} min of your time</span></span>
         </div>
         <div className={s.leadActs}>
-          <Button size="lg" disabled={busy} onClick={actions.primary}>{q.blocked && fix ? `First: ${fix.primary}` : q.primary}</Button>
+          <Button disabled={busy} onClick={actions.primary}>{q.blocked && fix ? `First: ${fix.primary}` : q.primary}</Button>
         </div>
       </div>
       <div className={s.leadBottom}>
@@ -230,7 +230,10 @@ function Progress({ cards, view, onPick }) {
             onMouseEnter={() => setTip(c)} onFocus={() => setTip(c)} onBlur={() => setTip(null)} onClick={() => onPick(c)} />
         ))}
       </div>
-      <span className={s.pTip} aria-live="polite">{tip ? `${tip.title} · ${label(tip)} · ${tip.effort.manager} min` : ' '}</span>
+      <div className={s.pFoot}>
+        <span className={s.pTip} aria-live="polite">{tip ? `${tip.title} · ${label(tip)} · ${tip.effort.manager} min` : `${cards.filter((c) => cls(c) === s.pDone || cls(c) === s.pSet).length} of ${cards.length} handled`}</span>
+        <span className={s.legend} aria-hidden="true"><i className={s.pDone} />Done<i className={s.pLeft} />To do<i className={s.pWait} />Waiting on data</span>
+      </div>
     </div>
   );
 }
@@ -280,23 +283,47 @@ function Decided({ cards, view, history, tz, busy, onUndo, onReset, own }) {
   );
 }
 
-/** Yesterday in one line, for context; the full day is on Daily detail. Sample rooms only (real rooms have no hourly detail here). */
+/** Yesterday against the same weekday in recent weeks: two numbers with their comparison, and the run of weeks as bars. Sample rooms only (real rooms have no daily detail here). */
 function Yesterday() {
   const cv = useCv();
   const dense = useDense();
+  const [hover, setHover] = React.useState(null);
   if (!dense) return null;
-  const day = dense.days.at(-1), wk = dense.days.at(-8);
-  const up = day.net >= wk.net;
+  const day = dense.days.at(-1);
+  const same = dense.days.filter((d) => d.dow === day.dow).slice(-8);
+  const prev = same.at(-2);
+  if (!prev) return null;
+  const hi = Math.max(...same.map((d) => d.net)) || 1;
+  const shown = hover ?? same.length - 1;
+  const date = (iso) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+  const delta = (a, b) => <span className={a >= b ? s.up : s.down}><Icon name={a >= b ? 'ArrowUp' : 'ArrowDown'} size={12} />{pct(a, b)}</span>;
   return (
-    <button type="button" className={s.yesterday} onClick={() => cv.go('daily')}>
-      <span className={s.yLabel}>{day.dow}</span>
-      <span className={s.yFig}>{cvMoney(Math.round(day.net))}</span>
-      <span className={up ? s.yUp : s.yDown}>{pct(day.net, wk.net)} vs last {day.dow}</span>
-      <span className={s.ySep} />
-      <span className={s.yFig}>{day.covers}</span><span className={s.yLabel}>covers</span>
-      <Claim k="obs" />
-      <span className={s.yGo}>Daily detail<Icon name="ArrowRight" size={13} /></span>
-    </button>
+    <section className={s.pulse} aria-labelledby="y-head">
+      <div className={s.sectionHead}>
+        <h3 id="y-head" className={s.sectionTitle}>Yesterday</h3>
+        <span className={s.sectionSub}>{day.dow} {date(day.iso)}, against the {day.dow} before</span>
+        <span className={s.headEnd}><Claim k="obs" /></span>
+      </div>
+      <div className={s.pulseBody}>
+        <dl className={s.kpis}>
+          <div><dt>Net sales</dt><dd><span className={s.kpiFig}>{cvMoney(Math.round(day.net))}</span>{delta(day.net, prev.net)}</dd></div>
+          <div><dt>Covers</dt><dd><span className={s.kpiFig}>{day.covers}</span>{delta(day.covers, prev.covers)}</dd></div>
+        </dl>
+        <figure className={s.weeks}>
+          <div className={s.weekBars} role="img" aria-label={`Net sales on the last ${same.length} ${day.dow}s, ${cvMoney(Math.round(Math.min(...same.map((d) => d.net))))} to ${cvMoney(Math.round(hi))}`} onMouseLeave={() => setHover(null)}>
+            {same.map((d, i) => (
+              <span key={d.iso} className={`${s.weekBar} ${i === same.length - 1 ? s.weekNow : ''} ${i === shown ? s.weekOn : ''}`}
+                style={{ height: `${Math.max(6, (d.net / hi) * 100)}%` }} onMouseEnter={() => setHover(i)} />
+            ))}
+          </div>
+          <figcaption className={s.weekCap}>
+            <span>{hover == null || hover === same.length - 1 ? 'Yesterday' : date(same[shown].iso)} <b>{cvMoney(Math.round(same[shown].net))}</b></span>
+            <span>Last {same.length} {day.dow}s</span>
+          </figcaption>
+        </figure>
+      </div>
+      <button type="button" className={s.textLink} onClick={() => cv.go('daily')}>Open daily detail<Icon name="ArrowRight" size={13} /></button>
+    </section>
   );
 }
 
@@ -378,8 +405,8 @@ function CvToday() {
         </span>
         {sum.left ? (
           <h2 className={s.answer}>
-            <span className={s.answerFig}>{sum.ready}</span> thing{sum.ready === 1 ? '' : 's'} to do,{' '}
-            <span className={s.answerFig}>{sum.minsLeft}</span> minutes
+            {sum.ready} thing{sum.ready === 1 ? '' : 's'} to decide
+            <span className={s.answerMins}>about {sum.minsLeft} min of your time</span>
           </h2>
         ) : (
           <h2 className={s.answer}>{checksOk ? 'All done for today.' : 'Nothing to decide.'}</h2>
@@ -391,9 +418,11 @@ function CvToday() {
 
       {lead && <Lead q={lead} busy={busy === lead.id} fix={lead.blockedBy ? byId(lead.blockedBy) : null} history={history} tz={tz} isNew={added.has(lead.id)} actions={actionsFor(lead)} />}
 
+      <Yesterday />
+
       {rest.length > 0 && (
         <section aria-labelledby="then-head">
-          <h3 id="then-head" className={s.sectionLabel}>Then</h3>
+          <div className={s.sectionHead}><h3 id="then-head" className={s.sectionTitle}>Up next</h3><span className={s.count}>{rest.length}</span></div>
           <ul className={s.list}>
             {shownRest.map((q) => (
               <Row key={q.id} q={q} busy={busy === q.id} fix={q.blockedBy ? byId(q.blockedBy) : null} history={history} tz={tz} isNew={added.has(q.id)}
@@ -410,7 +439,6 @@ function CvToday() {
 
       <TasksPanel />
       <Decided cards={cards} view={view} history={history} tz={tz} busy={busy} own={own} onUndo={undo} onReset={reset} />
-      <Yesterday />
     </div>
   );
 }
