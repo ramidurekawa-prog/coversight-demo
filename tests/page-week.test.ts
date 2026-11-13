@@ -6,7 +6,9 @@ import { notifications, testWindows, users } from '../server/db/schema';
 import { saveAction } from '../server/actions';
 import { runJob } from '../server/jobs';
 import { commitInput, createSampleOrg } from '../server/org';
-import { runWeekDigest, weekSummary } from '../server/page/week';
+import { commitWeekPlan, runWeekDigest, updateWeekPlanItem, weekSummary } from '../server/page/week';
+import { actions } from '../server/db/schema';
+import { and } from 'drizzle-orm';
 import { createOwnOrg } from '../server/team';
 import { freshDb } from './helpers/db';
 import { readToastExports } from '../lib/data/toast.js';
@@ -35,7 +37,9 @@ describe('the week API', () => {
     expect(res.view.plan.hours).toBe(1);
     expect(res.view.plan.used).toBeLessThanOrEqual(1);
     expect(res.view.period?.label).toBe('Oct 19 – 25');
-    expect(res.digest.body).toMatch(/^Earned/);
+    expect(res.digest.body).toMatch(/^Contribution/);
+    expect(res.view.comparator?.id).toBe('matched');
+    expect(res.plan.committed).toBeNull();
     await expect(weekSummary(db, { orgId: org.id, rooms: ['berkeley'] }, 'oakland')).rejects.toThrow(/not one of yours/);
     await expect(weekSummary(db, owner, 'nowhere')).rejects.toThrow(/no room/);
     await expect(weekSummary(db, owner, undefined)).rejects.toThrow(/room is required/);
@@ -85,7 +89,7 @@ describe('a real group', () => {
     expect(week).toHaveLength(1);
     expect(week[0]).toMatchObject({ roomId: 'harbor-grill', link: '/' });
     expect(week[0]!.title).toMatch(/^Harbor Grill: the week of /);
-    expect(week[0]!.body).toMatch(/Banked \$28\.00 from 1 verified change/);
+    expect(week[0]!.body).toMatch(/Verified run-rate \$28\.00\/wk from 1 verified change/);
   });
 
   it('the scheduled job runs for real groups only', async () => {
@@ -97,3 +101,39 @@ describe('a real group', () => {
     expect(results[0]!.ok).toBe(true);
   });
 });
+
+describe('committing the week’s plan', () => {
+  it('commits with owners and dates, refuses blocked or foreign actions, keeps history, and survives new data', async () => {
+    const org = await createSampleOrg(db, { ownerId: 'u1' });
+    const owner = { orgId: org.id, userId: 'u1', role: 'owner' as const, rooms: null };
+    const gm = { orgId: org.id, userId: 'u2', role: 'gm' as const, rooms: ['oakland'] };
+    const items = [{ id: 'ribeye', owner: 'Gina', due: '2026-10-30' }, { id: 'vendor', owner: 'Maria', due: '2026-11-02' }];
+    const now = new Date('2026-10-27T12:00:00Z');
+    // A blocked recommendation can't be approved: salmon needs current recipe costs.
+    await expect(commitWeekPlan(db, owner, { roomId: 'oakland', week: '2026-10-19', items: [{ id: 'salmon', owner: 'Gina', due: '2026-10-30' }] }, now)).rejects.toThrow(/can’t be committed/);
+    await expect(commitWeekPlan(db, gm, { roomId: 'berkeley', week: '2026-10-19', items }, now)).rejects.toThrow(/not one of yours/);
+    await expect(commitWeekPlan(db, owner, { roomId: 'oakland', week: '2026-10-12', items }, now)).rejects.toThrow(/another week/);
+
+    const res = await commitWeekPlan(db, gm, { roomId: 'oakland', week: '2026-10-19', items }, now);
+    expect(res.plan.committed).toMatchObject({ week: '2026-10-19', revision: 1 });
+    expect(res.plan.committedBy).toBe('Gina');
+    expect(res.plan.items.map((i: { id: string; owner: string; status: string }) => [i.id, i.owner, i.status])).toEqual([['ribeye', 'Gina', 'planned'], ['vendor', 'Maria', 'planned']]);
+
+    const moved = await updateWeekPlanItem(db, owner, { roomId: 'oakland', week: '2026-10-19', id: 'vendor', status: 'doing' }, now);
+    expect(moved.plan.items.find((i: { id: string }) => i.id === 'vendor')!.status).toBe('doing');
+    await expect(updateWeekPlanItem(db, owner, { roomId: 'oakland', week: '2026-10-19', id: 'vendor', status: 'finished' }, now)).rejects.toThrow(/Unknown status/);
+
+    // New data (ribeye set aside): the committed plan stays; the change is a revision to review.
+    await saveAction(db, owner, { roomId: 'oakland', key: 'findings', value: { ribeye: '2027-01-01T00:00:00.000Z' } });
+    const after = await weekSummary(db, owner, 'oakland', now);
+    expect(after.plan.items.map((i: { id: string }) => i.id)).toEqual(['ribeye', 'vendor']);
+    expect(after.plan.revisions?.dropped.map((i: { id: string }) => i.id)).toEqual(['ribeye']);
+    expect(after.plan.history.length).toBe(2);
+
+    // The plan isn't writable through the generic actions API.
+    await expect(saveAction(db, owner, { roomId: 'oakland', key: 'week.plan', value: { week: '2026-10-19', items: [] } })).rejects.toThrow(/unknown action/);
+    const rows = await db.select().from(actions).where(and(eq(actions.orgId, org.id), eq(actions.key, 'week.plan')));
+    expect(rows).toHaveLength(2); // append-only
+  });
+});
+
