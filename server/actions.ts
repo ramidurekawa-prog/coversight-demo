@@ -16,8 +16,8 @@ const isoDate = z.string().max(40);
 const flags = z.record(id, isoDate);
 
 export const ACTION_KEYS = {
-  /** Today's work queue: cards cleared or refused, with when. */
-  queue: { scope: 'room', schema: z.object({ done: flags, refused: flags }) },
+  /** Today's work queue: cards done or declined (with when, and why declined), and snoozed (until which day). Written by /api/page/today. */
+  queue: { scope: 'room', schema: z.object({ done: flags, refused: flags, snoozed: flags.optional(), meta: z.record(id, z.object({ reason: z.enum(['not_relevant', 'handled', 'disagree', 'not_now']).optional(), worth: z.number().min(0).max(1e7).optional() })).optional() }).refine((q) => Object.keys(q.done).length + Object.keys(q.refused).length + Object.keys(q.snoozed ?? {}).length <= 300, 'too many cards') },
   /** Tonight's one labour suggestion on the Service screen. */
   service: { scope: 'room', schema: z.enum(['ask', 'yes', 'no']) },
   /** Approvals written back, by approval id. */
