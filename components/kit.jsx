@@ -157,6 +157,8 @@ import {
   Zap,
   X,
   UserCheck,
+  ArrowUpRight,
+  ArrowDownRight,
   ChevronRight,
 } from 'lucide-react';
 
@@ -313,6 +315,8 @@ const ICONS = {
   Zap,
   X,
   UserCheck,
+  ArrowUpRight,
+  ArrowDownRight,
   ChevronRight,
 };
 

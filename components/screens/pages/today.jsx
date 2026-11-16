@@ -5,7 +5,7 @@ import * as React from 'react';
 import { Button, Icon } from '../../kit';
 import { engine, useEngine, useSaved } from '../../engine';
 import {
-  applyOp, assigneeLabel, cardState, DECLINE, DEFAULT_TZ, FIRST_SCREEN, isActive, localDay, queueSummary, queueView, TEST_DAYS, todayCards, upNextOrder,
+  applyOp, assigneeLabel, cardState, DECLINE, DEFAULT_TZ, FIRST_SCREEN, isActive, localDay, queueSummary, queueView, TEST_DAYS, todayCards, upNextOrder, worthOf,
 } from '../../../lib/data/page/today';
 import { briefing, clockMinutes, results as resultsOf, servicePeriod, tonight } from '../../../lib/data/page/today-brief';
 import { TasksPanel } from '../tasks';
@@ -15,7 +15,8 @@ import { reportTodayView } from './today.badge';
 import { Yesterday } from './today.last';
 import { applyScenario, useLayout } from './today.layout';
 import {
-  ActionCard, CustomizePanel, evidenceFor, FeedsPanel, IssueRow, Locations, Progress, ResultsPanel, Savings, ScenarioBar, Status, TilePanel, Tiles, tileData, Timeline,
+  ActionCard, comingSoon, ComingUpCard, CustomizePanel, FeedsPanel, frameFor, HandledCard, handledOf, HandledPanel, IssueRow, Locations, Receipt, ResultsCard, ResultsPanel,
+  ScenarioBar, Status, TilePanel, Tiles, tileData,
 } from './today.parts';
 import { ReviewPanel } from './today.review';
 import s from './today.module.css';
@@ -200,6 +201,8 @@ function CvToday() {
   const [showMore, setShowMore] = React.useState(false);
   const [customizing, setCustomizing] = React.useState(false);
   const [said, setSaid] = React.useState('');
+  const [receipt, setReceipt] = React.useState(null); // what just happened, and what's next
+  const [handledOpen, setHandledOpen] = React.useState(false);
   const dense = useDense();
   React.useEffect(() => { if (!tools) setScenario('live'); }, [tools]);
 
@@ -228,7 +231,14 @@ function CvToday() {
 
   /** Say it on screen and to a screen reader. */
   const tell = (m) => { cv.toast(m); setSaid(m); };
-  const decide = (op, q, opts, msg) => run(op, q, opts).then((r) => { tell(r.ok ? msg : r.error); return r.ok; });
+  const decide = (op, q, opts, msg, rc) => run(op, q, opts).then((r) => {
+    if (!r.ok) { tell(r.error); return false; }
+    if (rc) { setReceipt({ ...rc, at: Date.now() }); setSaid(msg); } else tell(msg);
+    return true;
+  });
+  /** A receipt: the title of what happened, then what moves it next. */
+  const rcpt = (title, steps, extra = {}) => ({ title, steps, ...extra });
+  const showReceipt = (rc, msg) => { setReceipt({ ...rc, at: Date.now() }); setSaid(msg); };
   const findingId = (q) => (q?.id?.startsWith('find:') ? q.id.slice(5) : null);
 
   const perform = (q) => {
@@ -237,24 +247,38 @@ function CvToday() {
       if (fix) return perform(fix);
       return tell(q.blocked);
     }
-    if (q.approval) return cv.approve(q.approval, () => tell('Approval recorded. The change itself hasn’t been made yet; its steps are under In progress.'));
-    if (q.start) return engine.startWindow(q.start).then((r) => tell(r.ok ? `Test started. Nothing is counted as saved unless it proves out in ${TEST_DAYS} days.` : r.error));
+    if (q.approval) {
+      return cv.approve(q.approval, () => showReceipt(
+        rcpt(`Approved: ${q.title.replace(/^Approve:\s*/i, '')}`, ['Approved', 'someone makes the change', 'the data confirms it'], { icon: 'CircleCheck' }),
+        'Approved. Moved to Being handled. The change itself isn’t made until someone makes it.',
+      ));
+    }
+    if (q.start) {
+      return engine.startWindow(q.start).then((r) => (r.ok
+        ? showReceipt(rcpt(`Test started: ${q.title}`, ['Test started', `measured for ${TEST_DAYS} days`, 'counted only if it proves out'], { icon: 'FlaskConical' }), `Test started. Nothing is counted as saved unless it proves out in ${TEST_DAYS} days.`)
+        : tell(r.error)));
+    }
     if (q.task) {
       return engine.createTask(`today:${q.id}`, { title: q.title, system: q.task.system, diff: q.task.diff })
-        .then((t) => t && tell(`The ${q.task.system} steps are under In progress. ${q.task.system} hasn’t been changed; tick it off once it’s made.`));
+        .then((t) => t && showReceipt(
+          rcpt(`Steps ready: ${q.title}`, ['Steps ready', `you make it in ${q.task.system}`, 'the data confirms it'], { icon: 'ListChecks' }),
+          `The ${q.task.system} steps are under Being handled. ${q.task.system} hasn’t been changed; tick it off once it’s made.`,
+        ));
     }
     if (q.go === 'finding') return cv.go('finding', { id: q.goId });
     if (q.go) return cv.go(q.go, q.input ? { kind: q.input } : undefined);
-    return decide('done', q, { summary: `${q.title}: done` }, 'Marked done, with your name and the time.');
+    return decide('done', q, { summary: `${q.title}: done` }, 'Marked done, with your name and the time.', rcpt(`Done: ${q.title}`, ['Done', 'recorded with your name and the time'], { undo: q.id }));
   };
   const primaryOf = (q) => () => (q.approval && !q.blocked ? setReview(q.id) : perform(q));
-  const decline = (q, reason) => decide('refuse', q, { reason, summary: `${q.title}: not for us` }, `Recommendation dismissed: ${DECLINE[reason].label.toLowerCase()}. It stays away for ${DECLINE[reason].days} days unless it becomes worth much more.`).then((ok) => {
+  const decline = (q, reason) => decide('refuse', q, { reason, summary: `${q.title}: not for us` }, `Recommendation dismissed: ${DECLINE[reason].label.toLowerCase()}. It stays away for ${DECLINE[reason].days} days unless it becomes worth much more.`,
+    rcpt(`Not worth acting on: ${q.title}`, ['Dismissed', `hidden for ${DECLINE[reason].days} days`, 'back sooner only if it’s worth much more'], { icon: 'CircleMinus', undo: q.id })).then((ok) => {
     const id = findingId(q);
     if (ok && id) setDismissed((f) => ({ ...(f || {}), [id]: new Date(Date.now() + DECLINE[reason].days * 864e5).toISOString() }), `${q.title}: not for us`);
     return ok;
   });
   const undo = (id) => {
     const q = byId(id) || { id, title: id };
+    setReceipt(null);
     return decide('undo', q, { summary: `${q.title}: back on the list` }, 'Back on your list.').then((ok) => {
       const fid = findingId(q);
       if (ok && fid && dismissed?.[fid]) setDismissed((f) => { const n = { ...(f || {}) }; delete n[fid]; return n; }, `${q.title}: back on the list`);
@@ -264,10 +288,10 @@ function CvToday() {
   const close = React.useCallback(() => setReview(null), []);
   const panelActs = (q) => ({
     primary: () => { close(); perform(q); },
-    snooze: () => { close(); decide('snooze', q, { summary: `${q.title}: snoozed` }, 'Not now: it comes back tomorrow.'); },
+    snooze: () => { close(); decide('snooze', q, { summary: `${q.title}: snoozed` }, 'Not now: it comes back tomorrow.', rcpt(`Snoozed: ${q.title}`, ['Snoozed', 'back on your list tomorrow'], { icon: 'CalendarClock', undo: q.id })); },
     decline: (r) => { close(); decline(q, r); },
-    assign: (to) => { close(); decide('assign', q, { to, summary: `${q.title}: assigned` }, `Assigned to ${assigneeLabel(to, d.profile)}. It’s under In progress until it’s done.`); },
-    done: () => { close(); decide('done', q, { summary: `${q.title}: done` }, 'Marked done, with your name and the time.'); },
+    assign: (to) => { close(); decide('assign', q, { to, summary: `${q.title}: assigned` }, `Assigned to ${assigneeLabel(to, d.profile)}. Moved to Being handled until it’s done.`, rcpt(`Assigned to ${assigneeLabel(to, d.profile)}: ${q.title}`, ['Assigned', 'being handled', 'done when it’s marked done'], { icon: 'UserCheck', undo: q.id })); },
+    done: () => { close(); decide('done', q, { summary: `${q.title}: done` }, 'Marked done, with your name and the time.', rcpt(`Done: ${q.title}`, ['Done', 'recorded with your name and the time'], { undo: q.id })); },
     open: q.go === 'finding' ? () => { close(); cv.go('finding', { id: q.goId }); } : q.go && !q.input ? () => { close(); cv.go(q.go); } : undefined,
   });
 
@@ -276,6 +300,16 @@ function CvToday() {
   const top = next.slice(0, FIRST_SCREEN - 1);
   const more = next.slice(FIRST_SCREEN - 1);
   const reviewing = review ? byId(review) : null;
+  const leadFrame = lead ? frameFor(lead, d, sv) : null;
+  const leadW = lead ? worthOf(lead) : null;
+  const firstOf = (t) => String(t || '').split(/(?<=\.)\s/);
+  // One line on why: what's happening, then the one thing to do about it.
+  const explain = leadFrame?.fix && leadW?.figure && /tonight/.test(leadW.unit || leadW.means || '')
+    ? `${firstOf(brief.line)[0]} One staffing change could save ${leadW.figure} tonight.`
+    : brief.line;
+  const handled = handledOf({ cards, view, tasks: roomTasks, windows, d });
+  const soonItems = comingSoon({ d, cards, view, now, todayIso: own ? today : CV_NOW.iso,
+    skip: lead && sv && lead.approval === sv.approval ? [`hour-${/at (\d{1,2}):00/.exec(lead.title)?.[1]} pm`] : [] });
   const due = (q) => (q.deadline === 'today' ? 'Due today' : q.deadline ? `Due ${q.deadline}` : null);
   const extra = (id) => ({
     last: <Yesterday key={id} todayIso={own ? today : CV_NOW.iso} />,
@@ -287,15 +321,17 @@ function CvToday() {
       {tools && <ScenarioBar value={scenario} onPick={setScenario} rooms={(CV_GROUP?.rows || []).map((r) => ({ id: r.id, name: r.name }))} onRoom={cv.pickRoom} />}
       {offline && <p className={s.offline} role="status"><Icon name="TriangleAlert" size={13} />Can’t reach the server. Showing the last saved state.</p>}
 
-      <Status brief={brief} period={period} now={now} sum={sum} onFeeds={() => setFeedsOpen(true)} onCustomize={() => setCustomizing(true)} />
+      <Status brief={brief} explain={explain} period={period} now={now} sum={sum} onFeeds={() => setFeedsOpen(true)} onCustomize={() => setCustomizing(true)} />
       <Tiles ids={layout.metrics} tiles={tiles} onOpen={setTileOpen} />
 
+      {receipt && <Receipt key={receipt.at} r={receipt} onClose={() => setReceipt(null)} onUndo={receipt.undo ? () => undo(receipt.undo) : undefined} />}
+
       {lead ? (
-        <ActionCard q={lead} cards={cards} evidence={evidenceFor(lead, d, sv)} label={actLabel(lead, null)} busy={busy === lead.id}
+        <ActionCard q={lead} cards={cards} frame={leadFrame} label={actLabel(lead, null)} busy={busy === lead.id}
           due={due(lead)} onPrimary={primaryOf(lead)} onDetails={() => setReview(lead.id)} />
       ) : (
         <div className={s.allClear}>
-          <Icon name="CircleCheck" size={20} className={s.allClearIcon} />
+          <Icon name="CircleCheck" size={22} className={s.allClearIcon} />
           <span>{waiting.length ? `Nothing to act on yet. ${waiting.length} waiting on data.` : 'Nothing needs you right now.'}</span>
         </div>
       )}
@@ -313,14 +349,10 @@ function CvToday() {
         </section>
       )}
 
-      <div className={s.foot}>
-        <Savings confirmed={res.confirmed} onOpen={() => setResOpen('confirmed')} />
-        <Progress cards={cards} view={view} tasks={roomTasks} windows={windows} d={d} busy={busy}
-          onUndo={undo} onDone={(c) => decide('done', c, { summary: `${c.title}: done` }, 'Marked done, with your name and the time.')}
-          steps={roomTasks.some((t) => t.status === 'open' || t.status === 'mismatch' || t.status === 'done') ? <TasksPanel /> : null}
-          decided={<Decided cards={cards} view={view} history={history} tz={tz} busy={busy} own={own} onUndo={undo} onReset={reset} />} />
-        <Timeline d={d} cards={cards} view={view} now={now} todayIso={own ? today : CV_NOW.iso} onGo={cv.go}
-          skip={lead && sv && lead.approval === sv.approval ? [`hour-${/at (\d{1,2}):00/.exec(lead.title)?.[1]} pm`] : []} />
+      <div className={`${s.sums} ${soonItems.length ? s.sums3 : ''}`}>
+        <HandledCard h={handled} flash={!!receipt} onOpen={() => setHandledOpen(true)} />
+        <ResultsCard confirmed={res.confirmed} onOpen={() => setResOpen('confirmed')} />
+        {soonItems.length > 0 && <ComingUpCard items={soonItems} onGo={cv.go} />}
       </div>
 
       {layout.widgets.map(extra)}
@@ -330,6 +362,12 @@ function CvToday() {
       {reviewing && (
         <ReviewPanel q={reviewing} cards={cards} history={history} fix={reviewing.blockedBy ? byId(reviewing.blockedBy) : null} busy={busy === reviewing.id}
           label={panelLabel(reviewing, reviewing.blockedBy ? byId(reviewing.blockedBy) : null)} onClose={close} act={panelActs(reviewing)} />
+      )}
+      {handledOpen && (
+        <HandledPanel h={handled} view={view} d={d} busy={busy} onClose={() => setHandledOpen(false)}
+          onUndo={undo} onDone={(c) => decide('done', c, { summary: `${c.title}: done` }, 'Marked done, with your name and the time.')}
+          steps={roomTasks.some((t) => t.status === 'open' || t.status === 'mismatch' || t.status === 'done') ? <TasksPanel /> : null}
+          decided={<Decided cards={cards} view={view} history={history} tz={tz} busy={busy} own={own} onUndo={undo} onReset={reset} />} />
       )}
       {tileOpen && tiles[tileOpen] && <TilePanel t={tiles[tileOpen]} onClose={() => setTileOpen(null)} onGo={(p) => { setTileOpen(null); cv.go(p); }} />}
       {feedsOpen && <FeedsPanel warn={brief.warn} onClose={() => setFeedsOpen(false)} onGo={(p) => { setFeedsOpen(false); cv.go(p); }} />}

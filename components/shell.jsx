@@ -458,7 +458,7 @@ function AppShell({ children }) {
             engine.act('approvals', { ...(engine.saved('approvals') || {}), [id]: { at: new Date().toISOString() } }, { summary: `${cvApproval(id).title}: approved` });
             approval.onOk && approval.onOk();
             void engine.createTask(id, cvApproval(id));
-            showToast(`${cvApproval(id).title}: approved. The steps are on Today under "Changes to make".`);
+            showToast(`${cvApproval(id).title}: approved. The steps are on Today under "Being handled".`);
           }}
         />
       )}
