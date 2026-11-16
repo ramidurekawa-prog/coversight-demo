@@ -77,10 +77,10 @@ function whoDecides(q) {
 }
 
 /**
- * @param {{ q: any, cards: any[], history: any[], fix: any, busy: boolean, label: string, onClose: () => void,
+ * @param {{ q: any, cards: any[], history: any[], fix: any, busy: boolean, label: string, onClose: () => void, caution?: string|null,
  *   act: { primary: () => void, snooze: () => void, decline: (r: string) => void, assign: (to: string) => void, done: () => void, open?: () => void } }} p
  */
-export function ReviewPanel({ q, cards, history, fix, busy, label, onClose, act }) {
+export function ReviewPanel({ q, cards, history, fix, busy, label, onClose, act, caution }) {
   const [asking, setAsking] = React.useState(null); // 'decline' | 'assign' | null
   const w = worthOf(q);
   const un = w.figure ? null : unlocksOf(q, cards);
@@ -95,6 +95,9 @@ export function ReviewPanel({ q, cards, history, fix, busy, label, onClose, act 
     <Panel label={q.title} onClose={onClose}>
       <PanelHead over={[area, q.deadline === 'today' ? 'Due today' : q.deadline ? `Due ${q.deadline}` : null].filter(Boolean).join(' · ')} title={q.title} onClose={onClose} />
       <div className={s.panelBody}>
+        {caution && (
+          <p className={s.caution} role="note"><Icon name="TriangleAlert" size={15} /><span>{caution}</span></p>
+        )}
         <Block title="What we see">
           <p className={s.blockText}>{q.body}</p>
         </Block>

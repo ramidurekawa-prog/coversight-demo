@@ -10,11 +10,14 @@ import { ACCRUAL_START, deriveRoom } from '../../../lib/data/model';
 import { Panel } from './today.review';
 import { dayLabel, shortMoney } from './today.last';
 import { MAX_METRICS, METRICS, SCENARIOS, WIDGETS } from './today.layout';
-import { AgeBar, HoursBar, MarkBar, PaceBars, People, Spark } from './today.viz';
+import { THEMES, tokensFor } from './today.themes';
+import { AgeBar, CompareBars, HoursBar, MarkBar, PaceBars, Spark } from './today.viz';
 import s from './today.module.css';
 
 const money = (v) => cvMoney(Math.round(v));
 const signPct = (v) => `${v >= 0 ? '+' : '−'}${Math.abs(v * 100).toFixed(1)}%`;
+const DOW = { Sun: 'Sunday', Mon: 'Monday', Tue: 'Tuesday', Wed: 'Wednesday', Thu: 'Thursday', Fri: 'Friday', Sat: 'Saturday' };
+const longDow = (d) => DOW[d] || d;
 const mean = (xs) => xs.reduce((a, b) => a + b, 0) / (xs.length || 1);
 
 function PanelTop({ over, title, onClose }) {
@@ -63,19 +66,20 @@ export function StateChip({ k, label, n, as = 'span', ...rest }) {
 /* ================================================================ status */
 
 /** A status chip, the headline, and one line on why: what's happening and what to do about it. */
-export function Status({ brief, explain, period, now, sum, onFeeds, onCustomize }) {
+export function Status({ brief, explain, period, now, sum, onFeeds, onCustomize, trial }) {
   const calm = brief.tone === 'calm';
   return (
     <header className={s.status}>
       <div className={s.statusRow}>
-        <StateChip k={calm ? 'ontrack' : 'attention'} label={calm ? 'On track' : sum.ready ? `Needs attention · ${sum.ready} to decide` : 'Waiting on data'} />
+        <StateChip k={calm ? 'ontrack' : 'review'} label={calm ? 'On track' : sum.ready ? `1 needs review now${sum.ready > 1 ? ` · ${sum.ready - 1} other${sum.ready > 2 ? 's' : ''}` : ''}` : 'Waiting on data'} />
         {period.label && <span className={s.pill}><Icon name="Clock" size={13} />{period.label} · {now.time}</span>}
         {brief.warn.length > 0 && (
           <button type="button" className={`${s.pill} ${s.pillWarn}`} onClick={onFeeds} aria-haspopup="dialog" title={brief.warn.map((f) => `${f.name}: ${f.what}`).join('. ')}>
             <Icon name="TriangleAlert" size={13} />{brief.warn.length === 1 ? `${brief.warn[0].name} delayed` : `${brief.warn.length} feeds delayed`}
           </button>
         )}
-        <button type="button" className={`${s.iconBtn} ${s.statusTune}`} aria-label="Customize Today" title="Customize" onClick={onCustomize} aria-haspopup="dialog"><Icon name="SlidersHorizontal" size={17} /></button>
+        <span className={s.statusTune}>{trial}</span>
+        <button type="button" className={s.iconBtn} aria-label="Customize Today" title="Customize" onClick={onCustomize} aria-haspopup="dialog"><Icon name="SlidersHorizontal" size={17} /></button>
       </div>
       <h2 className={s.headline}>{brief.headline}</h2>
       {explain && <p className={s.explain}>{explain}</p>}
@@ -97,7 +101,7 @@ export function Receipt({ r, onUndo, onClose }) {
           {r.steps.map((st, i) => (
             <li key={st} className={i === 0 ? s.trackDone : i === 1 ? s.trackNext : s.trackLater}>
               <span className={s.trackDot} aria-hidden="true">{i === 0 && <Icon name="Check" size={10} />}</span>
-              <span>{i === 0 ? st : i === 1 ? `Next: ${st}` : st}</span>
+              <span>{st}</span>
             </li>
           ))}
         </ol>
@@ -150,17 +154,17 @@ export function tileData({ d, dense, sv, flags }) {
     const avg = mean(prior.map((x) => x[k]));
     const delta = (day[k] - avg) / avg;
     return {
-      label, fig: k === 'net' ? money(day[k]) : String(day[k]), cmp: `${signPct(delta)} vs usual ${day.dow}`, delta,
+      label, when: `Last service · ${day.dow} ${dayLabel(day.iso)}`, fig: k === 'net' ? money(day[k]) : String(day[k]), cmp: `${signPct(delta)} vs a usual ${longDow(day.dow)}`, delta,
       viz: <Spark values={same.map((x) => x[k])} />, claim: 'obs',
       facts: [[`${day.dow}, ${dayLabel(day.iso)}`, k === 'net' ? money(day[k]) : String(day[k])], [`Average of the ${prior.length} ${day.dow}s before`, k === 'net' ? money(avg) : String(Math.round(avg))], ['Their range', k === 'net' ? `${money(Math.min(...prior.map((x) => x[k])))} to ${money(Math.max(...prior.map((x) => x[k])))}` : `${Math.min(...prior.map((x) => x[k]))} to ${Math.max(...prior.map((x) => x[k]))}`], ['Source', src(`through ${dayLabel(day.iso)}`)]],
       go: 'daily',
     };
   };
   const byWeek = (k, label) => {
-    if (!(last && before.length >= 4) || flags.noHistory) return { label, fig: last ? (k === 'net' ? money(last[k]) : String(last[k])) : null, cmp: 'Comparisons after 4 weeks of data', facts: [['Source', src()]], go: 'trends' };
+    if (!(last && before.length >= 4) || flags.noHistory) return { label, when: last ? `Week of ${last.label}` : null, fig: last ? (k === 'net' ? money(last[k]) : String(last[k])) : null, cmp: 'Comparisons after 4 weeks of data', facts: [['Source', src()]], go: 'trends' };
     const avg = mean(before.map((r) => r[k]));
     return {
-      label: `${label}, last week`, fig: k === 'net' ? money(last[k]) : String(last[k]), cmp: `${signPct((last[k] - avg) / avg)} vs the 4 weeks before`, delta: (last[k] - avg) / avg,
+      label, when: `Week of ${last.label}`, fig: k === 'net' ? money(last[k]) : String(last[k]), cmp: `${signPct((last[k] - avg) / avg)} vs the 4 weeks before`, delta: (last[k] - avg) / avg,
       viz: <Spark values={rows.slice(-8).map((r) => r[k])} />, claim: 'obs',
       facts: [[`Week of ${last.label}`, k === 'net' ? money(last[k]) : String(last[k])], ['Average of the 4 weeks before', k === 'net' ? money(avg) : String(Math.round(avg))], ['Source', src()]], go: 'trends',
     };
@@ -168,13 +172,13 @@ export function tileData({ d, dense, sv, flags }) {
   t.sales = byDay('net', 'Sales') || byWeek('net', 'Sales');
   t.covers = byDay('covers', 'Covers') || byWeek('covers', 'Covers');
   if (flags.laborDown) {
-    t.labor = { label: 'Labor', fig: null, cmp: 'Not updating', warn: '7shifts delayed', facts: [['Status', 'Labor shows again once 7shifts updates. Nothing here is guessed in the meantime.']], go: 'sources' };
+    t.labor = { label: 'Labor', when: 'Last week', fig: null, cmp: 'Not updating', warn: '7shifts delayed', facts: [['Status', 'Labor shows again once 7shifts updates. Nothing here is guessed in the meantime.']], go: 'sources' };
   } else if (last && before.length >= 4 && !flags.noHistory) {
     const avg = mean(before.map((r) => r.labourRate));
     // Compare the figures as shown, so the words and the two numbers always agree.
     const diff = Math.round(last.labourRate * 1000) / 10 - Math.round(avg * 1000) / 10;
     t.labor = {
-      label: 'Labor, last week', fig: `${(last.labourRate * 100).toFixed(1)}%`,
+      label: 'Labor', when: `Week of ${last.label}`, fig: `${(last.labourRate * 100).toFixed(1)}%`,
       cmp: Math.abs(diff) < 0.05 ? 'Same as usual' : `${diff > 0 ? '+' : '−'}${Math.abs(diff).toFixed(1)} pts vs usual`, delta: Math.abs(diff) < 0.05 ? 0 : diff / 100,
       viz: <MarkBar value={last.labourRate} mark={avg} max={Math.max(last.labourRate, avg) * 1.4} />, claim: 'obs',
       warn: labor7?.state === 'stale' ? '7shifts delayed' : null,
@@ -182,11 +186,11 @@ export function tileData({ d, dense, sv, flags }) {
       go: 'labour',
     };
   } else {
-    t.labor = { label: 'Labor', fig: last ? `${(last.labourRate * 100).toFixed(1)}%` : null, cmp: 'Comparisons after 4 weeks of data', facts: [['Source', src()]], go: 'labour' };
+    t.labor = { label: 'Labor', when: last ? `Week of ${last.label}` : null, fig: last ? `${(last.labourRate * 100).toFixed(1)}%` : null, cmp: 'Comparisons after 4 weeks of data', facts: [['Source', src()]], go: 'labour' };
   }
   t.tonight = sv
     ? {
-      label: 'Covers tonight', fig: `${sv.pace >= 0 ? '+' : '−'}${Math.abs(sv.pace)}%`, cmp: `vs usual ${String(sv.day).split(' ')[0]}`, delta: sv.pace / 100,
+      label: 'Dinner pace', when: 'Tonight, so far', fig: `${sv.pace >= 0 ? '+' : '−'}${Math.abs(sv.pace)}%`, cmp: `${sv.pace >= 0 ? 'above' : 'below'} a usual ${String(sv.day).split(' ')[0]} dinner`, delta: sv.pace / 100,
       viz: <PaceBars factor={sv.factor} />, claim: 'obs',
       facts: [['Pace so far', `${Math.abs(sv.pace)}% ${sv.pace >= 0 ? 'over' : 'under'} a usual ${String(sv.day).split(' ')[0]}`], ...(sv.tiles || []).map(([k, v, g]) => [k, `${v} (${g})`]), ['Source', src('live')]],
       go: 'service',
@@ -204,7 +208,7 @@ export function Tiles({ ids, tiles, onOpen }) {
         const dir = t.delta == null || Math.abs(t.delta) < 0.0005 ? null : t.delta > 0 ? 'ArrowUpRight' : 'ArrowDownRight';
         return (
           <button key={id} type="button" className={s.tile} onClick={() => onOpen(id)} aria-haspopup="dialog">
-            <span className={s.tileLabel}>{t.label}</span>
+            <span className={s.tileLabel}>{t.label}{t.when && <span className={s.tileWhen}>{t.when}</span>}</span>
             <span className={s.tileFig}>{t.fig ?? <span className={s.tileNone}>—</span>}</span>
             <span className={s.tileFoot}>
               <span className={s.tileCmp}>{dir && <Icon name={dir} size={13} />}{t.cmp}</span>
@@ -262,7 +266,7 @@ export function evidenceFor(q, d, sv) {
   if (sv && plan && q.approval && q.approval === sv.approval) {
     const at = /at (\d{1,2}):00/.exec(q.title)?.[1];
     const i = at ? plan.hours.indexOf(`${at} pm`) : -1;
-    if (i >= 0) return <People on={plan.sched[i]} need={plan.need[i]} label={`servers at ${at} pm`} />;
+    if (i >= 0) return <CompareBars unit="servers" rows={[{ label: 'Scheduled', value: plan.sched[i], strong: true }, { label: 'Forecast need', value: plan.need[i] }]} />;
   }
   const hrs = /tracking to (\d+) hours/i.exec(q.body || '')?.[1];
   if (hrs) return <HoursBar hours={Number(hrs)} />;
@@ -278,10 +282,10 @@ export function evidenceFor(q, d, sv) {
 /**
  * How the lead card reads, top to bottom: the problem, why, the picture that
  * shows it, then (beside it) the fix, what it's worth and the button. Every
- * word comes from the room's data; a staffing card names the hour that's
- * over or under, from the schedule against what's needed.
+ * word comes from the room's data; a staffing card names the hour from the
+ * schedule against what's needed, and says so when the schedule is behind.
  */
-export function frameFor(q, d, sv) {
+export function frameFor(q, d, sv, trust = {}) {
   const plan = d.room?.labour?.tue;
   const first = (q.body || '').split(/(?<=\.)\s/)[0];
   if (sv && plan && q.approval && q.approval === sv.approval) {
@@ -290,12 +294,19 @@ export function frameFor(q, d, sv) {
     if (i >= 0) {
       const on = plan.sched[i];
       const need = plan.need[i];
-      const day = String(sv.day).split(' ')[0];
+      const fix = q.title.replace(/^Approve:\s*/i, '').replace(/^./, (c) => c.toUpperCase());
+      const viz = <CompareBars unit="servers" rows={[{ label: 'Scheduled', value: on, strong: true }, { label: 'Forecast need', value: need }]} />;
+      if (trust.delayed) {
+        return {
+          problem: `Check ${at} pm coverage`,
+          why: `Demand looks lighter than the schedule, but ${trust.delayed.name} last updated ${trust.delayed.last}. Confirm who’s on before cutting.`,
+          fix, viz,
+        };
+      }
       return {
         problem: on > need ? `Overstaffed at ${at} pm` : on < need ? `Short-staffed at ${at} pm` : q.title,
-        why: on > need && sv.pace < 0 ? `Fewer guests than a usual ${day}, so the schedule is heavier than needed.` : first,
-        fix: q.title.replace(/^Approve:\s*/i, '').replace(/^./, (c) => c.toUpperCase()),
-        viz: <People on={on} need={need} label={`servers at ${at} pm`} />,
+        why: on > need && sv.pace < 0 ? `Demand looks lighter than the schedule at ${at} pm.` : first,
+        fix, viz,
       };
     }
   }
@@ -304,13 +315,28 @@ export function frameFor(q, d, sv) {
   return { problem: q.title, why: viz ? null : first, fix: null, viz };
 }
 
-/** The one big card: problem → why → impact → action. */
-export function ActionCard({ q, cards, frame, label, busy, due, onPrimary, onDetails }) {
+/** When to act, as plainly as the data allows: "Review before 8 pm · 45 min left". */
+export function dueFor(q, trust) {
+  if (trust?.before && trust.minsLeft != null) {
+    return trust.minsLeft > 0 ? `Review before ${trust.before} · ${trust.minsLeft} min left` : `Past ${trust.before}`;
+  }
+  return q.deadline === 'today' ? 'Due today' : q.deadline ? `Due ${q.deadline}` : null;
+}
+
+/**
+ * The lead card: problem → why → picture, then the fix, its worth and one
+ * button. Calm by default (a light surface with an accent strip); the strong
+ * dark treatment is kept for critical cards only. A card resting on a
+ * delayed feed says so, and its button asks to verify first.
+ */
+export function ActionCard({ q, cards, frame, trust, label, busy, due, onPrimary, onDetails }) {
+  const strong = !!q.critical;
+  const one = trust?.delayed ? 'delayed' : q.approval ? 'review' : 'todo';
   return (
-    <section id={`card-${q.id}`} className={s.action} aria-labelledby={`a-${q.id}`} aria-busy={busy || undefined}>
+    <section id={`card-${q.id}`} className={`${s.action} ${strong ? s.actionStrong : ''} ${trust?.delayed ? s.actionHeld : ''}`} aria-labelledby={`a-${q.id}`} aria-busy={busy || undefined}>
       <div className={s.actionMain}>
         <div className={s.actionTop}>
-          <StateChip k={q.approval ? 'review' : 'todo'} />
+          <StateChip k={one} label={one === 'delayed' ? 'Data delayed' : undefined} />
           {due && <span className={s.actionDue}><Icon name="Clock" size={13} />{due}</span>}
         </div>
         <h3 id={`a-${q.id}`} className={s.actionTitle}>{frame.problem}</h3>
@@ -348,28 +374,6 @@ export function IssueRow({ q, cards, onOpen }) {
 
 /* ================================================================ the three summaries */
 
-/** Results: confirmed savings only. Estimates never join this figure. */
-export function ResultsCard({ confirmed, onOpen }) {
-  const has = confirmed.week > 0;
-  return (
-    <button type="button" className={s.sum} onClick={onOpen} aria-haspopup="dialog">
-      <span className={s.sumHead}><Icon name="BadgeCheck" size={15} />Results<Icon name="ChevronRight" size={15} className={s.sumChev} /></span>
-      {has ? (
-        <>
-          <span className={s.sumFig}>{money(confirmed.week)}<span className={s.sumUnit}>/wk</span></span>
-          <span className={s.sumSub}>{money(confirmed.toDate)} since {ACCRUAL_START}</span>
-          <StateChip k="confirmed" label="Confirmed by tests" />
-        </>
-      ) : (
-        <>
-          <span className={`${s.sumFig} ${s.sumNone}`}>$0</span>
-          <span className={s.sumSub}>Shows once a change passes its test</span>
-        </>
-      )}
-    </button>
-  );
-}
-
 const TASK_STATE = {
   open: { icon: 'CircleDashed', label: 'To make' },
   mismatch: { icon: 'MessageSquareWarning', label: 'Marked made; data doesn’t show it yet' },
@@ -391,22 +395,6 @@ export function handledOf({ cards, view, tasks, windows, d }) {
     { k: 'done', n: decided, label: 'decided today' },
   ].filter((x) => x.n);
   return { assigned, live, tests, extra, states };
-}
-
-/** Being handled: one count per state; the list is behind a click. */
-export function HandledCard({ h, onOpen, flash }) {
-  return (
-    <button type="button" className={`${s.sum} ${flash ? s.sumFlash : ''}`} onClick={onOpen} aria-haspopup="dialog">
-      <span className={s.sumHead}><Icon name="Hourglass" size={15} />Being handled<Icon name="ChevronRight" size={15} className={s.sumChev} /></span>
-      {h.states.length ? (
-        <ul className={s.sumStates}>
-          {h.states.map((x) => (
-            <li key={`${x.k}-${x.label}`}><Icon name={STATES[x.k].icon} size={14} className={s[`ic_${STATES[x.k].tone}`]} /><b>{x.n}</b><span>{x.label}</span></li>
-          ))}
-        </ul>
-      ) : <span className={s.sumSub}>Nothing under way yet</span>}
-    </button>
-  );
 }
 
 export function HandledPanel({ h, view, d, busy, onUndo, onDone, steps, decided, onClose }) {
@@ -461,23 +449,47 @@ export function comingSoon({ d, cards, view, now, todayIso, skip = [] }) {
     const t = Date.parse(`${when} ${year} 12:00 UTC`);
     return Number.isNaN(t) || (t - Date.parse(`${todayIso}T12:00:00Z`)) / 864e5 <= 7;
   };
-  return comingUp(d, { cards, view, now, max: 8 }).filter((x) => x.tone !== 'ok' && soon(x.when) && !skip.includes(x.key)).slice(0, 3);
+  return comingUp(d, { cards, view, now, max: 8 }).filter((x) => x.tone !== 'ok' && soon(x.when) && !skip.includes(x.key)).slice(0, 2);
 }
 
-export function ComingUpCard({ items, onGo }) {
+/**
+ * One slim strip under the list: what's being handled, the confirmed results
+ * (never mixed with estimates) and the next thing coming up. Each part opens
+ * its detail.
+ */
+export function ActivityStrip({ h, confirmed, soon, onHandled, onResults, onGo, flash }) {
+  const next = soon[0];
   return (
-    <section className={`${s.sum} ${s.sumStatic}`} aria-label="Coming up">
-      <span className={s.sumHead}><Icon name="CalendarClock" size={15} />Coming up</span>
-      <ol className={s.tl}>
-        {items.map((x) => (
-          <li key={x.key}>
-            <button type="button" className={s.tlItem} onClick={() => x.go && onGo(x.go)} disabled={!x.go}>
-              <span className={s.tlWhen}>{x.when}</span>
-              <span className={s.tlWhat}>{/^hour-/.test(x.key) ? x.detail : x.detail === 'Test result due' ? 'Test result' : x.title}</span>
-            </button>
-          </li>
-        ))}
-      </ol>
+    <section className={`${s.strip} ${flash ? s.stripFlash : ''}`} aria-label="Activity and results">
+      <button type="button" className={s.stripPart} onClick={onHandled} aria-haspopup="dialog">
+        <span className={s.stripHead}>Being handled</span>
+        <span className={s.stripBody}>
+          {h.states.length ? h.states.map((x) => (
+            <span key={`${x.k}-${x.label}`} className={s.stripState}><Icon name={STATES[x.k].icon} size={14} className={s[`ic_${STATES[x.k].tone}`]} /><b>{x.n}</b> {x.label}</span>
+          )) : <span className={s.stripMute}>Nothing under way</span>}
+        </span>
+      </button>
+      <button type="button" className={s.stripPart} onClick={onResults} aria-haspopup="dialog">
+        <span className={s.stripHead}>Your improvements</span>
+        <span className={s.stripBody}>
+          {confirmed.week > 0 ? (
+            <>
+              <span className={s.stripState}><Icon name="BadgeCheck" size={14} className={s.ic_good} /><b>{money(confirmed.week)}/wk</b> confirmed</span>
+              <span className={s.stripMute}>{money(confirmed.toDate)} since {ACCRUAL_START}</span>
+            </>
+          ) : <span className={s.stripMute}>None confirmed yet</span>}
+        </span>
+      </button>
+      {next && (
+        <button type="button" className={s.stripPart} onClick={() => next.go && onGo(next.go)} disabled={!next.go}>
+          <span className={s.stripHead}>Coming up</span>
+          <span className={s.stripBody}>
+            {soon.map((x) => (
+              <span key={x.key} className={s.stripState}><b>{x.when}</b> <span className={s.stripMute}>{/^hour-/.test(x.key) ? x.detail : x.detail === 'Test result due' ? 'test result' : x.title}</span></span>
+            ))}
+          </span>
+        </button>
+      )}
     </section>
   );
 }
@@ -643,3 +655,62 @@ export function ScenarioBar({ value, onPick, rooms, onRoom }) {
 }
 
 export { shortMoney };
+
+/* ================================================================ color trial */
+
+const TRIAL = [['original', 'Original'], ...Object.entries(THEMES).map(([id, t]) => [id, t.label])];
+
+/** The experimental palette switch: a segmented control on wide screens, a menu on small ones. */
+export function ThemePicker({ theme, onPick, onCompare }) {
+  const tip = 'Experimental color trial. Changes the colors on Today only; the data and layout stay the same.';
+  return (
+    <div className={s.trial} title={tip}>
+      <span className={s.trialLbl}><Icon name="Palette" size={14} /><span className={s.srOnly}>Color trial</span></span>
+      <div className={s.seg} role="radiogroup" aria-label="Color trial">
+        {TRIAL.map(([id, label]) => (
+          <button key={id} type="button" role="radio" aria-checked={theme === id} className={s.segBtn} onClick={() => onPick(id)}>
+            {id !== 'original' && <span className={s.segDot} style={{ background: THEMES[id].p.cta }} aria-hidden="true" />}
+            {id === 'original' ? 'Original' : label}
+          </button>
+        ))}
+      </div>
+      <select className={s.trialSelect} aria-label="Color trial" value={theme} onChange={(e) => onPick(e.target.value)}>
+        {TRIAL.map(([id, label]) => <option key={id} value={id}>{id === 'original' ? 'Original colors' : label}</option>)}
+      </select>
+      <button type="button" className={s.iconBtn} onClick={onCompare} aria-haspopup="dialog" aria-label="Compare color themes" title="Compare themes"><Icon name="Columns3" size={16} /></button>
+    </div>
+  );
+}
+
+/**
+ * All three palettes side by side, each drawn with the page's real figures
+ * (the first key number and the lead card), so nothing here is made up.
+ * Picking one applies it to the page.
+ */
+export function ComparePanel({ theme, onPick, onClose, metric, lead, worth }) {
+  return (
+    <Panel label="Compare color themes" onClose={onClose} wide>
+      <PanelTop over="Color trial" title="Compare themes" onClose={onClose} />
+      <div className={s.panelBody}>
+        <p className={s.blockNote}>A visual trial only: the data, layout and actions are identical in every theme.</p>
+        <div className={s.cmpGrid}>
+          {Object.entries(THEMES).map(([id, t]) => (
+            <button key={id} type="button" className={`${s.pv} ${theme === id ? s.pvOn : ''}`} style={tokensFor(id)} onClick={() => { onPick(id); onClose(); }} aria-pressed={theme === id}>
+              <span className={s.pvHead}><b>{t.label}</b>{theme === id && <span className={s.pvOnTag}><Icon name="Check" size={12} />In use</span>}</span>
+              <span className={s.pvNote}>{t.note}</span>
+              <span className={s.pvSw} aria-hidden="true">{[t.p.bg, t.p.surface, t.p.text, t.p.cta, t.p.accent].map((c, i) => <span key={i} style={{ background: c }} />)}</span>
+              {metric && (
+                <span className={s.pvMetric}><span className={s.pvLbl}>{metric.label}</span><span className={s.pvFig}>{metric.fig ?? '—'}</span><span className={s.pvLbl}>{metric.when}</span></span>
+              )}
+              {lead && (
+                <span className={s.pvCard}><span className={s.pvTitle}>{lead}</span>{worth && <span className={s.pvLbl}>{worth}</span>}</span>
+              )}
+              <span className={`btn btn-primary ${s.pvBtn}`}>Use {t.label}</span>
+            </button>
+          ))}
+        </div>
+        <button type="button" className={s.textLink} onClick={() => { onPick('original'); onClose(); }}>Reset to original colors<Icon name="RotateCcw" size={13} /></button>
+      </div>
+    </Panel>
+  );
+}

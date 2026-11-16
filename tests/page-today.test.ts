@@ -6,7 +6,7 @@ import { deriveRoom } from '../lib/data/model.js';
 import {
   applyOp, ASSIGNEES, cardState, DECLINE, hoursToMinutes, localDay, nextDay, queueChanges, queueHistory, queueSummary, queueView, RANK_POLICY, todayCards, unlocksOf, upNextOrder, worthOf,
 } from '../lib/data/page/today.js';
-import { areaOf, briefing, carriedOut, clockMinutes, comingUp, results, servicePeriod } from '../lib/data/page/today-brief.js';
+import { areaOf, briefing, cardTrust, carriedOut, clockMinutes, comingUp, results, servicePeriod } from '../lib/data/page/today-brief.js';
 import { NOW, SEED } from '../lib/data/seed.js';
 import { readToastExports } from '../lib/data/toast.js';
 import { saveAction } from '../server/actions';
@@ -353,6 +353,15 @@ describe('the briefing, coming up and results (pure)', () => {
   const view = queueView(null, { today, own: false, cards: [] });
   const for_ = (id: string) => { const d = deriveRoom(SEED, id); return { d, cards: todayCards(d, { today }) }; };
 
+  it('says how far a card can be trusted and how long is left to act', () => {
+    const { d, cards } = for_('oakland');
+    const cut = cards.find((c: C) => c.id === 'cut');
+    expect(cardTrust(cut, d, NOW)).toEqual({ delayed: { name: '7shifts', last: '18 hours ago' }, before: '8 pm', minsLeft: 45 });
+    const fresh = { ...d, feeds: d.feeds.map((f: { name: string }) => (f.name === '7shifts' ? { ...f, state: 'ok' } : f)) };
+    expect(cardTrust(cut, fresh, NOW).delayed).toBeNull();
+    expect(cardTrust(cards.find((c: C) => c.id === 'count'), d, NOW)).toEqual({ delayed: null, before: null, minsLeft: null });
+  });
+
   it('reads the service period from the clock, rolling late night into the previous day', () => {
     expect(servicePeriod(clockMinutes('7:15 pm'))).toMatchObject({ id: 'dinner', phase: 'during' });
     expect(servicePeriod(clockMinutes('3:00 pm'))).toMatchObject({ id: 'before-dinner', phase: 'before' });
@@ -362,9 +371,8 @@ describe('the briefing, coming up and results (pure)', () => {
   it('leads with tonight, counts decisions from the same cards, and names a feed that is behind', () => {
     const { d, cards } = for_('oakland');
     const b = briefing(d, { cards, view, now: NOW });
-    expect(b.headline).toBe('Dinner is running slower than a usual Tuesday.');
-    const ready = cards.filter((c: C) => !c.blocked).length;
-    expect(b.line).toContain(`${ready} decisions need you, one of them tonight`);
+    expect(b.headline).toBe('Dinner is 22% quieter than usual.');
+    expect(b.line).toBe('Covers are 22% below the usual Tuesday dinner pace. Check staffing for the next service hour.');
     expect(b.warn.map((w: { name: string }) => w.name)).toContain('7shifts');
     const q = for_('berkeley');
     expect(briefing(q.d, { cards: q.cards, view, now: NOW }).headline).toBe('Dinner is on track.');

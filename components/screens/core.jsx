@@ -297,7 +297,7 @@ function buildApprovals(d) {
       fence: "Never below 4 servers on dinner. Never cut after 8:30 pm.",
       kill: ["Average turn time goes past 52 minutes", "Ticket time at the pass goes past 16 minutes", "Covers per server-hour goes past 7.5"],
       window: "Logged as an execution record in the Tuesday dinner test (closes Nov 3).", revert: "Jess is notified and kept on call until 8:30. One tap restores her shift.",
-      value: "$37 tonight", claim: "obs",
+      value: "$37 potential tonight", claim: "est",
     },
     "draft-schedule": {
       title: "Publish next week's drafted schedule", where: `${room.name} · Nov 2 – 8`, level: "A2 · Drafts", system: "7shifts",

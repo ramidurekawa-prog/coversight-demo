@@ -95,3 +95,21 @@ export function AgeBar({ days, fresh = 7 }) {
     </span>
   );
 }
+
+/** Two labeled bars on one scale: what's scheduled against what's needed. Numbers written beside each. */
+export function CompareBars({ rows, unit }) {
+  const top = Math.max(...rows.map((r) => r.value), 1);
+  return (
+    <span className={s.cmpBars}>
+      {rows.map((r) => (
+        <span key={r.label} className={s.cmpRow}>
+          <span className={s.cmpLbl}>{r.label}</span>
+          <span className={s.cmpTrack} aria-hidden="true">
+            {Array.from({ length: top }, (_, i) => <span key={i} className={i < r.value ? (r.strong ? s.cmpCellOn : s.cmpCellSoft) : s.cmpCellOff} />)}
+          </span>
+          <span className={s.cmpVal}><b>{r.value}</b> {unit}</span>
+        </span>
+      ))}
+    </span>
+  );
+}
