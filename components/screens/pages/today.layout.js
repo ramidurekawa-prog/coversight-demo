@@ -2,39 +2,34 @@
 
 import * as React from 'react';
 
-/* Today's layout preferences: which numbers sit in the snapshot and which
- * supporting sections show, in what order. A per-viewer convenience kept in
- * this browser (it never changes a figure or a decision). Each role starts
- * from its own default; "Restore defaults" goes back to it. Briefing, data
- * warnings and "Needs your attention" are always shown. */
+/* Today's layout preferences: which three numbers sit in the tiles, and
+ * which optional extras show below the main flow. A per-viewer convenience
+ * kept in this browser (it never changes a figure or a decision). Each role
+ * starts from its own default; "Restore defaults" goes back to it. The
+ * status, the action and the progress line always show. */
 
-/** The numbers the snapshot can show. */
+/** The numbers the three tiles can show. */
 export const METRICS = {
-  tonight: 'Dinner pace',
+  tonight: 'Tonight',
   sales: 'Sales',
-  labor: 'Labor, share of sales',
+  labor: 'Labor',
   covers: 'Covers',
-  confirmed: 'Confirmed savings',
-  decisions: 'Open decisions',
 };
-/** The supporting sections. Side ones sit beside the list on a wide screen. */
+/** Optional extras, below the main flow and off by default. */
 export const WIDGETS = {
-  coming: { label: 'Coming up', zone: 'side' },
-  handled: { label: 'Being handled', zone: 'side' },
-  results: { label: 'Your results', zone: 'side' },
-  last: { label: 'Last service chart', zone: 'wide' },
-  locations: { label: 'Your locations', zone: 'wide' },
+  last: { label: 'Last service chart' },
+  locations: { label: 'All your locations' },
 };
-export const MAX_METRICS = 4;
+export const MAX_METRICS = 3;
 
-/** Each role's starting layout. */
+/** Each role's starting layout: three tiles, no extras. */
 export const PRESETS = {
-  owner: { metrics: ['tonight', 'sales', 'labor', 'decisions'], widgets: ['results', 'handled', 'coming', 'locations', 'last'] },
-  gm: { metrics: ['tonight', 'sales', 'labor', 'covers'], widgets: ['coming', 'handled', 'results', 'last'] },
+  owner: { metrics: ['sales', 'labor', 'tonight'], widgets: [] },
+  gm: { metrics: ['tonight', 'labor', 'sales'], widgets: [] },
 };
 export const presetFor = (role) => PRESETS[role] || PRESETS.owner;
 
-const KEY = (role) => `cv-today-layout:${role in PRESETS ? role : 'owner'}`;
+const KEY = (role) => `cv-today-layout-v2:${role in PRESETS ? role : 'owner'}`;
 const clean = (v, role) => {
   const base = presetFor(role);
   if (!v || typeof v !== 'object') return base;

@@ -13,9 +13,9 @@ import { useCv, CV_D, CV_GROUP, CV_NOW } from '../core';
 import { useDense } from '../dense-ui';
 import { reportTodayView } from './today.badge';
 import { Yesterday } from './today.last';
-import { applyScenario, useLayout, WIDGETS } from './today.layout';
+import { applyScenario, useLayout } from './today.layout';
 import {
-  BeingHandled, Briefing, ComingUp, CustomizePanel, IssueCard, Locations, MoreIssues, Results, ResultsPanel, ScenarioBar, Snapshot, snapshotTiles,
+  ActionCard, CustomizePanel, evidenceFor, FeedsPanel, IssueRow, Locations, Progress, ResultsPanel, Savings, ScenarioBar, Status, TilePanel, Tiles, tileData, Timeline,
 } from './today.parts';
 import { ReviewPanel } from './today.review';
 import s from './today.module.css';
@@ -195,8 +195,10 @@ function CvToday() {
   const [dismissed, setDismissed] = useSaved('findings', {});
   const [review, setReview] = React.useState(null); // card id
   const [resOpen, setResOpen] = React.useState(null); // 'confirmed' | 'checking' | 'could'
+  const [tileOpen, setTileOpen] = React.useState(null);
+  const [feedsOpen, setFeedsOpen] = React.useState(false);
+  const [showMore, setShowMore] = React.useState(false);
   const [customizing, setCustomizing] = React.useState(false);
-  const [stepsOpen, setStepsOpen] = React.useState(false);
   const [said, setSaid] = React.useState('');
   const dense = useDense();
   React.useEffect(() => { if (!tools) setScenario('live'); }, [tools]);
@@ -213,7 +215,6 @@ function CvToday() {
   const ready = left.filter((c) => !c.blocked);
   const waiting = left.filter((c) => c.blocked);
   const byId = (id) => cards.find((c) => c.id === id);
-  const added = new Set(remote?.changes?.added || []);
 
   const now = own
     ? { label: longDate(today), time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: tz }).toLowerCase() }
@@ -222,7 +223,7 @@ function CvToday() {
   const sv = tonight(d, now);
   const brief = briefing(d, { cards, view, now });
   const res = resultsOf(d, { cards, view });
-  const tiles = snapshotTiles({ d, dense: sc.noHistory ? null : dense, sum, sv, flags: sc, res });
+  const tiles = tileData({ d, dense: sc.noHistory ? null : dense, sv, flags: sc });
   const through = cards[0]?.source?.through || liveCards[0]?.source?.through;
 
   /** Say it on screen and to a screen reader. */
@@ -236,11 +237,11 @@ function CvToday() {
       if (fix) return perform(fix);
       return tell(q.blocked);
     }
-    if (q.approval) return cv.approve(q.approval, () => tell('Approval recorded. The change itself hasn’t been made yet; its steps are under Being handled.'));
+    if (q.approval) return cv.approve(q.approval, () => tell('Approval recorded. The change itself hasn’t been made yet; its steps are under In progress.'));
     if (q.start) return engine.startWindow(q.start).then((r) => tell(r.ok ? `Test started. Nothing is counted as saved unless it proves out in ${TEST_DAYS} days.` : r.error));
     if (q.task) {
       return engine.createTask(`today:${q.id}`, { title: q.title, system: q.task.system, diff: q.task.diff })
-        .then((t) => t && tell(`The ${q.task.system} steps are under Being handled. ${q.task.system} hasn’t been changed; tick it off once it’s made.`));
+        .then((t) => t && tell(`The ${q.task.system} steps are under In progress. ${q.task.system} hasn’t been changed; tick it off once it’s made.`));
     }
     if (q.go === 'finding') return cv.go('finding', { id: q.goId });
     if (q.go) return cv.go(q.go, q.input ? { kind: q.input } : undefined);
@@ -265,29 +266,18 @@ function CvToday() {
     primary: () => { close(); perform(q); },
     snooze: () => { close(); decide('snooze', q, { summary: `${q.title}: snoozed` }, 'Not now: it comes back tomorrow.'); },
     decline: (r) => { close(); decline(q, r); },
-    assign: (to) => { close(); decide('assign', q, { to, summary: `${q.title}: assigned` }, `Assigned to ${assigneeLabel(to, d.profile)}. It’s under Being handled until it’s done.`); },
+    assign: (to) => { close(); decide('assign', q, { to, summary: `${q.title}: assigned` }, `Assigned to ${assigneeLabel(to, d.profile)}. It’s under In progress until it’s done.`); },
     done: () => { close(); decide('done', q, { summary: `${q.title}: done` }, 'Marked done, with your name and the time.'); },
     open: q.go === 'finding' ? () => { close(); cv.go('finding', { id: q.goId }); } : q.go && !q.input ? () => { close(); cv.go(q.go); } : undefined,
   });
 
   const [lead, ...rest] = ready;
-  const next = upNextOrder(rest, cards);
+  const next = [...upNextOrder(rest, cards), ...waiting];
   const top = next.slice(0, FIRST_SCREEN - 1);
   const more = next.slice(FIRST_SCREEN - 1);
-  const card = (q, i = 1) => (
-    <IssueCard key={q.id} q={q} cards={cards} lead={i === 0} n={ready.length} label={actLabel(q, q.blockedBy ? byId(q.blockedBy) : null)} busy={busy === q.id}
-      isNew={added.has(q.id)} onPrimary={primaryOf(q)} onReview={() => setReview(q.id)} />
-  );
   const reviewing = review ? byId(review) : null;
-
-  const side = layout.widgets.filter((w) => WIDGETS[w]?.zone === 'side');
-  const wide = layout.widgets.filter((w) => WIDGETS[w]?.zone === 'wide');
-  const widget = (id) => ({
-    coming: <ComingUp key={id} d={d} cards={cards} view={view} now={now} onGo={cv.go} />,
-    handled: <BeingHandled key={id} cards={cards} view={view} tasks={roomTasks} windows={windows} d={d} busy={busy}
-      onUndo={undo} onDone={(c) => decide('done', c, { summary: `${c.title}: done` }, 'Marked done, with your name and the time.')}
-      onSteps={() => setStepsOpen(!stepsOpen)} stepsOpen={stepsOpen} />,
-    results: <Results key={id} res={res} onOpen={setResOpen} />,
+  const due = (q) => (q.deadline === 'today' ? 'Due today' : q.deadline ? `Due ${q.deadline}` : null);
+  const extra = (id) => ({
     last: <Yesterday key={id} todayIso={own ? today : CV_NOW.iso} />,
     locations: <Locations key={id} eng={eng} today={today} onPick={(rid) => { setScenario('live'); cv.pickRoom(rid); }} />,
   }[id]);
@@ -295,49 +285,45 @@ function CvToday() {
   return (
     <div className={`cv-page ${s.page}`} data-page="today">
       {tools && <ScenarioBar value={scenario} onPick={setScenario} rooms={(CV_GROUP?.rows || []).map((r) => ({ id: r.id, name: r.name }))} onRoom={cv.pickRoom} />}
+      {offline && <p className={s.offline} role="status"><Icon name="TriangleAlert" size={13} />Can’t reach the server. Showing the last saved state.</p>}
 
-      <div className={s.context}>
-        {period.label && <span className={s.ctxPeriod}><Icon name="Clock" size={13} />{period.label} · {now.time}</span>}
-        {through && <span className={s.ctxData}>Sales data through {shortDay(through)}</span>}
-        {offline && <span className={s.ctxWarn} role="status"><Icon name="TriangleAlert" size={13} />Can’t reach the server. Showing the last saved state.</span>}
-        <span className={s.ctxEnd}>
-          <Button size="sm" variant="ghost" icon="SlidersHorizontal" onClick={() => setCustomizing(true)} aria-haspopup="dialog">Customize</Button>
-        </span>
-      </div>
+      <Status brief={brief} period={period} now={now} sum={sum} onFeeds={() => setFeedsOpen(true)} onCustomize={() => setCustomizing(true)} />
+      <Tiles ids={layout.metrics} tiles={tiles} onOpen={setTileOpen} />
 
-      <Briefing brief={brief} added={added.size} onFeeds={() => cv.go('sources')} />
-      <Snapshot ids={layout.metrics} tiles={tiles} onGo={(p) => cv.go(p)} />
-
-      <div className={`${s.grid} ${side.length ? '' : s.gridOne}`}>
-        <div className={s.mainCol}>
-          <section aria-labelledby="att-head" className={s.attention}>
-            <div className={s.sectionHead}>
-              <h3 id="att-head" className={s.sectionTitle}>Needs your attention</h3>
-              <span className={s.sectionSub}>{sum.ready ? `${sum.ready} to decide · about ${sum.minsLeft} min` : sum.blocked ? `${sum.blocked} waiting on data` : 'Nothing right now'}</span>
-            </div>
-            {lead ? (
-              <ul className={s.issues}>
-                {card(lead, 0)}
-                {top.map((q) => card(q))}
-              </ul>
-            ) : (
-              <div className={s.empty}>
-                <Icon name="CircleCheck" size={20} className={s.emptyIcon} />
-                <div>
-                  <p className={s.emptyHead}>{waiting.length ? 'Nothing you can act on yet.' : 'Everything looks on track. Nothing urgent needs your attention.'}</p>
-                  <p className={s.emptySub}>{waiting.length ? 'The decisions below wait on data. Each says what it needs.' : 'New decisions show here as soon as the data calls for one.'}</p>
-                </div>
-              </div>
-            )}
-            <MoreIssues rest={lead ? more : []} waiting={waiting} renderCard={(q) => card(q)} />
-          </section>
-          <Decided cards={cards} view={view} history={history} tz={tz} busy={busy} own={own} onUndo={undo} onReset={reset} />
-          {stepsOpen && <TasksPanel />}
+      {lead ? (
+        <ActionCard q={lead} cards={cards} evidence={evidenceFor(lead, d, sv)} label={actLabel(lead, null)} busy={busy === lead.id}
+          due={due(lead)} onPrimary={primaryOf(lead)} onDetails={() => setReview(lead.id)} />
+      ) : (
+        <div className={s.allClear}>
+          <Icon name="CircleCheck" size={20} className={s.allClearIcon} />
+          <span>{waiting.length ? `Nothing to act on yet. ${waiting.length} waiting on data.` : 'Nothing needs you right now.'}</span>
         </div>
-        {side.length > 0 && <aside className={s.aside} aria-label="Coming up, in progress and results">{side.map(widget)}</aside>}
+      )}
+
+      {next.length > 0 && (
+        <section className={s.rows} aria-label="Also on your list">
+          <ul className={s.rowList}>
+            {(showMore ? next : top).map((q) => <IssueRow key={q.id} q={q} cards={cards} onOpen={() => setReview(q.id)} />)}
+          </ul>
+          {more.length > 0 && (
+            <button type="button" className={s.moreBtn} aria-expanded={showMore} onClick={() => setShowMore(!showMore)}>
+              {showMore ? 'Show less' : `${more.length} more`}<Icon name={showMore ? 'ChevronUp' : 'ChevronDown'} size={14} />
+            </button>
+          )}
+        </section>
+      )}
+
+      <div className={s.foot}>
+        <Savings confirmed={res.confirmed} onOpen={() => setResOpen('confirmed')} />
+        <Progress cards={cards} view={view} tasks={roomTasks} windows={windows} d={d} busy={busy}
+          onUndo={undo} onDone={(c) => decide('done', c, { summary: `${c.title}: done` }, 'Marked done, with your name and the time.')}
+          steps={roomTasks.some((t) => t.status === 'open' || t.status === 'mismatch' || t.status === 'done') ? <TasksPanel /> : null}
+          decided={<Decided cards={cards} view={view} history={history} tz={tz} busy={busy} own={own} onUndo={undo} onReset={reset} />} />
+        <Timeline d={d} cards={cards} view={view} now={now} todayIso={own ? today : CV_NOW.iso} onGo={cv.go}
+          skip={lead && sv && lead.approval === sv.approval ? [`hour-${/at (\d{1,2}):00/.exec(lead.title)?.[1]} pm`] : []} />
       </div>
 
-      {wide.map(widget)}
+      {layout.widgets.map(extra)}
 
       <p className={s.srOnly} role="status" aria-live="polite">{said}</p>
 
@@ -345,6 +331,8 @@ function CvToday() {
         <ReviewPanel q={reviewing} cards={cards} history={history} fix={reviewing.blockedBy ? byId(reviewing.blockedBy) : null} busy={busy === reviewing.id}
           label={panelLabel(reviewing, reviewing.blockedBy ? byId(reviewing.blockedBy) : null)} onClose={close} act={panelActs(reviewing)} />
       )}
+      {tileOpen && tiles[tileOpen] && <TilePanel t={tiles[tileOpen]} onClose={() => setTileOpen(null)} onGo={(p) => { setTileOpen(null); cv.go(p); }} />}
+      {feedsOpen && <FeedsPanel warn={brief.warn} onClose={() => setFeedsOpen(false)} onGo={(p) => { setFeedsOpen(false); cv.go(p); }} />}
       {resOpen && <ResultsPanel which={resOpen} res={res} onClose={() => setResOpen(null)} onGo={(p) => { setResOpen(null); cv.go(p); }} />}
       {customizing && <CustomizePanel layout={layout} custom={custom} role={role} onSave={save} onRestore={restore} onClose={() => setCustomizing(false)} />}
     </div>

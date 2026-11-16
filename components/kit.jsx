@@ -157,6 +157,7 @@ import {
   Zap,
   X,
   UserCheck,
+  ChevronRight,
 } from 'lucide-react';
 
 const ICONS = {
@@ -312,6 +313,7 @@ const ICONS = {
   Zap,
   X,
   UserCheck,
+  ChevronRight,
 };
 
 /** Every icon name the screens use. A unit test keeps this list complete. */
