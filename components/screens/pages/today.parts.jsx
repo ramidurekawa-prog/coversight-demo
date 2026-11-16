@@ -80,7 +80,7 @@ export function Status({ brief, explain, period, now, sum, onFeeds, onCustomize,
           </button>
         )}
         <span className={s.statusTune}>{trial}</span>
-        <button type="button" className={s.iconBtn} aria-label="Customize Today" title="Customize" onClick={onCustomize} aria-haspopup="dialog"><Icon name="SlidersHorizontal" size={17} /></button>
+        <button type="button" className={s.customize} onClick={onCustomize} aria-haspopup="dialog" aria-label="Customize Today"><Icon name="SlidersHorizontal" size={15} /><span>Customize</span></button>
       </div>
       <h2 className={s.headline}>{brief.headline}</h2>
       {explain && <p className={s.explain}>{explain}</p>}
@@ -611,41 +611,80 @@ export function Locations({ eng, onPick, today }) {
 
 /* ================================================================ customize */
 
-export function CustomizePanel({ layout, custom, role, onSave, onRestore, onClose }) {
-  const [m, setM] = React.useState(layout.metrics);
-  const [w, setW] = React.useState(layout.widgets);
-  const toggleM = (id) => setM(m.includes(id) ? m.filter((x) => x !== id) : m.length >= MAX_METRICS ? m : [...m, id]);
-  const toggleW = (id) => setW(w.includes(id) ? w.filter((x) => x !== id) : [...w, id]);
+export function CustomizePanel({ layout, custom, role, tiles, onSave, onRestore, onClose }) {
+  // Every change applies at once and is kept in this browser; "Done" just closes.
+  const m = layout.metrics;
+  const w = layout.widgets;
+  const full = m.length >= MAX_METRICS;
+  const setM = (next) => next.length && onSave({ metrics: next, widgets: w });
+  const toggleM = (id) => setM(m.includes(id) ? m.filter((x) => x !== id) : full ? m : [...m, id]);
+  const move = (id, by) => {
+    const i = m.indexOf(id);
+    const j = i + by;
+    if (i < 0 || j < 0 || j >= m.length) return;
+    const next = [...m];
+    [next[i], next[j]] = [next[j], next[i]];
+    setM(next);
+  };
+  const toggleW = (id) => onSave({ metrics: m, widgets: w.includes(id) ? w.filter((x) => x !== id) : [...w, id] });
+  const order = [...m, ...Object.keys(METRICS).filter((id) => !m.includes(id))];
   return (
     <Panel label="Customize Today" onClose={onClose}>
       <PanelTop over={role === 'gm' ? 'General manager view' : 'Owner view'} title="Customize Today" onClose={onClose} />
       <div className={s.panelBody}>
         <section className={s.block}>
-          <h3 className={s.blockTitle}>Key numbers <span className={s.blockCount}>{m.length} of {MAX_METRICS}</span></h3>
-          <div className={s.checks}>
-            {Object.entries(METRICS).map(([id, label]) => (
-              <label key={id} className={s.check}>
-                <input type="checkbox" checked={m.includes(id)} disabled={!m.includes(id) && m.length >= MAX_METRICS} onChange={() => toggleM(id)} />
-                <span>{label}</span>
-              </label>
-            ))}
-          </div>
+          <h3 className={s.blockTitle}>Key numbers <span className={s.blockCount}>{m.length} of {MAX_METRICS} shown</span></h3>
+          <ul className={s.pickList}>
+            {order.map((id) => {
+              const on = m.includes(id);
+              const t = tiles?.[id];
+              const i = m.indexOf(id);
+              const blocked = !on && full;
+              return (
+                <li key={id} className={`${s.pick} ${on ? s.pickOn : ''}`}>
+                  <button type="button" className={s.pickMain} aria-pressed={on} disabled={blocked || (on && m.length === 1)} onClick={() => toggleM(id)}
+                    title={blocked ? 'Hide one to add another' : undefined}>
+                    <span className={s.pickBox} aria-hidden="true">{on && <Icon name="Check" size={13} />}</span>
+                    <span className={s.pickText}>
+                      <span className={s.pickLabel}>{t?.label || METRICS[id]}</span>
+                      {t?.when && <span className={s.pickWhen}>{t.when}</span>}
+                    </span>
+                    <span className={s.pickFig}>{t?.fig ?? '—'}</span>
+                  </button>
+                  {on && (
+                    <span className={s.orderBtns}>
+                      <button type="button" className={s.iconBtn} aria-label={`Move ${METRICS[id]} up`} disabled={i === 0} onClick={() => move(id, -1)}><Icon name="ChevronUp" size={16} /></button>
+                      <button type="button" className={s.iconBtn} aria-label={`Move ${METRICS[id]} down`} disabled={i === m.length - 1} onClick={() => move(id, 1)}><Icon name="ChevronDown" size={16} /></button>
+                    </span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+          <p className={s.blockNote}>{full ? 'Showing 3. Hide one to add another.' : 'Tap a number to show it.'} Arrows set the order: top shows first.</p>
         </section>
         <section className={s.block}>
           <h3 className={s.blockTitle}>Extras, below everything else</h3>
-          <div className={s.checks}>
-            {Object.entries(WIDGETS).map(([id, x]) => (
-              <label key={id} className={s.check}><input type="checkbox" checked={w.includes(id)} onChange={() => toggleW(id)} /><span>{x.label}</span></label>
-            ))}
-          </div>
+          <ul className={s.pickList}>
+            {Object.entries(WIDGETS).map(([id, x]) => {
+              const on = w.includes(id);
+              return (
+                <li key={id} className={`${s.pick} ${on ? s.pickOn : ''}`}>
+                  <button type="button" className={s.pickMain} aria-pressed={on} onClick={() => toggleW(id)}>
+                    <span className={s.pickBox} aria-hidden="true">{on && <Icon name="Check" size={13} />}</span>
+                    <span className={s.pickText}><span className={s.pickLabel}>{x.label}</span></span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
         </section>
-        <p className={s.blockNote}>The status, the action and what’s in progress always show. Saved in this browser.</p>
+        <p className={s.blockNote}>Changes show right away and are kept in this browser. The status, the action and what’s in progress always show.</p>
       </div>
       <div className={s.panelFoot}>
-        <Button size="lg" className={s.panelPrimary} disabled={!m.length} onClick={() => { onSave({ metrics: m, widgets: w }); onClose(); }}>Save</Button>
+        <Button size="lg" className={s.panelPrimary} onClick={onClose}>Done</Button>
         <div className={s.panelMore}>
-          <Button size="sm" variant="secondary" disabled={!custom} onClick={() => { onRestore(); onClose(); }}>Restore defaults</Button>
-          <Button size="sm" variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button size="sm" variant="secondary" disabled={!custom} onClick={onRestore}>Restore defaults</Button>
         </div>
       </div>
     </Panel>

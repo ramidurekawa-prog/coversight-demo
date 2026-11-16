@@ -389,7 +389,7 @@ function CvToday() {
       {tileOpen && tiles[tileOpen] && <TilePanel t={tiles[tileOpen]} onClose={() => setTileOpen(null)} onGo={(p) => { setTileOpen(null); cv.go(p); }} />}
       {feedsOpen && <FeedsPanel warn={brief.warn} onClose={() => setFeedsOpen(false)} onGo={(p) => { setFeedsOpen(false); cv.go(p); }} />}
       {resOpen && <ResultsPanel which={resOpen} res={res} onClose={() => setResOpen(null)} onGo={(p) => { setResOpen(null); cv.go(p); }} />}
-      {customizing && <CustomizePanel layout={layout} custom={custom} role={role} onSave={save} onRestore={restore} onClose={() => setCustomizing(false)} />}
+      {customizing && <CustomizePanel layout={layout} custom={custom} role={role} tiles={tiles} onSave={save} onRestore={restore} onClose={() => setCustomizing(false)} />}
     </div>
   );
 }

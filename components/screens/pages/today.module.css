@@ -322,6 +322,22 @@ button.pill { cursor: pointer; }
 .checks { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; }
 .check { display: flex; align-items: center; gap: 8px; min-height: 36px; font-size: 14px; cursor: pointer; }
 .check input { width: 16px; height: 16px; accent-color: var(--primary); }
+.customize { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; flex: none; border: 1px solid var(--border); background: var(--surface); color: var(--fg-2); border-radius: 8px; font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
+.customize:hover { color: var(--fg-1); border-color: var(--border-strong); }
+.customize:focus-visible { outline: none; box-shadow: var(--ring); }
+.pickList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.pick { display: flex; align-items: center; gap: 4px; padding-right: 4px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+.pickOn { border-color: color-mix(in srgb, var(--primary) 55%, var(--border)); background: color-mix(in srgb, var(--primary) 6%, var(--surface)); }
+.pickMain { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 8px 12px; border: none; background: none; color: var(--fg-1); font: inherit; text-align: left; cursor: pointer; border-radius: 10px; }
+.pickMain:disabled { cursor: default; }
+.pick:has(.pickMain:disabled:not([aria-pressed='true'])) { opacity: 0.55; }
+.pickMain:focus-visible { outline: none; box-shadow: var(--ring); }
+.pickBox { display: inline-grid; place-items: center; width: 20px; height: 20px; flex: none; border: 1.5px solid var(--border-strong); border-radius: 6px; background: var(--surface); color: var(--fg-on-accent); }
+.pickOn .pickBox { background: var(--primary); border-color: var(--primary); }
+.pickText { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.pickLabel { font-size: 14px; font-weight: 600; }
+.pickWhen { font-size: 12px; color: var(--fg-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pickFig { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--fg-1); }
 .order { list-style: none; margin: 0; padding: 0; }
 .order li { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); }
 .orderBtns { display: flex; gap: 2px; }
