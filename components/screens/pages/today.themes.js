@@ -14,17 +14,23 @@ const hexA = (hex, a) => {
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
 };
 
-/** @typedef {{ bg: string, surface: string, muted: string, text: string, text2: string, border: string, borderStrong: string,
- *   cta: string, ctaHover: string, ctaActive: string, ctaText: string, accent: string, accentText: string, accentSubtle: string }} Palette */
+/** @typedef {{ bg: string, surface: string, muted: string, text: string, text2: string, text3?: string, border: string, borderStrong: string,
+ *   cta: string, ctaHover: string, ctaActive: string, ctaText: string, accent: string, accentText: string, accentSubtle: string,
+ *   good?: string, bad?: string, caution?: string, side?: string }} Palette */
 
-/** @type {Record<string, { label: string, note: string, p: Palette }>} */
+/**
+ * Persimmon & Ink is the chosen look (Ramidu, 2026-11-16) and Today's default.
+ * The other two stay for comparison behind ?tools=1.
+ * @type {Record<string, { label: string, note: string, p: Palette }>}
+ */
 export const THEMES = {
   persimmon: {
     label: 'Persimmon',
-    note: 'Persimmon & Ink: warm, confident hospitality tech',
+    note: 'Persimmon & Ink: warm cream, rich navy and a persimmon action color',
     p: {
-      bg: '#F7F6F2', surface: '#FFFFFF', muted: '#F1F0EA', text: '#192431', text2: '#6B7480', border: '#E5E3DB', borderStrong: '#D4D1C6',
-      cta: '#FF8050', ctaHover: '#FF6C38', ctaActive: '#F25C26', ctaText: '#192431', accent: '#FF8050', accentText: '#29745E', accentSubtle: '#FFEDE4',
+      bg: '#F8F6F0', surface: '#FFFFFF', muted: '#F2EEE6', text: '#172536', text2: '#536477', text3: '#66717C', border: '#E4E3DF', borderStrong: '#D3D0C8',
+      cta: '#FF8050', ctaHover: '#FF6D39', ctaActive: '#F25E28', ctaText: '#172536', accent: '#FF8050', accentText: '#172536', accentSubtle: '#FFEEE6',
+      good: '#23846A', bad: '#C64C50', caution: '#B97923', side: '#142131',
     },
   },
   saffron: {
@@ -45,47 +51,85 @@ export const THEMES = {
   },
 };
 
-/** The semantic tokens, then the app tokens they drive. */
-export function tokensFor(id) {
+export const DEFAULT_THEME = 'persimmon';
+
+/**
+ * The semantic tokens, then the app tokens they drive. In dark mode only the
+ * action color and the status colors change, so a dark page stays dark.
+ */
+export function tokensFor(id, { dark = false } = {}) {
   const t = THEMES[id];
   if (!t) return null;
   const { p } = t;
+  const semantic = {
+    ...(p.good ? { '--success-600': p.good, '--success-700': p.good } : {}),
+    ...(p.bad ? { '--error-600': p.bad } : {}),
+    ...(p.caution ? { '--warning-500': p.caution, '--warning-600': p.caution, '--warning-700': p.caution } : {}),
+  };
+  const action = {
+    '--cv-primary-cta': p.cta, '--cv-primary-cta-text': p.ctaText,
+    '--primary': 'var(--cv-primary-cta)', '--primary-hover': p.ctaHover, '--primary-active': p.ctaActive, '--primary-fg': 'var(--cv-primary-cta-text)', '--fg-on-accent': p.ctaText,
+    '--cv-accent': p.accent, '--accent': 'var(--cv-accent)',
+    ...(p.side ? { '--side-active-fg': '#F6F1E7', '--cv-side-mark': p.cta } : {}),
+  };
+  if (dark) return { ...action, ...(p.bad ? { '--error-600': p.bad } : {}) };
   return {
     '--cv-bg': p.bg, '--cv-surface': p.surface, '--cv-surface-muted': p.muted, '--cv-text': p.text, '--cv-text-secondary': p.text2,
-    '--cv-border': p.border, '--cv-primary-cta': p.cta, '--cv-primary-cta-text': p.ctaText, '--cv-accent': p.accent, '--cv-accent-subtle': p.accentSubtle,
+    '--cv-border': p.border, '--cv-accent-subtle': p.accentSubtle,
     '--background': 'var(--cv-bg)', '--surface': 'var(--cv-surface)', '--surface-sunken': 'var(--cv-surface-muted)', '--surface-hover': p.muted,
-    '--fg-1': 'var(--cv-text)', '--fg-2': 'var(--cv-text-secondary)', '--fg-3': p.text2,
+    '--fg-1': 'var(--cv-text)', '--fg-2': 'var(--cv-text-secondary)', '--fg-3': p.text3 || p.text2,
     '--border': 'var(--cv-border)', '--border-strong': p.borderStrong, '--border-focus': p.accentText,
-    '--primary': 'var(--cv-primary-cta)', '--primary-hover': p.ctaHover, '--primary-active': p.ctaActive, '--primary-fg': 'var(--cv-primary-cta-text)', '--fg-on-accent': p.ctaText,
-    '--accent': 'var(--cv-accent)', '--accent-subtle': 'var(--cv-accent-subtle)', '--teal-700': p.accentText,
-    '--ring': `0 0 0 3px ${hexA(p.accentText, 0.32)}`,
+    '--accent-subtle': 'var(--cv-accent-subtle)', '--teal-700': p.accentText,
+    '--ring': `0 0 0 3px ${hexA(p.cta, 0.4)}`,
+    ...(p.side ? { '--side-bg': p.side, '--side-active': 'rgba(255, 255, 255, 0.07)', '--side-line': 'rgba(255, 255, 255, 0.07)', '--side-mute': '#7F8A98' } : {}),
+    ...action,
+    ...semantic,
   };
 }
 
 const KEY = 'cv-today-theme';
-const read = () => { try { const v = window.localStorage.getItem(KEY); return THEMES[v] ? v : 'original'; } catch { return 'original'; } };
+const read = () => { try { const v = window.localStorage.getItem(KEY); return v === 'original' || THEMES[v] ? v : DEFAULT_THEME; } catch { return DEFAULT_THEME; } };
 
-/** The chosen palette, saved in this browser, applied while Today is mounted. */
-export function useTodayTheme() {
-  const [theme, setTheme] = React.useState('original');
-  React.useEffect(() => { setTheme(read()); }, []);
+/** Whether the app is showing its dark mode right now. */
+const isDark = () => {
+  const set = document.documentElement.dataset.theme;
+  if (set) return set === 'dark';
+  return window.matchMedia?.('(prefers-color-scheme: dark)').matches || false;
+};
+
+/**
+ * Today's palette, applied while Today is mounted and removed when it isn't.
+ * Persimmon by default. A different choice is only possible, and only kept,
+ * with the design tools on (?tools=1).
+ */
+export function useTodayTheme(tools = false) {
+  const [theme, setTheme] = React.useState(DEFAULT_THEME);
+  const [dark, setDark] = React.useState(false);
+  React.useEffect(() => { setTheme(tools ? read() : DEFAULT_THEME); }, [tools]);
+  React.useEffect(() => {
+    const check = () => setDark(isDark());
+    check();
+    const mo = new MutationObserver(check);
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    const mq = window.matchMedia?.('(prefers-color-scheme: dark)');
+    mq?.addEventListener?.('change', check);
+    return () => { mo.disconnect(); mq?.removeEventListener?.('change', check); };
+  }, []);
   React.useEffect(() => {
     const el = document.documentElement;
-    const tokens = tokensFor(theme);
+    const tokens = tokensFor(theme, { dark });
     if (!tokens) { delete el.dataset.todayTheme; return undefined; }
     el.dataset.todayTheme = theme;
     for (const [k, v] of Object.entries(tokens)) el.style.setProperty(k, v);
-    el.style.setProperty('color-scheme', 'light'); // the trial palettes are light ones
     return () => {
-      el.style.removeProperty('color-scheme');
       for (const k of Object.keys(tokens)) el.style.removeProperty(k);
       delete el.dataset.todayTheme;
     };
-  }, [theme]);
+  }, [theme, dark]);
   const pick = React.useCallback((id) => {
     const next = THEMES[id] ? id : 'original';
     setTheme(next);
-    try { if (next === 'original') window.localStorage.removeItem(KEY); else window.localStorage.setItem(KEY, next); } catch { /* not saved; still applied */ }
+    try { window.localStorage.setItem(KEY, next); } catch { /* not saved; still applied */ }
   }, []);
   return { theme, pick };
 }

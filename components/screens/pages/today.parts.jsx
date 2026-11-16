@@ -11,7 +11,7 @@ import { Panel } from './today.review';
 import { dayLabel, shortMoney } from './today.last';
 import { MAX_METRICS, METRICS, SCENARIOS, WIDGETS } from './today.layout';
 import { THEMES, tokensFor } from './today.themes';
-import { AgeBar, CompareBars, HoursBar, MarkBar, PaceBars, Spark } from './today.viz';
+import { AgeBar, HoursBar, MarkBar, PaceBars, Spark, StaffBar } from './today.viz';
 import s from './today.module.css';
 
 const money = (v) => cvMoney(Math.round(v));
@@ -65,17 +65,18 @@ export function StateChip({ k, label, n, as = 'span', ...rest }) {
 
 /* ================================================================ status */
 
-/** A status chip, the headline, and one line on why: what's happening and what to do about it. */
+/** Context and one status, the headline, and one supporting sentence. */
 export function Status({ brief, explain, period, now, sum, onFeeds, onCustomize, trial }) {
   const calm = brief.tone === 'calm';
+  const k = calm ? 'ontrack' : sum.ready ? 'attention' : 'delayed';
   return (
     <header className={s.status}>
       <div className={s.statusRow}>
-        <StateChip k={calm ? 'ontrack' : 'review'} label={calm ? 'On track' : sum.ready ? `1 needs review now${sum.ready > 1 ? ` · ${sum.ready - 1} other${sum.ready > 2 ? 's' : ''}` : ''}` : 'Waiting on data'} />
-        {period.label && <span className={s.pill}><Icon name="Clock" size={13} />{period.label} · {now.time}</span>}
+        <StateChip k={k} label={k === 'delayed' ? 'Waiting on data' : undefined} />
+        {period.label && <span className={s.context}>{period.label} · {now.time}</span>}
         {brief.warn.length > 0 && (
-          <button type="button" className={`${s.pill} ${s.pillWarn}`} onClick={onFeeds} aria-haspopup="dialog" title={brief.warn.map((f) => `${f.name}: ${f.what}`).join('. ')}>
-            <Icon name="TriangleAlert" size={13} />{brief.warn.length === 1 ? `${brief.warn[0].name} delayed` : `${brief.warn.length} feeds delayed`}
+          <button type="button" className={s.contextWarn} onClick={onFeeds} aria-haspopup="dialog" title={brief.warn.map((f) => `${f.name}: ${f.what}`).join('. ')}>
+            <Icon name="TriangleAlert" size={13} />{brief.warn.length === 1 ? `${brief.warn[0].name} delayed` : `${brief.warn.length} data feeds delayed`}
           </button>
         )}
         <span className={s.statusTune}>{trial}</span>
@@ -154,7 +155,7 @@ export function tileData({ d, dense, sv, flags }) {
     const avg = mean(prior.map((x) => x[k]));
     const delta = (day[k] - avg) / avg;
     return {
-      label, when: `Last service · ${day.dow} ${dayLabel(day.iso)}`, fig: k === 'net' ? money(day[k]) : String(day[k]), cmp: `${signPct(delta)} vs a usual ${longDow(day.dow)}`, delta,
+      label, when: `Last service · ${day.dow} ${dayLabel(day.iso)}`, fig: k === 'net' ? money(day[k]) : String(day[k]), cmp: `${signPct(delta)} vs comparable ${longDow(day.dow)}s`, delta,
       viz: <Spark values={same.map((x) => x[k])} />, claim: 'obs',
       facts: [[`${day.dow}, ${dayLabel(day.iso)}`, k === 'net' ? money(day[k]) : String(day[k])], [`Average of the ${prior.length} ${day.dow}s before`, k === 'net' ? money(avg) : String(Math.round(avg))], ['Their range', k === 'net' ? `${money(Math.min(...prior.map((x) => x[k])))} to ${money(Math.max(...prior.map((x) => x[k])))}` : `${Math.min(...prior.map((x) => x[k]))} to ${Math.max(...prior.map((x) => x[k]))}`], ['Source', src(`through ${dayLabel(day.iso)}`)]],
       go: 'daily',
@@ -190,7 +191,7 @@ export function tileData({ d, dense, sv, flags }) {
   }
   t.tonight = sv
     ? {
-      label: 'Dinner pace', when: 'Tonight, so far', fig: `${sv.pace >= 0 ? '+' : '−'}${Math.abs(sv.pace)}%`, cmp: `${sv.pace >= 0 ? 'above' : 'below'} a usual ${String(sv.day).split(' ')[0]} dinner`, delta: sv.pace / 100,
+      label: 'Dinner pace', when: 'Tonight, so far', live: true, fig: `${sv.pace >= 0 ? '+' : '−'}${Math.abs(sv.pace)}%`, cmp: `${sv.pace >= 0 ? 'above' : 'below'} a usual ${String(sv.day).split(' ')[0]} dinner`, delta: sv.pace / 100,
       viz: <PaceBars factor={sv.factor} />, claim: 'obs',
       facts: [['Pace so far', `${Math.abs(sv.pace)}% ${sv.pace >= 0 ? 'over' : 'under'} a usual ${String(sv.day).split(' ')[0]}`], ...(sv.tiles || []).map(([k, v, g]) => [k, `${v} (${g})`]), ['Source', src('live')]],
       go: 'service',
@@ -208,7 +209,7 @@ export function Tiles({ ids, tiles, onOpen }) {
         const dir = t.delta == null || Math.abs(t.delta) < 0.0005 ? null : t.delta > 0 ? 'ArrowUpRight' : 'ArrowDownRight';
         return (
           <button key={id} type="button" className={s.tile} onClick={() => onOpen(id)} aria-haspopup="dialog">
-            <span className={s.tileLabel}>{t.label}{t.when && <span className={s.tileWhen}>{t.when}</span>}</span>
+            <span className={s.tileLabel}>{t.label}{t.when && <span className={`${s.tileWhen} ${t.live ? s.tileLive : ''}`}>{t.live && <i aria-hidden="true" />}{t.when}</span>}</span>
             <span className={s.tileFig}>{t.fig ?? <span className={s.tileNone}>—</span>}</span>
             <span className={s.tileFoot}>
               <span className={s.tileCmp}>{dir && <Icon name={dir} size={13} />}{t.cmp}</span>
@@ -247,15 +248,25 @@ export function Worth({ q, cards, big = false }) {
   const un = w.figure ? null : unlocksOf(q, cards);
   if (!w.figure && !un) return null;
   const unit = w.unit || un?.unit;
+  if (big) {
+    return (
+      <span className={`${s.worth} ${s.worthBig}`}>
+        <span className={s.worthRow}>
+          <span className={s.worthFig}>{w.about && <span className={s.worthPre}>about </span>}{w.figure || un.figure}{unit?.startsWith('/') && <span className={s.worthUnit}>{unit}</span>}</span>
+          <Claim k={un ? un.claim : q.claim} />
+        </span>
+        <span className={s.worthMeans}>{un ? 'What finishing this unlocks' : w.means}</span>
+      </span>
+    );
+  }
   return (
-    <span className={`${s.worth} ${big ? s.worthBig : ''}`} title={w.means || 'What finishing this unlocks'}>
+    <span className={s.worth} title={w.means || 'What finishing this unlocks'}>
       <span className={s.worthFig}>
         {un && <span className={s.worthPre}>unlocks </span>}
         {w.about && <span className={s.worthPre}>about </span>}
         {w.figure || un.figure}
         {unit && <span className={s.worthUnit}>{unit.startsWith('/') ? '' : ' '}{unit}</span>}
       </span>
-      {big && <Claim k={un ? un.claim : q.claim} />}
     </span>
   );
 }
@@ -266,7 +277,7 @@ export function evidenceFor(q, d, sv) {
   if (sv && plan && q.approval && q.approval === sv.approval) {
     const at = /at (\d{1,2}):00/.exec(q.title)?.[1];
     const i = at ? plan.hours.indexOf(`${at} pm`) : -1;
-    if (i >= 0) return <CompareBars unit="servers" rows={[{ label: 'Scheduled', value: plan.sched[i], strong: true }, { label: 'Forecast need', value: plan.need[i] }]} />;
+    if (i >= 0) return <StaffBar on={plan.sched[i]} need={plan.need[i]} />;
   }
   const hrs = /tracking to (\d+) hours/i.exec(q.body || '')?.[1];
   if (hrs) return <HoursBar hours={Number(hrs)} />;
@@ -295,17 +306,18 @@ export function frameFor(q, d, sv, trust = {}) {
       const on = plan.sched[i];
       const need = plan.need[i];
       const fix = q.title.replace(/^Approve:\s*/i, '').replace(/^./, (c) => c.toUpperCase());
-      const viz = <CompareBars unit="servers" rows={[{ label: 'Scheduled', value: on, strong: true }, { label: 'Forecast need', value: need }]} />;
+      const viz = <StaffBar on={on} need={need} />;
+      const lighter = on > need && sv.pace < 0;
       if (trust.delayed) {
         return {
-          problem: `Check ${at} pm coverage`,
-          why: `Demand looks lighter than the schedule, but ${trust.delayed.name} last updated ${trust.delayed.last}. Confirm who’s on before cutting.`,
+          problem: `Check ${at} pm staffing`,
+          why: `${lighter ? 'Demand is lighter than planned. ' : ''}Confirm current coverage before reducing staff.`,
           fix, viz,
         };
       }
       return {
         problem: on > need ? `Overstaffed at ${at} pm` : on < need ? `Short-staffed at ${at} pm` : q.title,
-        why: on > need && sv.pace < 0 ? `Demand looks lighter than the schedule at ${at} pm.` : first,
+        why: lighter ? 'Demand is lighter than planned.' : first,
         fix, viz,
       };
     }
@@ -333,7 +345,7 @@ export function ActionCard({ q, cards, frame, trust, label, busy, due, onPrimary
   const strong = !!q.critical;
   const one = trust?.delayed ? 'delayed' : q.approval ? 'review' : 'todo';
   return (
-    <section id={`card-${q.id}`} className={`${s.action} ${strong ? s.actionStrong : ''} ${trust?.delayed ? s.actionHeld : ''}`} aria-labelledby={`a-${q.id}`} aria-busy={busy || undefined}>
+    <section id={`card-${q.id}`} className={`${s.action} ${strong ? s.actionStrong : ''}`} aria-labelledby={`a-${q.id}`} aria-busy={busy || undefined}>
       <div className={s.actionMain}>
         <div className={s.actionTop}>
           <StateChip k={one} label={one === 'delayed' ? 'Data delayed' : undefined} />
@@ -346,7 +358,7 @@ export function ActionCard({ q, cards, frame, trust, label, busy, due, onPrimary
       <div className={s.actionSide}>
         {frame.fix && <span className={s.actionFix}><Icon name={q.icon || 'CircleDot'} size={15} />{frame.fix}</span>}
         <Worth q={q} cards={cards} big />
-        <Button size="lg" className={s.actionBtn} disabled={busy} onClick={onPrimary}>{label}</Button>
+        <Button size="lg" className={s.actionBtn} iconRight="ArrowRight" disabled={busy} aria-busy={busy || undefined} onClick={onPrimary}>{label}</Button>
         <button type="button" className={s.seeWhy} onClick={onDetails} aria-haspopup="dialog">See why<Icon name="ChevronRight" size={14} /></button>
       </div>
     </section>

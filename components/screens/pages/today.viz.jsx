@@ -96,20 +96,29 @@ export function AgeBar({ days, fresh = 7 }) {
   );
 }
 
-/** Two labeled bars on one scale: what's scheduled against what's needed. Numbers written beside each. */
-export function CompareBars({ rows, unit }) {
-  const top = Math.max(...rows.map((r) => r.value), 1);
+/**
+ * Staffing as one bar of equal segments, one per person: covered by the
+ * forecast (solid), scheduled beyond it (hatched, potential excess) or needed
+ * but not scheduled (outlined, short). The numbers are written beside it.
+ */
+export function StaffBar({ on, need, unit = 'servers' }) {
+  const n = Math.max(on, need);
+  const extra = Math.max(0, on - need);
+  const short = Math.max(0, need - on);
   return (
-    <span className={s.cmpBars}>
-      {rows.map((r) => (
-        <span key={r.label} className={s.cmpRow}>
-          <span className={s.cmpLbl}>{r.label}</span>
-          <span className={s.cmpTrack} aria-hidden="true">
-            {Array.from({ length: top }, (_, i) => <span key={i} className={i < r.value ? (r.strong ? s.cmpCellOn : s.cmpCellSoft) : s.cmpCellOff} />)}
-          </span>
-          <span className={s.cmpVal}><b>{r.value}</b> {unit}</span>
-        </span>
-      ))}
+    <span className={s.staff}>
+      <span className={s.staffBar} aria-hidden="true">
+        {Array.from({ length: n }, (_, i) => (
+          <span key={i} className={i < Math.min(on, need) ? s.segOn : i < on ? s.segExtra : s.segShort} />
+        ))}
+      </span>
+      <span className={s.staffKey}>
+        <span><b>{on}</b> scheduled</span>
+        <span><b>{need}</b> forecast need</span>
+        {extra > 0 && <span className={s.staffExtra}><i aria-hidden="true" /><b>{extra}</b> potential excess</span>}
+        {short > 0 && <span className={s.staffShort}><i aria-hidden="true" /><b>{short}</b> short</span>}
+      </span>
+      <span className={s.srOnly}>{`${on} ${unit} scheduled, ${need} needed by the forecast.`}</span>
     </span>
   );
 }

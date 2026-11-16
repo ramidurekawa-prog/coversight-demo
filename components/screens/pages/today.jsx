@@ -7,9 +7,9 @@ import { engine, useEngine, useSaved } from '../../engine';
 import {
   applyOp, assigneeLabel, cardState, DECLINE, DEFAULT_TZ, FIRST_SCREEN, isActive, localDay, queueSummary, queueView, TEST_DAYS, todayCards, upNextOrder, worthOf,
 } from '../../../lib/data/page/today';
-import { briefing, cardTrust, clockMinutes, results as resultsOf, servicePeriod, tonight } from '../../../lib/data/page/today-brief';
+import { areaOf, briefing, cardTrust, clockMinutes, results as resultsOf, servicePeriod, tonight } from '../../../lib/data/page/today-brief';
 import { TasksPanel } from '../tasks';
-import { useCv, CV_D, CV_GROUP, CV_NOW } from '../core';
+import { cvApproval, useCv, CV_D, CV_GROUP, CV_NOW } from '../core';
 import { useDense } from '../dense-ui';
 import { reportTodayView } from './today.badge';
 import { Yesterday } from './today.last';
@@ -137,7 +137,7 @@ const panelLabel = (q, fix) => (q.approval ? 'Approve…' : actLabel(q, fix));
 function cautionFor(q, d, now) {
   const t = cardTrust(q, d, now);
   if (!t.delayed) return null;
-  return `${t.delayed.name} last updated ${t.delayed.last}, so the schedule here may be out of date. Check who is actually on the floor${t.before ? ` at ${t.before}` : ''} before you approve.`;
+  return `Verify first. "Scheduled" is the ${t.delayed.name} schedule as of ${t.delayed.last}; "forecast need" is what usual covers call for${t.before ? ` at ${t.before}` : ''}. Neither is who is actually on the floor. Check that before you approve.`;
 }
 
 const longDate = (iso) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', timeZone: 'UTC' });
@@ -212,7 +212,7 @@ function CvToday() {
   const [receipt, setReceipt] = React.useState(null); // what just happened, and what's next
   const [handledOpen, setHandledOpen] = React.useState(false);
   const [comparing, setComparing] = React.useState(false);
-  const { theme, pick: pickTheme } = useTodayTheme();
+  const { theme, pick: pickTheme } = useTodayTheme(tools);
   const dense = useDense();
   React.useEffect(() => { if (!tools) setScenario('live'); }, [tools]);
 
@@ -259,7 +259,7 @@ function CvToday() {
     }
     if (q.approval) {
       return cv.approve(q.approval, () => showReceipt(
-        rcpt(`Approved: ${q.title.replace(/^Approve:\s*/i, '')}`, ['Approved', 'Awaiting the change', 'Checking the result'], { icon: 'CircleCheck' }),
+        rcpt(`Approved: ${q.title.replace(/^Approve:\s*/i, '')}`, ['Approved', `Awaiting the change${cvApproval(q.approval)?.system ? ` in ${cvApproval(q.approval).system}` : ''}`, 'Result checked against the data'], { icon: 'CircleCheck' }),
         'Approved. Moved to Being handled. The change itself isn’t made until someone makes it.',
       ));
     }
@@ -300,7 +300,7 @@ function CvToday() {
     primary: () => { close(); perform(q); },
     snooze: () => { close(); decide('snooze', q, { summary: `${q.title}: snoozed` }, 'Not now: it comes back tomorrow.', rcpt(`Snoozed: ${q.title}`, ['Snoozed', 'Back tomorrow'], { icon: 'CalendarClock', undo: q.id })); },
     decline: (r) => { close(); decline(q, r); },
-    assign: (to) => { close(); decide('assign', q, { to, summary: `${q.title}: assigned` }, `Assigned to ${assigneeLabel(to, d.profile)}. Moved to Being handled until it’s done.`, rcpt(`Assigned to ${assigneeLabel(to, d.profile)}: ${q.title}`, ['Assigned', 'Being handled', 'Done when it’s marked done'], { icon: 'UserCheck', undo: q.id })); },
+    assign: (to) => { close(); decide('assign', q, { to, summary: `${q.title}: assigned` }, `Assigned to ${assigneeLabel(to, d.profile)}. Moved to Being handled until it’s done.`, rcpt(`Assigned to ${assigneeLabel(to, d.profile)}: ${q.title}`, ['Assigned', 'Awaiting their update', 'Done once they mark it'], { icon: 'UserCheck', undo: q.id })); },
     done: () => { close(); decide('done', q, { summary: `${q.title}: done` }, 'Marked done, with your name and the time.', rcpt(`Done: ${q.title}`, ['Done', 'Recorded with your name and the time'], { undo: q.id })); },
     open: q.go === 'finding' ? () => { close(); cv.go('finding', { id: q.goId }); } : q.go && !q.input ? () => { close(); cv.go(q.go); } : undefined,
   });
@@ -312,7 +312,11 @@ function CvToday() {
   const reviewing = review ? byId(review) : null;
   const leadTrust = lead ? cardTrust(lead, d, now) : null;
   const leadFrame = lead ? frameFor(lead, d, sv, leadTrust) : null;
-  const explain = brief.line;
+  // One supporting sentence: the decision that needs attention, in plain words.
+  const others = ready.length - 1;
+  const explain = lead
+    ? `${areaOf(lead) === 'labor' ? 'One staffing decision needs' : 'One decision needs'} attention${others > 0 ? `; ${others} more ${others === 1 ? 'is' : 'are'} below` : ''}.`
+    : brief.line;
   const leadW = lead ? worthOf(lead) : null;
   const handled = handledOf({ cards, view, tasks: roomTasks, windows, d });
   const soonItems = comingSoon({ d, cards, view, now, todayIso: own ? today : CV_NOW.iso,
@@ -328,7 +332,7 @@ function CvToday() {
       {offline && <p className={s.offline} role="status"><Icon name="TriangleAlert" size={13} />Can’t reach the server. Showing the last saved state.</p>}
 
       <Status brief={brief} explain={explain} period={period} now={now} sum={sum} onFeeds={() => setFeedsOpen(true)} onCustomize={() => setCustomizing(true)}
-        trial={<ThemePicker theme={theme} onPick={pickTheme} onCompare={() => setComparing(true)} />} />
+        trial={tools ? <ThemePicker theme={theme} onPick={pickTheme} onCompare={() => setComparing(true)} /> : null} />
       <Tiles ids={layout.metrics} tiles={tiles} onOpen={setTileOpen} />
 
       {receipt && <Receipt key={receipt.at} r={receipt} onClose={() => setReceipt(null)} onUndo={receipt.undo ? () => undo(receipt.undo) : undefined} />}
@@ -338,9 +342,12 @@ function CvToday() {
           label={leadTrust?.delayed && lead.approval ? 'Verify staffing first' : actLabel(lead, null)}
           due={dueFor(lead, leadTrust)} onPrimary={primaryOf(lead)} onDetails={() => setReview(lead.id)} />
       ) : (
-        <div className={s.allClear}>
+        <div className={s.allClear} role="status">
           <Icon name="CircleCheck" size={22} className={s.allClearIcon} />
-          <span>{waiting.length ? `Nothing to act on yet. ${waiting.length} waiting on data.` : 'Nothing needs you right now.'}</span>
+          <span className={s.allClearText}>
+            <b>{waiting.length ? 'Nothing to act on yet.' : 'You’re caught up.'}</b>
+            <span>{waiting.length ? `${waiting.length} ${waiting.length === 1 ? 'decision is' : 'decisions are'} waiting on data.` : 'Nothing needs your decision right now.'}</span>
+          </span>
         </div>
       )}
 
@@ -351,7 +358,7 @@ function CvToday() {
           </ul>
           {more.length > 0 && (
             <button type="button" className={s.moreBtn} aria-expanded={showMore} onClick={() => setShowMore(!showMore)}>
-              {showMore ? 'Show less' : `${more.length} more`}<Icon name={showMore ? 'ChevronUp' : 'ChevronDown'} size={14} />
+              {showMore ? 'Show less' : `View remaining (${more.length})`}<Icon name={showMore ? 'ChevronUp' : 'ChevronDown'} size={14} />
             </button>
           )}
         </section>
