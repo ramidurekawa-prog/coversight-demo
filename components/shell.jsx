@@ -398,8 +398,9 @@ function AppShell({ children }) {
       openDeriv: (id) => setDeriv(id),
       approve: (id, onOk) => setApproval({ id, onOk }),
       toast: showToast,
+      tools,
     }),
-    [go, loc, eng.room, eng.version, pickRoom, role, showToast],
+    [go, loc, eng.room, eng.version, pickRoom, role, showToast, tools],
   );
 
   const chooseRole = (r) => {

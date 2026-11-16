@@ -10,7 +10,7 @@ import { z } from 'zod';
 
 import { deriveRoom } from '../../lib/data/model.js';
 import { dataEnd } from '../../lib/data/readers.js';
-import { applyOp, cardState, DECLINE, DEFAULT_TZ, localDay, OPS, queueChanges, queueHistory, queueSummary, queueView, todayCards } from '../../lib/data/page/today.js';
+import { applyOp, ASSIGNEES, cardState, DECLINE, DEFAULT_TZ, localDay, OPS, queueChanges, queueHistory, queueSummary, queueView, todayCards } from '../../lib/data/page/today.js';
 import { saveAction } from '../actions';
 import type { Db } from '../db/client';
 import { actions, snapshots, tasks, testWindows, users } from '../db/schema';
@@ -19,7 +19,7 @@ import { InputError } from '../org';
 import { AuthError, type Viewer } from '../session';
 
 type V = Pick<Viewer, 'orgId' | 'userId' | 'role' | 'rooms'>;
-type QueueValue = { done?: Record<string, string>; refused?: Record<string, string>; snoozed?: Record<string, string>; meta?: Record<string, unknown> };
+type QueueValue = { done?: Record<string, string>; refused?: Record<string, string>; snoozed?: Record<string, string>; assigned?: Record<string, { to: string; at: string }>; meta?: Record<string, unknown> };
 type Card = { id: string; title: string; [k: string]: unknown };
 
 const roomId = z.string().min(1).max(60);
@@ -28,9 +28,10 @@ const body = z.object({
   op: z.enum(OPS as [string, ...string[]]),
   cardId: z.string().min(1).max(120).regex(/^[\w:.\- ]+$/).optional(),
   reason: z.enum(Object.keys(DECLINE) as [string, ...string[]]).optional(),
+  to: z.enum(Object.keys(ASSIGNEES) as [string, ...string[]]).optional(),
 });
 
-const OP_SUMMARY: Record<string, string> = { done: 'done', refuse: 'not for us', snooze: 'snoozed until tomorrow', undo: 'back on the queue', reset: 'today’s cards shown again' };
+const OP_SUMMARY: Record<string, string> = { assign: 'assigned', done: 'done', refuse: 'not for us', snooze: 'snoozed until tomorrow', undo: 'back on the queue', reset: 'today’s cards shown again' };
 
 /** Everything the queue rules need for one room, read on the server. */
 async function context(db: Db, v: V, room: string, now: Date) {
@@ -116,7 +117,7 @@ export async function loadToday(db: Db, v: V, room: unknown, now = new Date()) {
 export async function actOnToday(db: Db, v: V, input: unknown, now = new Date()) {
   const p = body.safeParse(input);
   if (!p.success) throw new InputError(`invalid request: ${p.error.issues[0]?.path.join('.')} ${p.error.issues[0]?.message}`);
-  const { roomId: room, op, cardId, reason } = p.data;
+  const { roomId: room, op, cardId, reason, to } = p.data;
   if (op !== 'reset' && !cardId) throw new InputError('cardId is required');
   await db.transaction(async (tx) => {
     const t = tx as unknown as Db;
@@ -124,12 +125,13 @@ export async function actOnToday(db: Db, v: V, input: unknown, now = new Date())
     const ctx = await context(t, v, room, now);
     let next;
     try {
-      next = applyOp(ctx.stored, { op, cardId, reason }, { cards: ctx.cards, today: ctx.today, own: ctx.own, now: now.getTime(), tz: ctx.tz });
+      next = applyOp(ctx.stored, { op, cardId, reason, to }, { cards: ctx.cards, today: ctx.today, own: ctx.own, now: now.getTime(), tz: ctx.tz });
     } catch (err) {
       throw new InputError((err as Error).message);
     }
     const title = ctx.cards.find((c) => c.id === cardId)?.title ?? cardId ?? '';
-    const why = op === 'refuse' && reason ? ` (${DECLINE[reason as keyof typeof DECLINE].label.toLowerCase()})` : '';
+    const why = op === 'refuse' && reason ? ` (${DECLINE[reason as keyof typeof DECLINE].label.toLowerCase()})`
+      : op === 'assign' && to ? ` to the ${ASSIGNEES[to as keyof typeof ASSIGNEES].toLowerCase()}` : '';
     await saveAction(t, v, { roomId: room, key: 'queue', value: next, summary: op === 'reset' ? `Today: ${OP_SUMMARY.reset}` : `${title}: ${OP_SUMMARY[op]}${why}` });
   });
   return loadToday(db, v, room, now);
