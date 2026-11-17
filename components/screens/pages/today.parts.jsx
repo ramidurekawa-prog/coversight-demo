@@ -208,7 +208,7 @@ export function tileData({ d, dense, sv, flags, now, live = null }) {
       // Live pace on a room's own data: from Toast (or a manager's count), against its usual nights.
       label: 'Dinner pace', when: sv.source === 'manual' ? 'Tonight, your count' : 'Tonight, so far', live: true,
       fig: `${sv.pace >= 0 ? '+' : '−'}${Math.abs(sv.pace)}%`, cmp: `${sv.so} covers vs ${sv.usual} usual by ${clockOf(sv.asOf) || now?.time || 'now'}`, delta: sv.pace / 100,
-      viz: sv.actual ? <PaceCurve comp={sv.comp} actual={sv.actual} times={serviceTimes(sv.comp.length)} /> : null, claim: 'obs', warn: feedWarn,
+      viz: sv.actual ? <PaceCurve comp={sv.comp} actual={sv.actual} times={serviceTimes(sv.comp.length)} /> : null, claim: sv.source === 'toast' ? 'obs' : null, warn: feedWarn,
       facts: [['Covers so far', String(sv.so)], [`A usual ${sv.weekday}`, `${sv.usual} by the same time (average of the last ${sv.nights} ${sv.weekday}s)`], ['Pace so far', `${Math.abs(sv.pace)}% ${sv.pace >= 0 ? 'over' : 'under'} a usual ${sv.weekday}`],
         ...(sv.servers != null ? [['Servers on', `${sv.servers} (${sv.serversFrom === 'manual' ? 'entered by hand' : 'from 7shifts'})`]] : [['Servers on', 'Not known: connect 7shifts or enter it below']]), ['Source', liveSrc]],
       entry, go: 'service',
@@ -218,8 +218,8 @@ export function tileData({ d, dense, sv, flags, now, live = null }) {
         // In service with no pace to show: say why, and let the floor enter tonight's count.
         label: 'Tonight', when: 'Dinner', live: lt.so != null, fig: lt.so != null ? `${lt.so}` : null,
         cmp: lt.so != null ? `covers so far · no usual ${lt.weekday} to compare yet` : lt.feeds.toast === 'off' ? 'No live feed · enter covers' : 'Toast not updating · enter covers',
-        warn: feedWarn, claim: lt.so != null ? 'obs' : null,
-        facts: [['Covers so far', lt.so != null ? String(lt.so) : 'Not known yet'], ['Pace', lt.comp ? 'Shows once covers come in' : `Needs at least 2 past ${lt.weekday}s of Toast orders (${lt.nights} so far)`], ['Source', liveSrc && lt.so != null ? liveSrc : lt.feeds.toast === 'off' ? 'Toast isn’t connected. Connect it, or enter tonight’s covers below.' : `Toast hasn’t answered${lt.error ? `: ${lt.error}` : ''}. Enter tonight’s covers below meanwhile.`]],
+        warn: feedWarn, claim: lt.so != null && lt.source === 'toast' ? 'obs' : null,
+        facts: [['Covers so far', lt.so != null ? String(lt.so) : 'Not known yet'], ...(lt.servers != null ? [['Servers on', `${lt.servers} (${lt.serversFrom === 'manual' ? 'entered by hand' : 'from 7shifts'})`]] : []), ['Pace', lt.comp ? 'Shows once covers come in' : `Needs at least 2 past ${lt.weekday}s of Toast orders (${lt.nights} so far)`], ['Source', liveSrc && lt.so != null ? liveSrc : lt.feeds.toast === 'off' ? 'Toast isn’t connected. Connect it, or enter tonight’s covers below.' : `Toast hasn’t answered${lt.error ? `: ${lt.error}` : ''}. Enter tonight’s covers below meanwhile.`]],
         entry, go: lt.feeds.toast === 'off' ? 'connect' : 'service',
       }
       : null;

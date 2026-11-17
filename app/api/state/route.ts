@@ -15,7 +15,7 @@ export async function GET(req: Request) {
     const loaded = await loadBase(db, v.orgId, v.rooms);
     if (!loaded) return Response.json({ error: 'Organization not found.' }, { status: 404 });
     const [{ inputs, log }, actions] = await Promise.all([loadInputs(db, v.orgId), loadActions(db, v.orgId, v.rooms, v.userId)]);
-    return Response.json({ ...loaded, inputs, log, actions, viewer: { role: v.role, anonymous: v.anonymous, rooms: v.rooms } });
+    return Response.json({ ...loaded, inputs, log, actions, viewer: { userId: v.userId, role: v.role, anonymous: v.anonymous, rooms: v.rooms } });
   } catch (err) {
     return errorResponse(err);
   }
