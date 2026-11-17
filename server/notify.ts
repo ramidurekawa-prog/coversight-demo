@@ -10,9 +10,9 @@ import { z } from 'zod';
 import type { Db } from './db/client';
 import { actions, auditLog, memberships, notificationReads, notifications, outbox, users } from './db/schema';
 import { InputError } from './org';
-import { AuthError, type Viewer } from './session';
+import { AuthError, roomLevel, groupWide, type Viewer } from './session';
 
-export type Note = { orgId: string; roomId?: string | null; kind: string; severity?: 'info' | 'good' | 'warn'; title: string; body?: string; link?: string; dedupe?: string };
+export type Note = { orgId: string; roomId?: string | null; kind: string; severity?: 'info' | 'good' | 'warn'; title: string; body?: string; link?: string; dedupe?: string; userId?: string | null };
 
 type Alerts = { push: boolean; sms: boolean; email: boolean; onePerService: boolean; quiet: boolean };
 const DEFAULT_ALERTS: Alerts = { push: true, sms: true, email: false, onePerService: true, quiet: true };
@@ -34,7 +34,7 @@ async function alertsFor(db: Db, orgId: string, roomId: string | null): Promise<
 async function recipients(db: Db, orgId: string, roomId: string | null) {
   const rows = await db.select({ userId: memberships.userId, role: memberships.role, rooms: memberships.rooms, email: users.email, anonymous: users.isAnonymous })
     .from(memberships).innerJoin(users, eq(users.id, memberships.userId)).where(eq(memberships.orgId, orgId));
-  return rows.filter((r) => !r.anonymous && (r.role !== 'gm' || !roomId || !r.rooms || r.rooms.includes(roomId)));
+  return rows.filter((r) => !r.anonymous && (groupWide(r.role) || !roomId || !r.rooms || r.rooms.includes(roomId)));
 }
 
 /** Hours 10 pm – 7 am Pacific are quiet when the room asks for it. */
@@ -45,13 +45,14 @@ export function isQuiet(now = new Date()) {
 
 export async function notify(db: Db, n: Note) {
   const [row] = await db.insert(notifications).values({
-    orgId: n.orgId, roomId: n.roomId ?? null, kind: n.kind, severity: n.severity ?? 'info', title: n.title.slice(0, 200), body: (n.body ?? '').slice(0, 2000), link: n.link ?? null, dedupe: n.dedupe ?? null,
+    orgId: n.orgId, roomId: n.roomId ?? null, userId: n.userId ?? null, kind: n.kind, severity: n.severity ?? 'info', title: n.title.slice(0, 200), body: (n.body ?? '').slice(0, 2000), link: n.link ?? null, dedupe: n.dedupe ?? null,
   }).onConflictDoNothing().returning();
   if (!row) return null; // already told
   const al = await alertsFor(db, n.orgId, n.roomId ?? null);
   if (al.email) {
-    for (const r of await recipients(db, n.orgId, n.roomId ?? null)) {
-      if (al.onePerService && n.roomId) {
+    // A note for one person (a card handed to them) emails only that person.
+    for (const r of (await recipients(db, n.orgId, n.roomId ?? null)).filter((r) => !n.userId || r.userId === n.userId)) {
+      if (al.onePerService && n.roomId && !n.userId) {
         const [recent] = await db.select({ id: outbox.id }).from(outbox).innerJoin(notifications, eq(notifications.id, outbox.notificationId))
           .where(and(eq(outbox.toUserId, r.userId), eq(notifications.roomId, n.roomId), gt(outbox.createdAt, new Date(Date.now() - 4 * 36e5)))).limit(1);
         if (recent) continue; // it's in the bell; no second email within 4 hours
@@ -96,7 +97,9 @@ export async function deliverOutbox(db: Db, { now = new Date(), fetchImpl = fetc
 
 /** A viewer's notifications for the bell: newest first, with read state. */
 export async function listNotifications(db: Db, v: Pick<Viewer, 'orgId' | 'userId' | 'rooms'>, limit = 30) {
-  const scope = v.rooms ? or(isNull(notifications.roomId), inArray(notifications.roomId, v.rooms)) : undefined;
+  // Room notes for the rooms they see, and person notes only for that person.
+  const mine = or(isNull(notifications.userId), eq(notifications.userId, v.userId));
+  const scope = v.rooms ? and(mine, or(isNull(notifications.roomId), inArray(notifications.roomId, v.rooms))) : mine;
   const rows = await db.select().from(notifications).where(scope ? and(eq(notifications.orgId, v.orgId), scope) : eq(notifications.orgId, v.orgId)).orderBy(desc(notifications.createdAt)).limit(limit);
   const reads = rows.length ? await db.select({ id: notificationReads.notificationId }).from(notificationReads).where(and(eq(notificationReads.userId, v.userId), inArray(notificationReads.notificationId, rows.map((r) => r.id)))) : [];
   const read = new Set(reads.map((r) => r.id));
@@ -117,7 +120,7 @@ export async function markRead(db: Db, v: Pick<Viewer, 'orgId' | 'userId' | 'roo
 
 /** Owner/admin: what's been sent, drafted or held. */
 export async function listOutbox(db: Db, v: Pick<Viewer, 'orgId' | 'role'>) {
-  if (v.role === 'gm') throw new AuthError(403, 'Only an owner or admin can see the outbox.');
+  if (roomLevel(v.role)) throw new AuthError(403, 'Only an owner or admin can see the outbox.');
   return db.select({ id: outbox.id, channel: outbox.channel, kind: outbox.kind, toAddress: outbox.toAddress, subject: outbox.subject, body: outbox.body, status: outbox.status, error: outbox.error, createdAt: outbox.createdAt, sentAt: outbox.sentAt })
     .from(outbox).where(eq(outbox.orgId, v.orgId)).orderBy(desc(outbox.createdAt)).limit(100);
 }

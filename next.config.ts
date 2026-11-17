@@ -9,6 +9,11 @@ const nextConfig: NextConfig = {
   skipTrailingSlashRedirect: true,
   images: { unoptimized: true },
   reactStrictMode: true,
+  // Vercel's preview toolbar (the floating round button on preview links)
+  // isn't part of the product; this header keeps it off every page.
+  async headers() {
+    return [{ source: '/:path*', headers: [{ key: 'x-vercel-skip-toolbar', value: '1' }] }];
+  },
 };
 
 export default nextConfig;

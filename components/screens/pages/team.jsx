@@ -9,7 +9,8 @@ import { useEngine } from '../../engine';
 /* Team & groups: which groups you belong to (and switching), starting your own
  * group, the people in this one, invite links, roles and rooms. */
 
-const ROLE = { owner: 'Owner', admin: 'Admin', gm: 'GM' };
+const roomRole = (r) => r === 'gm' || r === 'floor';
+const ROLE = { owner: 'Owner', admin: 'Admin', gm: 'GM', floor: 'Floor manager' };
 const inputStyle = { height: 32, padding: '0 8px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-strong)', background: 'var(--surface)', color: 'var(--fg-1)', font: 'inherit', fontSize: 'var(--text-sm)' };
 
 async function call(path, body) {
@@ -99,11 +100,11 @@ function People() {
   const [edit, setEdit] = React.useState(null);
   const load = React.useCallback(() => call('/api/team').then(setTeam).catch((e) => setErr(e.message)), []);
   React.useEffect(() => { load(); }, [load]);
-  const can = team && team.role !== 'gm';
+  const can = team && !roomRole(team.role);
   const run = (p) => p.then((t) => { if (t.people) setTeam((x) => ({ ...x, ...t })); setErr(null); return t; }).catch((e) => { setErr(e.message); return null; });
   const invite = async (e) => {
     e.preventDefault();
-    const r = await run(call('/api/team/invites', { role: inv.role, rooms: inv.role === 'gm' ? inv.rooms : null, email: inv.email.trim() || null }));
+    const r = await run(call('/api/team/invites', { role: inv.role, rooms: roomRole(inv.role) ? inv.rooms : null, email: inv.email.trim() || null }));
     if (r?.link) { setLink(new URL(r.link, window.location.origin).toString()); setInv({ role: 'gm', rooms: [], email: '' }); }
   };
   const roomName = (id) => CV_LOCS.find((l) => l.id === id)?.short || id;
@@ -117,7 +118,7 @@ function People() {
             <div className="cv-row nowrap" style={{ gap: 10 }}>
               <span className="cv-col" style={{ gap: 2, flex: 1 }}>
                 <span className="cv-small" style={{ fontWeight: 600 }}>{p.guest ? 'Sample guest' : p.name}{p.you ? ' (you)' : ''}</span>
-                <span className="cv-xs cv-faint">{p.email || '—'}{p.role === 'gm' && p.rooms ? ` · ${p.rooms.map(roomName).join(', ')}` : ''}</span>
+                <span className="cv-xs cv-faint">{p.email || '—'}{roomRole(p.role) && p.rooms ? ` · ${p.rooms.map(roomName).join(', ')}` : ''}</span>
               </span>
               <Pill>{ROLE[p.role]}</Pill>
               {can && !p.you && <Button size="sm" variant="ghost" icon="Pencil" onClick={() => setEdit(edit?.userId === p.userId ? null : { userId: p.userId, role: p.role, rooms: p.rooms || [] })}>Change</Button>}
@@ -128,8 +129,8 @@ function People() {
                 <select style={inputStyle} value={edit.role} onChange={(e) => setEdit({ ...edit, role: e.target.value })} aria-label="Role">
                   {Object.entries(ROLE).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
                 </select>
-                {edit.role === 'gm' && <RoomPicks value={edit.rooms} onChange={(rooms) => setEdit({ ...edit, rooms })} />}
-                <Button size="sm" icon="Check" onClick={async () => { if (await run(call(`/api/team/members/${p.userId}`, { role: edit.role, rooms: edit.role === 'gm' ? edit.rooms : null }))) { setEdit(null); cv.toast('Role saved.'); } }}>Save</Button>
+                {roomRole(edit.role) && <RoomPicks value={edit.rooms} onChange={(rooms) => setEdit({ ...edit, rooms })} />}
+                <Button size="sm" icon="Check" onClick={async () => { if (await run(call(`/api/team/members/${p.userId}`, { role: edit.role, rooms: roomRole(edit.role) ? edit.rooms : null }))) { setEdit(null); cv.toast('Role saved.'); } }}>Save</Button>
                 <Button size="sm" variant="ghost" icon="Trash2" onClick={async () => { if (await run(call(`/api/team/members/${p.userId}/remove`, {}))) { setEdit(null); cv.toast('Removed from the group. Their login stays.'); } }}>Remove from group</Button>
               </div>
             )}
@@ -153,12 +154,12 @@ function People() {
             <span className="cv-small" style={{ fontWeight: 600 }}>Invite someone</span>
             <span className="cv-row" style={{ gap: 8 }}>
               <select style={inputStyle} value={inv.role} onChange={(e) => setInv({ ...inv, role: e.target.value })} aria-label="Invite role">
-                <option value="gm">GM (their rooms only)</option><option value="admin">Admin (every room)</option>{team.role === 'owner' && <option value="owner">Owner</option>}
+                <option value="gm">GM (their rooms only)</option><option value="floor">Floor manager (their rooms)</option><option value="admin">Admin (every room)</option>{team.role === 'owner' && <option value="owner">Owner</option>}
               </select>
               <input style={{ ...inputStyle, flex: 1, minWidth: 180 }} type="email" placeholder="Email (optional: we email the link)" value={inv.email} onChange={(e) => setInv({ ...inv, email: e.target.value })} aria-label="Invite email" />
             </span>
-            {inv.role === 'gm' && <RoomPicks value={inv.rooms} onChange={(rooms) => setInv({ ...inv, rooms })} />}
-            <span><Button size="sm" icon="UserPlus" type="submit" disabled={inv.role === 'gm' && !inv.rooms.length}>Create invite link</Button></span>
+            {roomRole(inv.role) && <RoomPicks value={inv.rooms} onChange={(rooms) => setInv({ ...inv, rooms })} />}
+            <span><Button size="sm" icon="UserPlus" type="submit" disabled={roomRole(inv.role) && !inv.rooms.length}>Create invite link</Button></span>
           </form>
           {link && (
             <Callout tone="good" icon="Link">

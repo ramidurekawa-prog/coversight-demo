@@ -100,7 +100,7 @@ function AccountantReal() {
 
 function CvAccountant() {
   const eng = useEngine();
-  if (eng.mode === 'server' && eng.org && !eng.org.sample && eng.viewer?.role !== 'gm') {
+  if (eng.mode === 'server' && eng.org && !eng.org.sample && !['gm', 'floor'].includes(eng.viewer?.role)) {
     return (
       <div className="cv-page wide">
         <PageHead over={`For the group controller · ${eng.org.name}`} q="The period package"

@@ -112,7 +112,7 @@ function CvConnectReal() {
               <dt>Last checked</dt><dd>{new Date(st.checkedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</dd>
             </dl>
             {st.lastError && <Callout tone="bad" icon="CircleX">{st.lastError}</Callout>}
-            <SyncPanel st={st} rooms={rooms} canRun={eng.viewer?.role !== 'gm'} busy={busy} onRun={() => act('sync', async () => {
+            <SyncPanel st={st} rooms={rooms} canRun={!['gm', 'floor'].includes(eng.viewer?.role)} busy={busy} onRun={() => act('sync', async () => {
               const j = await jpost('/api/jobs', { job: 'sync' });
               const t = await fetch('/api/toast', { credentials: 'same-origin' }).then((r) => r.json());
               setSt(t.connection);
@@ -120,7 +120,7 @@ function CvConnectReal() {
               cv.toast(j.result?.ok ? 'Synced. Every figure now reads the newest Toast data.' : `Sync failed: ${j.result?.detail?.error ?? 'see the error above'}`);
             })} />
             <div className="cv-row" style={{ gap: 8 }}>
-              <Button size="sm" variant="secondary" icon="RefreshCw" disabled={!!busy || eng.viewer?.role === 'gm'} onClick={() => act('recheck', async () => { const j = await jpost('/api/toast/recheck'); setSt(j.connection); cv.toast(j.connection.status === 'connected' ? 'Toast accepted the credentials.' : 'Toast refused them. See the error.'); })}>{busy === 'recheck' ? 'Checking…' : 'Check again'}</Button>
+              <Button size="sm" variant="secondary" icon="RefreshCw" disabled={!!busy || ['gm', 'floor'].includes(eng.viewer?.role)} onClick={() => act('recheck', async () => { const j = await jpost('/api/toast/recheck'); setSt(j.connection); cv.toast(j.connection.status === 'connected' ? 'Toast accepted the credentials.' : 'Toast refused them. See the error.'); })}>{busy === 'recheck' ? 'Checking…' : 'Check again'}</Button>
               {isOwner && <Button size="sm" variant="ghost" icon="CircleMinus" disabled={!!busy} onClick={() => act('off', async () => { await jpost('/api/toast/disconnect'); setSt(null); cv.toast('Disconnected. The stored credentials were deleted.'); })}>Disconnect</Button>}
             </div>
           </>
@@ -152,7 +152,82 @@ function CvConnectReal() {
           </>
         )}
       </section>
+      <StaffConnect rooms={rooms} isOwner={isOwner} canStore={canStore} />
     </div>
+  );
+}
+
+/* ================================================================ Connect 7shifts */
+
+/**
+ * 7shifts: who's scheduled, so Today can say whether staffing fits tonight's
+ * covers. The owner pastes a read-only access token; it's checked against
+ * 7shifts and stored sealed. Until it's connected (or while it's down) the
+ * floor enters "servers on" by hand on Today.
+ */
+function StaffConnect({ rooms, isOwner, canStore }) {
+  const cv = useCv();
+  const [st, setSt] = React.useState(undefined);
+  const [token, setToken] = React.useState('');
+  const [check, setCheck] = React.useState(null);
+  const [map, setMap] = React.useState({}); // roomId -> locationId
+  const [roles, setRoles] = React.useState([]);
+  const [busy, setBusy] = React.useState(null);
+  const [err, setErr] = React.useState(null);
+  React.useEffect(() => { fetch('/api/staff', { credentials: 'same-origin' }).then((r) => r.json()).then((j) => setSt(j.connection ?? null)).catch(() => setSt(null)); }, []);
+  const act = async (name, fn) => { setBusy(name); setErr(null); try { await fn(); } catch (e) { setErr(e.message); } finally { setBusy(null); } };
+  const locations = Object.entries(map).filter(([, l]) => l).map(([roomId, locationId]) => ({ roomId, locationId }));
+  return (
+    <section className="cv-card" aria-labelledby="staff-api">
+      <div className="cv-card-head">
+        <div className="cv-col" style={{ gap: 2 }}><span className="cv-h4" id="staff-api">7shifts schedule</span><span className="cv-xs cv-faint">Who&apos;s on tonight, so Today can check staffing against covers. Read-only, checked against 7shifts and stored sealed. Without it, managers enter servers on by hand on Today.</span></div>
+        {st ? <Pill tone={st.status === 'connected' ? 'good' : 'bad'} icon={st.status === 'connected' ? 'CircleCheck' : 'CircleX'}>{st.status === 'connected' ? 'Connected' : 'Failing'}</Pill> : <Pill icon="CircleMinus">Not connected</Pill>}
+      </div>
+      {err && <Callout tone="bad" icon="CircleX">{err}</Callout>}
+      {st ? (
+        <>
+          <dl className="cv-kv">
+            <dt>Locations</dt><dd style={{ fontFamily: 'var(--font-sans)' }}>{st.locations.map((l) => `${l.name} → ${rooms.find((x) => x.id === l.roomId)?.short ?? l.roomId}`).join(' · ')}</dd>
+            <dt>Counts as servers</dt><dd style={{ fontFamily: 'var(--font-sans)' }}>{st.serverRoles.length ? `${st.serverRoles.length} role${st.serverRoles.length === 1 ? '' : 's'}` : 'Every role'}</dd>
+            <dt>Last checked</dt><dd>{new Date(st.checkedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</dd>
+          </dl>
+          {st.lastError && <Callout tone="bad" icon="CircleX">{st.lastError} Managers can enter servers on by hand on Today meanwhile.</Callout>}
+          {isOwner && <span><Button size="sm" variant="ghost" icon="CircleMinus" disabled={!!busy} onClick={() => act('off', async () => { await jpost('/api/staff', { action: 'disconnect' }); setSt(null); cv.toast('Disconnected. The stored token was deleted.'); })}>Disconnect</Button></span>}
+        </>
+      ) : st === null && (isOwner ? (
+        <div className="cv-col" style={{ gap: 8 }}>
+          <ol className="cv-col" style={{ gap: 4, margin: 0, paddingLeft: 18 }}>
+            <li className="cv-small">In 7shifts, open Settings → Developer tools → Access tokens and create a token (read access is enough).</li>
+            <li className="cv-small">Paste it here and press Check. It&apos;s stored sealed and never shown again.</li>
+          </ol>
+          <label className="cv-col" style={{ gap: 4 }}><span className="cv-small">Access token</span><input className="input" type="password" value={token} onChange={(e) => { setToken(e.target.value); setCheck(null); }} autoComplete="new-password" /></label>
+          {check && !check.ok && <Callout tone="bad" icon="CircleX">{check.error}</Callout>}
+          {check?.ok && (
+            <>
+              <Callout tone="good" icon="CircleCheck">7shifts accepted the token. Match each location to a room.</Callout>
+              {rooms.map((r) => (
+                <label key={r.id} className="cv-row nowrap" style={{ gap: 6 }}><span className="cv-small" style={{ width: 120 }}>{r.short}</span>
+                  <select className="input" style={{ flex: 1 }} value={map[r.id] ?? ''} onChange={(e) => setMap((m) => ({ ...m, [r.id]: e.target.value }))}>
+                    <option value="">Not in 7shifts</option>{check.locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                  </select>
+                </label>
+              ))}
+              {check.roles.length > 0 && (
+                <div className="cv-col" style={{ gap: 4 }}><span className="cv-small">Which roles count as servers on the floor? (none ticked = every role)</span>
+                  <span className="cv-row" style={{ gap: 10, flexWrap: 'wrap' }}>{check.roles.map((ro) => (
+                    <label key={ro.id} className="cv-small cv-row nowrap" style={{ gap: 4 }}><input type="checkbox" checked={roles.includes(ro.id)} onChange={(e) => setRoles((x) => (e.target.checked ? [...x, ro.id] : x.filter((y) => y !== ro.id)))} />{ro.name}</label>
+                  ))}</span>
+                </div>
+              )}
+            </>
+          )}
+          <div className="cv-row" style={{ gap: 8 }}>
+            <Button variant="secondary" disabled={!!busy || token.trim().length < 10} onClick={() => act('check', async () => setCheck(await jpost('/api/staff', { action: 'check', token })))}>{busy === 'check' ? 'Checking with 7shifts…' : 'Check'}</Button>
+            <Button disabled={!!busy || !check?.ok || !locations.length || !canStore} onClick={() => act('connect', async () => { const j = await jpost('/api/staff', { action: 'connect', token, companyId: check.companyId, locations, serverRoles: roles }); if (j.connected) { setSt(j.status); setToken(''); cv.toast('Stored, sealed. Today now reads who is scheduled.'); } else setCheck(j.check); })}>{busy === 'connect' ? 'Storing…' : 'Store the token'}</Button>
+          </div>
+        </div>
+      ) : <Callout icon="Lock">Only an owner can connect 7shifts.</Callout>)}
+    </section>
   );
 }
 

@@ -117,6 +117,7 @@ import {
   MessageCircle,
   MessageSquareWarning,
   Moon,
+  Monitor,
   PauseCircle,
   PenLine,
   Pencil,
@@ -141,6 +142,7 @@ import {
   Sprout,
   Store,
   Sun,
+  SunMoon,
   Timer,
   TrendingDown,
   TrendingUp,
@@ -154,6 +156,13 @@ import {
   Verified,
   Wrench,
   Zap,
+  X,
+  UserCheck,
+  ArrowUpRight,
+  Palette,
+  Type,
+  ArrowDownRight,
+  ChevronRight,
 } from 'lucide-react';
 
 const ICONS = {
@@ -269,6 +278,7 @@ const ICONS = {
   MessageCircle,
   MessageSquareWarning,
   Moon,
+  Monitor,
   PauseCircle,
   PenLine,
   Pencil,
@@ -293,6 +303,7 @@ const ICONS = {
   Sprout,
   Store,
   Sun,
+  SunMoon,
   Timer,
   TrendingDown,
   TrendingUp,
@@ -306,6 +317,13 @@ const ICONS = {
   Verified,
   Wrench,
   Zap,
+  X,
+  UserCheck,
+  ArrowUpRight,
+  Palette,
+  Type,
+  ArrowDownRight,
+  ChevronRight,
 };
 
 /** Every icon name the screens use. A unit test keeps this list complete. */

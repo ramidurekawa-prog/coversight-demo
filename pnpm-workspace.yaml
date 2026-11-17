@@ -6,18 +6,18 @@ allowBuilds:
   esbuild: true
   sharp: true
 
-# Conscious exception: next 16.0.0–16.4.0 carry published advisories
-# (GHSA-673q-mjm6-r5xr, GHSA-p3m5-59mp-jv5r and one more); the patch line
-# 16.4.1+ was under 14 days old when this was set. Drop these once 16.4.2 ages past
-# the gate.
+
+# Conscious exception: next <=16.4.4 carries a published advisory, and next build
+# refuses to finish on an affected version. 16.4.5 (the fixed patch, Nov 3) is a few
+# hours short of the 14-day gate on 2026-11-17. Drop these once it ages past it.
 minimumReleaseAgeExclude:
-  - next@16.4.2
-  - '@next/env@16.4.2'
-  - '@next/swc-darwin-arm64@16.4.2'
-  - '@next/swc-darwin-x64@16.4.2'
-  - '@next/swc-linux-arm64-gnu@16.4.2'
-  - '@next/swc-linux-arm64-musl@16.4.2'
-  - '@next/swc-linux-x64-gnu@16.4.2'
-  - '@next/swc-linux-x64-musl@16.4.2'
-  - '@next/swc-win32-arm64-msvc@16.4.2'
-  - '@next/swc-win32-x64-msvc@16.4.2'
+  - next@16.4.5
+  - '@next/env@16.4.5'
+  - '@next/swc-darwin-arm64@16.4.5'
+  - '@next/swc-darwin-x64@16.4.5'
+  - '@next/swc-linux-arm64-gnu@16.4.5'
+  - '@next/swc-linux-arm64-musl@16.4.5'
+  - '@next/swc-linux-x64-gnu@16.4.5'
+  - '@next/swc-linux-x64-musl@16.4.5'
+  - '@next/swc-win32-arm64-msvc@16.4.5'
+  - '@next/swc-win32-x64-msvc@16.4.5'
