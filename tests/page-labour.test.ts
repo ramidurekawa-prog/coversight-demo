@@ -73,8 +73,8 @@ describe('Labor page', () => {
       const list = moves({ services: svcs, candidates: d.candidates, draft: d.room.labour.draft, wage });
       expect(new Set(list.map((m) => m.id)).size).toBe(list.length);
       expect(list[0].kind).toBe('cover');
-      for (const m of list.filter((x) => x.kind === 'cover')) { expect(m.title).toMatch(/^Add /); expect(m.cost).toBe(Math.round(m.hours * wage)); expect(m.stage).toBe('opportunity'); }
-      for (const m of list.filter((x) => x.kind === 'spare')) { expect(m.title).toMatch(/^Schedule /); expect(m.cost).toBe(-Math.round(m.hours * wage)); }
+      for (const m of list.filter((x) => x.kind === 'cover')) { expect(m.title).toMatch(/^Add /); expect(m.cost).toBe(Math.round(m.hours! * wage)); expect(m.stage).toBe('opportunity'); }
+      for (const m of list.filter((x) => x.kind === 'spare')) { expect(m.title).toMatch(/^Schedule /); expect(m.cost).toBe(-Math.round(m.hours! * wage)); }
       for (const m of list.filter((x) => x.kind === 'candidate')) {
         const c = d.candidates.find((x: any) => x.id === m.finding);
         expect(c.lever).toBe('Labour');
@@ -119,7 +119,7 @@ describe('Labor page', () => {
     expect(groupShare([{ net: 100, labour: 20 }, { net: 300, labour: 100 }])).toBeCloseTo(0.3);
     const g = gapGrid(sampleServices(ds.rooms.walnut.labour));
     expect(g.rows.length).toBe(7);
-    expect(g.rows.flatMap((r) => r.cells).filter((v) => v != null && v < 0).reduce((t, v) => t - (v as number), 0)).toBe(ds.rooms.walnut.labour.kpis.short);
+    expect(g.rows.flatMap((r) => r.cells).filter((v) => v != null && v < 0).reduce((t: number, v) => t - (v as number), 0)).toBe(ds.rooms.walnut.labour.kpis.short);
   });
 
   test('a room on its own clock-ins uses the same shapes', () => {
