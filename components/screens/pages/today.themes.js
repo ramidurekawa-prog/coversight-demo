@@ -136,20 +136,20 @@ export function useTodayTheme(tools = false) {
 
 /*
  * Font trial (Ramidu, 2026-11-17): a few typefaces to compare on the real
- * page, behind ?tools=1 like the colors. IBM Plex is the current type and
- * stays the default until Ramidu picks. Each option sets the text font and
+ * page, behind ?tools=1 like the colors. Ramidu picked Manrope (2026-11-17):
+ * it's the app-wide default in app/theme.css; the others stay for comparison. Each option sets the text font and
  * the figures font; figures always use tabular digits so columns line up.
  * Applied while Today is on screen (the top bar included).
  */
 const stack = (f) => `'${f}', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif`;
 export const FONTS = {
-  plex: { label: 'IBM Plex', note: 'Current. Engineered and precise; figures in Plex Mono', sans: null, figs: null },
+  manrope: { label: 'Manrope', note: 'Chosen. Premium, open and rounded; strong big numbers', sans: null, figs: null },
+  plex: { label: 'IBM Plex', note: 'The previous type. Engineered and precise; figures in Plex Mono', sans: stack('IBM Plex Sans'), figs: "'IBM Plex Mono', ui-monospace, Menlo, monospace" },
   jakarta: { label: 'Plus Jakarta Sans', note: 'Warm and modern, soft geometric shapes', sans: stack('Plus Jakarta Sans'), figs: stack('Plus Jakarta Sans') },
   inter: { label: 'Inter', note: 'Neutral and very legible at small sizes', sans: stack('Inter'), figs: stack('Inter') },
-  manrope: { label: 'Manrope', note: 'Premium, open and rounded; strong big numbers', sans: stack('Manrope'), figs: stack('Manrope') },
   dmsans: { label: 'DM Sans', note: 'Friendly and compact, like a good menu', sans: stack('DM Sans'), figs: stack('DM Sans') },
 };
-export const DEFAULT_FONT = 'plex';
+export const DEFAULT_FONT = 'manrope';
 const FONT_KEY = 'cv-today-font';
 
 /** Today's font trial: the current type unless a different one is picked with the tools on. */
