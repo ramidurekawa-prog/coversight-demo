@@ -13,6 +13,7 @@ import {
   isExplained, lastYearIndex, noteKey, rangesFor, signalKey, trendsCsv, trendsFor,
 } from '../../../lib/data/page/trends';
 import { Spark, TrendChart } from './trends-chart';
+import { useTodayTheme } from './today.themes';
 import s from './trends.module.css';
 
 /* Trends: is the restaurant getting better or worse, and what should I do?
@@ -23,9 +24,12 @@ import s from './trends.module.css';
  * code the nightly `trends` job runs, so the page and the alerts agree.
  * Notes save per room (`trends.notes`). */
 
-const SERIES_COLOR = 'var(--cat-1)';
-const CMP_COLOR = 'var(--cat-3)';
-const roomColor = (i) => `var(--cat-${(i % 3) + 1})`;
+// Persimmon & Ink (Today's look): navy for structure and data, persimmon only for the action,
+// green for good, amber for caution, red only when it's genuinely critical.
+const SERIES_COLOR = 'var(--fg-1)';
+const CMP_COLOR = 'var(--fg-3)';
+const ROOM_COLORS = ['var(--fg-1)', 'var(--info-600)', 'var(--cat-3)'];
+const roomColor = (i) => ROOM_COLORS[i % ROOM_COLORS.length];
 const SEV_LABEL = { high: 'High', medium: 'Medium', low: 'Low', info: 'Good news' };
 const SEV_CLASS = { high: s.sevHigh, medium: s.sevMedium, low: s.sevLow, info: s.sevInfo };
 const tone = (key, v) => (v == null || Math.abs(v) < 0.05 ? 'cv-faint' : (v > 0) === METRIC[key].up ? 'cv-up' : 'cv-down');
@@ -42,7 +46,7 @@ const TODO = {
   covers: { label: 'Check daily covers', page: 'daily' },
   check: { label: 'Review menu prices', page: 'menu' },
   earned: { label: 'See which cost moved', page: 'week' },
-  prime: { label: 'Check labour and food', page: 'labour' },
+  prime: { label: 'Check labor and food', page: 'labour' },
   food: { label: 'Check food buying', page: 'purchasing' },
   labour: { label: 'Check the schedule', page: 'labour' },
   ot: { label: 'Check overtime', page: 'labour' },
@@ -99,7 +103,7 @@ function zoneOf(t, i) {
 }
 
 /** Where a value sits against its usual range: band, average tick, dot. */
-function RangeBar({ value, lim, good }) {
+function RangeBar({ value, lim, tone: kind }) {
   if (value == null || !lim) return null;
   const lo0 = Math.min(lim.lcl, value), hi0 = Math.max(lim.ucl, value);
   const pad = (hi0 - lo0) * 0.08 || 1;
@@ -109,7 +113,7 @@ function RangeBar({ value, lim, good }) {
     <span className={s.range} aria-hidden="true">
       <span className={s.rangeBand} style={{ left: `${p(lim.lcl)}%`, width: `${p(lim.ucl) - p(lim.lcl)}%` }} />
       <span className={s.rangeMean} style={{ left: `${p(lim.mean)}%` }} />
-      <span className={`${s.rangeDot} ${good ? s.dotGood : s.dotBad}`} style={{ left: `${p(value)}%` }} />
+      <span className={`${s.rangeDot} ${kind === 'good' ? s.dotGood : kind === 'crit' ? s.dotCrit : s.dotBad}`} style={{ left: `${p(value)}%` }} />
     </span>
   );
 }
@@ -168,8 +172,8 @@ function Verdict({ t, notes, onInvestigate }) {
       <div className={s.vAct}>
         {open.length ? (
           <>
-            <span className={`${s.vCount} cv-down`}><Icon name="TriangleAlert" size={18} />{plural(open.length, 'thing')} to look at</span>
-            <Button size="sm" iconRight="ArrowRight" onClick={() => onInvestigate(open[0])}>{METRIC[open[0].metric].short} first</Button>
+            <span className={`${s.vCount} ${open.some((x) => x.severity === 'high') ? s.crit : s.caution}`}><Icon name="TriangleAlert" size={18} />{plural(open.length, 'thing')} to look at</span>
+            <Button className={s.cta} iconRight="ArrowRight" onClick={() => onInvestigate(open[0])}>{METRIC[open[0].metric].short} first</Button>
           </>
         ) : (
           <span className={`${s.vCount} cv-up`}><Icon name="CircleCheck" size={18} />{t.w.ready ? 'Nothing to act on' : 'Nothing judged yet'}</span>
@@ -196,10 +200,12 @@ function Tiles({ t, metric, onPick }) {
           <button key={k} type="button" className={s.tile} aria-pressed={metric === k} onClick={() => onPick(k)}>
             <span className={s.tileHead}>
               <span className="cv-xs cv-muted cv-row" style={{ gap: 6 }}>{mark && <i className={`${s.dot} ${mark === 'bad' ? s.dotBad : s.dotGood}`} aria-label={mark === 'bad' ? 'Unusual, wrong direction' : 'Unusual, good direction'} />}{m.short}<span className={s.wk}> · this week</span></span>
-              {isMoney(k) && <Claim k={x.claim} />}
             </span>
             <span className={s.tileVal}>{fmtMetric(k, x.latest)}</span>
-            {x.lim && x.latest != null ? <Delta metric={k} a={x.latest} b={x.lim.mean} suffix="vs usual" /> : <span className="cv-xs cv-faint">{x.latest == null ? 'No value this week' : 'No usual range yet'}</span>}
+            <span className={s.tileFoot}>
+              {x.lim && x.latest != null ? <Delta metric={k} a={x.latest} b={x.lim.mean} suffix="vs usual" /> : <span className="cv-xs cv-faint">{x.latest == null ? 'No value this week' : 'No usual range yet'}</span>}
+              {isMoney(k) && <Claim k={x.claim} />}
+            </span>
             <Spark vals={x.vals.slice(Math.max(t.w.from, n - JUDGE_WEEKS))} lim={x.lim} mark={mark} height={34} ariaLabel={`${m.label}, last ${JUDGE_WEEKS} weeks`} />
           </button>
         );
@@ -235,7 +241,7 @@ function ChangeCard({ sig, t, note, open, editing, onPick, onToggle, onEdit, onS
   const rows = t.rows;
   const m = METRIC[sig.metric];
   const explained = isExplained(note);
-  const kind = sig.good ? 'good' : explained ? 'done' : 'bad';
+  const kind = sig.good ? 'good' : explained ? 'done' : sig.severity === 'high' ? 'crit' : 'bad';
   const cause = note && CAUSES.find((c) => c.value === note.cause);
   const shown = sig.kind === 'limit' ? sig.value : sig.avg;
   const why = open ? explainSignal(sig, t, { proofs: CV_D.proofs, candidates: CV_D.candidates }) : null;
@@ -256,11 +262,11 @@ function ChangeCard({ sig, t, note, open, editing, onPick, onToggle, onEdit, onS
         <span className="cv-xs cv-faint">{sig.kind === 'shift' ? 'average' : sig.dir === 'up' ? 'highest' : 'lowest'} · usual {fmtMetric(sig.metric, sig.expected.lcl)} to {fmtMetric(sig.metric, sig.expected.ucl)}</span>
         {isMoney(sig.metric) && <Claim k={t.metrics[sig.metric].claim} />}
       </div>
-      <RangeBar value={shown} lim={sig.expected} good={sig.good} />
+      <RangeBar value={shown} lim={sig.expected} tone={sig.good ? 'good' : sig.severity === 'high' ? 'crit' : 'bad'} />
       <div className={s.cardAct}>
         {sig.good ? <Pill tone="good" icon="TrendingUp">Good news</Pill>
           : cause ? <Pill tone={explained ? 'neutral' : 'warn'} icon={explained ? 'CircleCheck' : 'Hourglass'}>{cause.label}</Pill>
-            : todo && <Button size="sm" variant={sig.severity === 'low' ? 'secondary' : 'primary'} iconRight="ArrowRight" onClick={() => cv.go(todo.page)}>{todo.label}</Button>}
+            : todo && <Button size="sm" variant="secondary" iconRight="ArrowRight" onClick={() => cv.go(todo.page)}>{todo.label}</Button>}
         <span className={s.cardLinks}>
           <button type="button" className={s.linkBtn} onClick={onToggle} aria-expanded={open}>Why?</button>
           {!editing && <button type="button" className={s.linkBtn} onClick={onEdit}>{note ? 'Edit note' : 'Explain'}</button>}
@@ -424,7 +430,7 @@ function RoomView({ t, notes, setNotes }) {
   const start = Math.max(t.w.from, n - range);
   const selected = sel != null && sel < n ? sel : null;
   const marks = {};
-  t.signals.filter((sig) => sig.metric === m.key).forEach((sig) => { for (let k = sig.from; k <= sig.to; k++) if (x.vals[k] != null && !t.holidays[k].length) marks[k] = sig.good ? 'good' : 'bad'; });
+  t.signals.filter((sig) => sig.metric === m.key).forEach((sig) => { for (let k = sig.from; k <= sig.to; k++) if (x.vals[k] != null && !t.holidays[k].length) marks[k] = sig.good ? 'good' : sig.severity === 'high' ? 'crit' : 'bad'; });
   const noted = new Set(t.signals.filter((sig) => sig.metric === m.key && notes[signalKey(sig, t.rows)]).map((sig) => sig.from));
   const lyVals = t.rows.map((_, i) => { const j = lastYearIndex(t.rows, i, t.w); return j == null ? null : x.vals[j]; });
   const hasLy = lyVals.slice(start, end + 1).filter((v) => v != null).length >= 4;
@@ -475,10 +481,11 @@ function RoomView({ t, notes, setNotes }) {
           <TrendChart labels={t.rows.map((r) => r.label)} series={series} lim={x.lim} start={start} end={end} baseTo={t.w.ready ? t.w.baseTo : null}
             marks={marks} noted={noted} events={events} selected={selected} onSelect={setSel} fmt={fmt} height={300} yLabel={unitLabel}
             ariaLabel={`${m.label} by week, ${shortDate(t.rows[start]?.iso)} to ${shortDate(t.rows[end]?.iso)}, in ${unitLabel}. Use the arrow keys to move between weeks; the data table has every value.`}
-            tip={{ title: (i) => `Week of ${shortDate(t.rows[i].iso) || t.rows[i].label}`, extra: (i) => <span className="cv-faint">{t.holidays[i].length ? t.holidays[i].join(', ') : marks[i] ? (marks[i] === 'bad' ? 'Unusual, wrong direction' : 'Unusual, good direction') : x.lim && x.vals[i] != null ? <Delta metric={m.key} a={x.vals[i]} b={x.lim.mean} suffix="vs usual" /> : zoneOf(t, i)}</span> }} />
+            tip={{ title: (i) => `Week of ${shortDate(t.rows[i].iso) || t.rows[i].label}`, extra: (i) => <span className="cv-faint">{t.holidays[i].length ? t.holidays[i].join(', ') : marks[i] ? (marks[i] === 'good' ? 'Unusual, good direction' : 'Unusual, wrong direction') : x.lim && x.vals[i] != null ? <Delta metric={m.key} a={x.vals[i]} b={x.lim.mean} suffix="vs usual" /> : zoneOf(t, i)}</span> }} />
           <div className={s.chartFoot}>
             <div className="cv-legend">
               {x.lim && <span><i className={s.legendBand} />Usual range</span>}
+              {Object.values(marks).includes('crit') && <span><i className={`${s.dot} ${s.dotCrit}`} />Wrong way, high</span>}
               {Object.values(marks).includes('bad') && <span><i className={`${s.dot} ${s.dotBad}`} />Wrong way</span>}
               {Object.values(marks).includes('good') && <span><i className={`${s.dot} ${s.dotGood}`} />Good way</span>}
               {cmp && <span><i className={s.legendLine} style={{ borderColor: CMP_COLOR, borderTopStyle: 'dashed' }} />{cmp.label}</span>}
@@ -624,6 +631,7 @@ function GroupView({ onOpen }) {
 /* ------------------------------------------------------------- the page */
 
 function CvTrends() {
+  useTodayTheme(false); // the app's chosen palette, same as Today
   const eng = useEngine();
   const [view, setView] = React.useState('room');
   const [rawNotes, setNotes] = useSaved('trends.notes', {});
@@ -642,7 +650,7 @@ function CvTrends() {
     }
   };
   return (
-    <div className="cv-page wide">
+    <div className={`cv-page wide ${s.page}`}>
       <PageHead over={`Trends · ${CV_ROOM.name} · ${own ? 'your Toast data' : 'sample data'}, ${shortDate(first?.iso)} to ${shortDate(last?.iso)}`}
         q="Getting better or worse?"
         right={<>

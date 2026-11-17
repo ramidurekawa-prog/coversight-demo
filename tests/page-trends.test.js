@@ -170,7 +170,7 @@ describe('Trends: explanations never claim a cause', () => {
     }
   });
 
-  it('decomposes prime cost into food and labour points that add up', () => {
+  it('decomposes prime cost into food and labor points that add up', () => {
     const nets = wiggle(52);
     const rows = rowsOf(nets);
     rows.forEach((r, i) => { r.labour = r.net * (0.25 + ((i % 5) - 2) * 0.002); });
@@ -178,7 +178,7 @@ describe('Trends: explanations never claim a cause', () => {
     const t = trendsFor(rows);
     const s = t.signals.find((x) => x.metric === 'prime');
     const e = explainSignal(s, t);
-    expect(e.arithmetic[0]).toMatch(/food accounts for \+0\.0 pts and labour \+\d\.\d pts/);
+    expect(e.arithmetic[0]).toMatch(/food accounts for \+0\.0 pts and labor \+\d\.\d pts/);
   });
 
   it('links an existing finding on the same lever instead of creating one', () => {

@@ -98,7 +98,7 @@ export function TrendChart({ labels, series, lim, start = 0, end, baseTo, sample
             {!sr.dash && Object.entries(marks).map(([i, kind]) => {
               const v = sr.vals[+i];
               if (+i < start || +i >= n || v == null) return null;
-              return <circle key={i} cx={x(+i)} cy={y(v)} r="4.5" className={kind === 'good' ? s.markGood : s.markBad} />;
+              return <circle key={i} cx={x(+i)} cy={y(v)} r="4.5" className={kind === 'good' ? s.markGood : kind === 'crit' ? s.markCrit : s.markBad} />;
             })}
             {!sr.dash && noted && [...noted].map((i) => (i >= start && i < n && sr.vals[i] != null ? <circle key={`n${i}`} cx={x(i)} cy={y(sr.vals[i])} r="7.5" className={s.markNoted} /> : null))}
             {at != null && sr.vals[at] != null && <circle cx={x(at)} cy={y(sr.vals[at])} r="4" fill={sr.color} stroke="var(--surface)" strokeWidth="2" />}
