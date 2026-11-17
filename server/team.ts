@@ -13,10 +13,10 @@ import {
 } from './db/schema';
 import { notify } from './notify';
 import { InputError } from './org';
-import { AuthError, type Viewer } from './session';
+import { AuthError, roomLevel, groupWide, roleName, type Viewer } from './session';
 
 type V = Pick<Viewer, 'orgId' | 'userId' | 'role' | 'rooms'>;
-const manage = (v: V) => { if (v.role === 'gm') throw new AuthError(403, 'Only an owner or admin can manage the team.'); };
+const manage = (v: V) => { if (roomLevel(v.role)) throw new AuthError(403, 'Only an owner or admin can manage the team.'); };
 const ownerOnly = (v: V) => { if (v.role !== 'owner') throw new AuthError(403, 'Only an owner can do this.'); };
 const hash = (t: string) => createHash('sha256').update(t).digest('hex');
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 24) || 'room';
@@ -72,15 +72,15 @@ export async function listOrgs(db: Db, userId: string) {
 export async function listMembers(db: Db, v: V) {
   const people = await db.select({ userId: memberships.userId, role: memberships.role, rooms: memberships.rooms, name: users.name, email: users.email, guest: users.isAnonymous, since: memberships.createdAt })
     .from(memberships).innerJoin(users, eq(users.id, memberships.userId)).where(eq(memberships.orgId, v.orgId)).orderBy(asc(memberships.createdAt));
-  const pending = v.role === 'gm' ? [] : await db.select({ id: invites.id, role: invites.role, rooms: invites.rooms, email: invites.email, createdAt: invites.createdAt, expiresAt: invites.expiresAt })
+  const pending = roomLevel(v.role) ? [] : await db.select({ id: invites.id, role: invites.role, rooms: invites.rooms, email: invites.email, createdAt: invites.createdAt, expiresAt: invites.expiresAt })
     .from(invites).where(and(eq(invites.orgId, v.orgId), isNull(invites.acceptedAt), isNull(invites.revokedAt))).orderBy(asc(invites.createdAt));
   return { people: people.map((p) => ({ ...p, email: p.guest ? null : p.email, you: p.userId === v.userId })), invites: pending.filter((i) => i.expiresAt > new Date()) };
 }
 
-const roleBody = z.object({ role: z.enum(['owner', 'gm', 'admin']), rooms: z.array(z.string().min(1).max(60)).max(50).nullable().optional() });
+const roleBody = z.object({ role: z.enum(['owner', 'gm', 'admin', 'floor']), rooms: z.array(z.string().min(1).max(60)).max(50).nullable().optional() });
 
 async function checkRooms(db: Db, orgId: string, role: string, list: string[] | null | undefined) {
-  if (role !== 'gm') return null;
+  if (groupWide(role)) return null;
   if (!list?.length) throw new InputError('A GM needs at least one room.');
   const have = (await db.select({ id: rooms.id }).from(rooms).where(eq(rooms.orgId, orgId))).map((r) => r.id).filter((id) => id !== 'all');
   const bad = list.filter((r) => !have.includes(r));
@@ -101,7 +101,7 @@ export async function createInvite(db: Db, v: V, input: unknown) {
   await db.insert(auditLog).values({ orgId: v.orgId, userId: v.userId, action: 'invite.created', detail: { id: row!.id, role: p.data.role, rooms: roomList } });
   if (p.data.email) {
     const [org] = await db.select({ name: orgs.name }).from(orgs).where(eq(orgs.id, v.orgId));
-    await db.insert(outbox).values({ orgId: v.orgId, channel: 'email', kind: 'invite', toAddress: p.data.email, subject: `You're invited to ${org!.name} on Coversight`, body: `Join as ${p.data.role === 'gm' ? 'GM' : p.data.role}: ${linkFor(token)}\n\nThe link works once and expires in 14 days.`, createdBy: v.userId });
+    await db.insert(outbox).values({ orgId: v.orgId, channel: 'email', kind: 'invite', toAddress: p.data.email, subject: `You're invited to ${org!.name} on Coversight`, body: `Join as ${roleName(p.data.role)}: ${linkFor(token)}\n\nThe link works once and expires in 14 days.`, createdBy: v.userId });
   }
   return { invite: row!, token, link: linkFor(token) };
 }
@@ -134,7 +134,7 @@ export async function acceptInvite(db: Db, userId: string, anonymous: boolean, t
     await tx.update(invites).set({ acceptedBy: userId, acceptedAt: new Date() }).where(eq(invites.id, i.id));
     await tx.insert(auditLog).values({ orgId: i.orgId, userId, action: 'invite.accepted', detail: { id: i.id, role: i.role, already: !!existing } });
     const [u] = await tx.select({ name: users.name }).from(users).where(eq(users.id, userId));
-    await notify(tx as unknown as Db, { orgId: i.orgId, kind: 'team.joined', title: `${u?.name ?? 'Someone'} joined as ${i.role === 'gm' ? 'GM' : i.role}`, link: '/team/', dedupe: `team.joined:${i.id}` });
+    await notify(tx as unknown as Db, { orgId: i.orgId, kind: 'team.joined', title: `${u?.name ?? 'Someone'} joined as ${roleName(i.role)}`, link: '/team/', dedupe: `team.joined:${i.id}` });
     return { orgId: i.orgId };
   });
 }

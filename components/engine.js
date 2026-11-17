@@ -45,6 +45,8 @@ function clearSaved() {
 
 /** The room key for decisions that belong to the whole group. */
 export const GROUP = '';
+/** The bucket for the signed-in person's own settings (their Today layout). */
+export const ME = '@me';
 
 const isObj = (v) => v != null && typeof v === 'object' && !Array.isArray(v);
 
@@ -68,7 +70,7 @@ export function sanitizeSaved(saved, base = SEED) {
   const actions = {};
   if (isObj(saved.actions)) {
     Object.entries(saved.actions).forEach(([roomId, keys]) => {
-      if ((roomId === GROUP || base.rooms[roomId]) && isObj(keys)) actions[roomId] = keys;
+      if ((roomId === GROUP || roomId === ME || base.rooms[roomId]) && isObj(keys)) actions[roomId] = keys;
     });
   }
   const tasks = Array.isArray(saved.tasks) ? saved.tasks.filter((t) => isObj(t) && typeof t.id === 'string' && base.rooms[t.roomId] && Array.isArray(t.steps)).slice(0, 200) : [];
@@ -331,12 +333,13 @@ export function useEngine() {
   return React.useSyncExternalStore(engine.subscribe, engine.get, engine.server);
 }
 
-/** Like useState, but saved: per room (or for the whole group with { group: true }),
+/** Like useState, but saved: per room (or for the whole group with { group: true },
+ * or just for this person with { person: true }),
  * on the server when signed in, else in this browser. set(next, summary) takes a
  * value or an updater. */
-export function useSaved(key, initial, { group = false } = {}) {
+export function useSaved(key, initial, { group = false, person = false } = {}) {
   const eng = useEngine();
-  const room = group ? GROUP : eng.room;
+  const room = person ? ME : group ? GROUP : eng.room;
   const v = eng.actions[room]?.[key];
   const value = v === undefined ? initial : v;
   const set = (next, summary) => {

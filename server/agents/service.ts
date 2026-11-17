@@ -16,7 +16,7 @@ import { GROUP, loadActions, saveAction } from '../actions';
 import { loadDataset } from '../dataset';
 import { InputError } from '../org';
 import { startWindow } from '../proof';
-import { AuthError, type Viewer } from '../session';
+import { AuthError, roomLevel, type Viewer } from '../session';
 import { createTask } from '../tasks';
 import { dbStore } from './store';
 
@@ -72,7 +72,7 @@ export async function decide(db: Db, v: V, id: string, raw: unknown) {
   if (p.roomId && v.rooms && !v.rooms.includes(p.roomId)) throw new AuthError(403, 'That room is not one of yours.');
   if (p.status !== 'open') throw new InputError(`Already ${p.status}.`);
   if (p.needs !== 'human') throw new InputError('Nothing to decide: this one is for information.');
-  if (p.kind === 'mapping' && v.role === 'gm') throw new AuthError(403, 'Account mappings are confirmed by an owner or admin.');
+  if (p.kind === 'mapping' && roomLevel(v.role)) throw new AuthError(403, 'Account mappings are confirmed by an owner or admin.');
   const name = await who(db, v.userId);
   let outcome = '';
   if (decision === 'accept') {
