@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { bandSpread, calibratedBand, clockLabel, clockMinutes, cutApprovalId, cutExecution, fencesOf, isCutFor, lastOrderAt, liveNight, localNow, pacing, serviceCall, serviceHealth, servicePlan, serversOn, serviceWindow, slotCovers } from '../lib/data/page/service.js';
+import { bandSpread, calibratedBand, clockLabel, clockMinutes, cutApprovalId, cutExecution, fencesOf, isCutFor, lastOrderAt, liveNight, localNow, manualNight, pacing, serviceCall, serviceHealth, servicePlan, serversOn, serviceWindow, slotCovers } from '../lib/data/page/service.js';
 
 const hours = (day, rows) => rows.flatMap(([hour, covers, servers]) => [0, 1, 2, 3].map((week) => ({ week, day, hour, covers, servers })));
 // 24+ busy hours so the room's pace can be measured; Thursday has a spare server from 8 pm.
@@ -180,4 +180,17 @@ describe('Service: live pacing', () => {
     expect(n.actual).toHaveLength(4);
     expect(n.call.serversNow).toBeNull();
   });
+});
+
+describe('manualNight (no live feed)', () => {
+  const plan = { hours: [{ hour: 17, covers: 20, peak: 30, need: 3 }, { hour: 18, covers: 40, peak: 50, need: 4 }] };
+  it('compares a hand count with the typical and busiest pace so far', () => {
+    const r = manualNight({ plan, covers: 38, servers: 4, atMin: 18 * 60 + 30 });
+    expect(r.typical).toBe(40); expect(r.busiest).toBe(55); expect(r.label).toBe('On track'); expect(r.staff).toBe('right');
+  });
+  it('flags busier than any recent week and short staffing', () => {
+    const r = manualNight({ plan, covers: 70, servers: 3, atMin: 18 * 60 + 30 });
+    expect(r.tone).toBe('warn'); expect(r.staff).toBe('short');
+  });
+  it('refuses a bad count', () => { expect(manualNight({ plan, covers: -1, servers: null, atMin: 1100 })).toBeNull(); });
 });

@@ -6,7 +6,7 @@ import { Icon, Button } from '../../kit';
 import { engine, useEngine, useSaved } from '../../engine';
 import { useCv, cvMoney, CV_D, CV_ROOM, CV_NOW, Claim, Money, Pill, PageHead, cvScale } from '../core';
 import { DenseService } from '../dense-sections';
-import { bandSpread, clockLabel, cutApprovalId, DINNER_FROM, fencesOf, hhmm, isCutFor, localNow, MIN_CALIBRATED, servicePlan, SLOT_MIN } from '../../../lib/data/page/service.js';
+import { bandSpread, clockLabel, clockMinutes, cutApprovalId, DINNER_FROM, fencesOf, hhmm, isCutFor, localNow, manualNight, MIN_CALIBRATED, servicePlan, SLOT_MIN } from '../../../lib/data/page/service.js';
 import s from './service.module.css';
 
 const FULL_DAY = { Sun: 'Sunday', Mon: 'Monday', Tue: 'Tuesday', Wed: 'Wednesday', Thu: 'Thursday', Fri: 'Friday', Sat: 'Saturday' };
@@ -244,6 +244,23 @@ function ActionCard({ title, value, valueNode, why, checks, source, risk, next, 
   );
 }
 
+/** Tonight's count by hand, for when no live feed is on: covers so far and servers on the floor. */
+function ManualCount({ saved, onSave, time }) {
+  const [covers, setCovers] = React.useState(saved?.covers ?? '');
+  const [servers, setServers] = React.useState(saved?.servers ?? '');
+  const ok = covers !== '' && Number.isInteger(+covers) && +covers >= 0 && +covers <= 5000 && (servers === '' || (Number.isInteger(+servers) && +servers >= 0 && +servers <= 200));
+  return (
+    <form className={`cv-card ${s.manualCard}`} onSubmit={(e) => { e.preventDefault(); if (ok) onSave(+covers, servers === '' ? null : +servers); }}>
+      <div className="cv-card-head"><span className="cv-h4">Tonight so far</span><span className="cv-xs cv-faint">{saved ? `your count at ${saved.atLabel}` : 'no live feed: enter your own count'}</span></div>
+      <div className={s.manualRow}>
+        <label className={s.field}><span className="cv-xs cv-faint">Covers so far</span><input className="input" type="number" inputMode="numeric" min="0" max="5000" value={covers} onChange={(e) => setCovers(e.target.value)} required /></label>
+        <label className={s.field}><span className="cv-xs cv-faint">Servers on now</span><input className="input" type="number" inputMode="numeric" min="0" max="200" value={servers} onChange={(e) => setServers(e.target.value)} /></label>
+        <Button type="submit" icon="Check" disabled={!ok}>Save at {time}</Button>
+      </div>
+    </form>
+  );
+}
+
 /** A small banner when there's nothing to do, or something stops the page acting. */
 function Note({ tone = 'neutral', icon = 'Info', children, action }) {
   return <div className={`${s.note} ${s[`n_${tone}`] || ''}`}><Icon name={icon} size={16} /><span>{children}</span>{action}</div>;
@@ -294,6 +311,15 @@ function ServiceOwn() {
   const [busy, setBusy] = React.useState(false);
   const [review, setReview] = React.useState(false);
   const L = live?.live ? live.night : null;
+  // A manager's own count tonight, used only when there's no live feed.
+  const [manualSaved, setManual] = useSaved('service.manual', null);
+  const manualToday = manualSaved?.date === today.date ? manualSaved : null;
+  const manual = !L && plan && manualToday ? manualNight({ plan, covers: manualToday.covers, servers: manualToday.servers, atMin: clockMinutes(manualToday.at) ?? today.minutes }) : null;
+  const saveManual = (covers, servers) => {
+    const at = hhmm(today.minutes);
+    setManual({ date: today.date, at, covers, servers }, `Tonight's count at ${clockLabel(today.minutes)}: ${covers} covers${servers != null ? `, ${servers} servers` : ''}`);
+    cv.toast('Saved your count.');
+  };
   const lc = L?.call;
 
   // Tonight's one recommendation: from the live call when Toast is live, else from the plan.
@@ -356,7 +382,11 @@ function ServiceOwn() {
     const typical = plan.hours.reduce((t, x) => t + x.covers, 0), peakTotal = plan.hours.reduce((t, x) => t + x.peak, 0);
     const peakHour = plan.hours.reduce((a, b) => (b.peak > a.peak ? b : a));
     status = plan.cutFrom != null ? { tone: 'accent', label: 'One server spare', sub: `from ${clockLabel(plan.cutFrom * 60)} on recent ${days(today.day)}` } : { tone: 'good', label: 'Keep everyone on', sub: plan.blocked ? 'a fence holds tonight' : `every hour used its servers` };
-    kpis = [
+    if (manual) status = { tone: manual.tone, label: manual.label, sub: `your count at ${clockLabel(clockMinutes(manualToday.at))}${manual.pace != null ? ` · ${manual.pace > 0 ? '+' : ''}${manual.pace}% vs typical` : ''}` };
+    kpis = manual ? [
+      <CoversCard key="c" label="Covers so far" value={manual.covers} lo={manual.typical} hi={Math.max(manual.busiest, manual.typical)} sub={`by now: typical ${manual.typical} · busiest week ${manual.busiest}`} marker />,
+      <ServersCard key="s" on={manual.servers} need={manual.need ?? 0} release={false} sub={manual.need == null ? 'no plan for this hour' : manual.staff === 'short' ? 'fewer than the busiest week needed' : 'sized for the busiest week'} />,
+    ] : [
       <CoversCard key="c" label={`Covers on a ${dayOf(today.day)}`} value={typical} lo={typical} hi={peakTotal} max={peakTotal * 1.15} sub={`typical · up to ${peakTotal} in the busiest week`} marker />,
       <ServersCard key="s" on={Math.round(peakHour.servers)} need={peakHour.need} release={false} sub={`at the ${clockLabel(peakHour.hour * 60)} peak`} />,
     ];
@@ -419,6 +449,7 @@ function ServiceOwn() {
           onReview={() => setReview(true)} onBack={() => setReview(false)} onApprove={approve} onDecline={decline} />
       )}
       {!act && watch && <Note icon="Hourglass">{watch}</Note>}
+      {!L && plan && <ManualCount key={manualToday?.at ?? 'new'} saved={manualToday && { ...manualToday, atLabel: clockLabel(clockMinutes(manualToday.at)) }} onSave={saveManual} time={clockLabel(today.minutes)} />}
       <section className={`cv-card ${s.chartCard}`}>
         <div className="cv-card-head"><span className="cv-h4">{L ? 'Covers every 15 minutes' : `A typical ${dayOf(today.day)}, hour by hour`}</span>
           <span className="cv-xs cv-faint">{L ? (lc.band?.calibrated ? `range ±${Math.round(lc.spread * 100)}% from ${lc.band.nights} past nights` : `range ±${Math.round(lc.spread * 100)}%, not yet calibrated`) : `last ${plan.weeks} weeks`}</span></div>
