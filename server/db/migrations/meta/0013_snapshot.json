@@ -1,5 +1,5 @@
 {
-  "id": "4b9f8b26-afcc-4be5-8856-6c57feb6800d",
+  "id": "efe34293-f22a-46d0-8f03-cd251555445e",
   "prevId": "43aa61ae-1e48-49ec-b454-70569d46c7dc",
   "version": "7",
   "dialect": "postgresql",
@@ -2933,7 +2933,8 @@
           "name": "slots",
           "type": "jsonb",
           "primaryKey": false,
-          "notNull": true
+          "notNull": true,
+          "default": "'[]'::jsonb"
         },
         "orders": {
           "name": "orders",
@@ -2948,15 +2949,32 @@
           "primaryKey": false,
           "notNull": false
         },
+        "manual": {
+          "name": "manual",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
         "pulled_at": {
           "name": "pulled_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
+          "notNull": false
+        },
+        "staff_at": {
+          "name": "staff_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         },
         "error": {
           "name": "error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "staff_error": {
+          "name": "staff_error",
           "type": "text",
           "primaryKey": false,
           "notNull": false

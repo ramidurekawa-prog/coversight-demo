@@ -497,3 +497,9 @@ button.pill { cursor: pointer; }
 .heldNote { display: flex; align-items: center; gap: 10px; margin: 0; padding: 10px 14px; border-radius: 10px; background: color-mix(in srgb, var(--info-500) 8%, transparent); font-size: 14px; color: var(--fg-1); }
 .heldNote > span { flex: 1; }
 .choiceSub { margin-left: 4px; font-weight: 400; color: var(--fg-3); }
+.entry { display: flex; flex-direction: column; gap: 8px; padding: 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); }
+.entryHead { font-size: 14px; font-weight: 600; color: var(--fg-1); }
+.entryNote { font-size: 13px; color: var(--fg-2); }
+.entryRow { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
+.entryField { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--fg-2); }
+.entryField input { width: 120px; min-height: 36px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--border-strong); background: var(--surface); font-size: 15px; color: var(--fg-1); }

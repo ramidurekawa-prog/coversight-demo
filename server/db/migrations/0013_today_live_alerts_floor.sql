@@ -3,11 +3,14 @@ CREATE TABLE "service_live" (
 	"org_id" uuid NOT NULL,
 	"room_id" text NOT NULL,
 	"day" text NOT NULL,
-	"slots" jsonb NOT NULL,
+	"slots" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"orders" integer DEFAULT 0 NOT NULL,
 	"staff" jsonb,
-	"pulled_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"manual" jsonb,
+	"pulled_at" timestamp with time zone,
+	"staff_at" timestamp with time zone,
 	"error" text,
+	"staff_error" text,
 	CONSTRAINT "service_live_org_id_room_id_day_pk" PRIMARY KEY("org_id","room_id","day")
 );
 --> statement-breakpoint

@@ -140,7 +140,7 @@ export function Crew() {
   const cv = useCv();
   const eng = useEngine();
   const server = eng.mode === 'server';
-  const canRun = !server || eng.viewer?.role !== 'gm';
+  const canRun = !server || !['gm', 'floor'].includes(eng.viewer?.role);
   const [st, setSt] = React.useState(null);
   const [busy, setBusy] = React.useState(null);
   const [err, setErr] = React.useState(null);
@@ -206,7 +206,7 @@ export function Crew() {
           <span className="cv-h4">Waiting on a person</span>
           <span className="cv-xs cv-faint">Approving a plan starts its test and its task as you, not as an agent</span>
         </div>
-        {waiting.length ? waiting.map((p) => <Proposal key={p.key} p={p} canDecide={!(server && p.kind === 'mapping' && eng.viewer?.role === 'gm')} onDecide={decide} busy={busy} />)
+        {waiting.length ? waiting.map((p) => <Proposal key={p.key} p={p} canDecide={!(server && p.kind === 'mapping' && ['gm', 'floor'].includes(eng.viewer?.role))} onDecide={decide} busy={busy} />)
           : <div className="cv-small cv-faint" style={{ padding: '0 16px 14px' }}>{st?.last ? 'Nothing. The crew has nothing it needs a decision on.' : 'Run the crew to see what it proposes.'}</div>}
         {decided.length > 0 && (
           <div className="cv-col" style={{ gap: 4, padding: '10px 16px 14px', borderTop: '1px solid var(--border)' }}>

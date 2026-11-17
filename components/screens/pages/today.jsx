@@ -70,6 +70,43 @@ function localHistory(view) {
   return out;
 }
 
+/**
+ * Tonight, live, for a room on its own data (signed in): asks the server every
+ * five minutes while the page is open and visible; the server pulls Toast and
+ * 7shifts at most that often and answers from what it stored. save() keeps a
+ * manager's own count for while a feed is missing or down.
+ */
+function useLive(on) {
+  const eng = useEngine();
+  const server = eng.mode === 'server';
+  const [data, setData] = React.useState(null);
+  const room = CV_D.id;
+  React.useEffect(() => {
+    setData(null);
+    if (!server || !on) return undefined;
+    let live = true, timer = null;
+    const tick = () => {
+      if (document.visibilityState === 'visible') {
+        call(`/api/page/today/live?room=${encodeURIComponent(room)}`).then((b) => { if (live) setData(b); }).catch(() => { /* keep the last answer; the tile says how old it is */ });
+      }
+      timer = setTimeout(tick, 5 * 60_000);
+    };
+    tick();
+    const wake = () => { if (document.visibilityState === 'visible') { clearTimeout(timer); tick(); } };
+    document.addEventListener('visibilitychange', wake);
+    return () => { live = false; clearTimeout(timer); document.removeEventListener('visibilitychange', wake); };
+  }, [server, on, room]);
+  const save = React.useCallback(async (entry) => {
+    try {
+      setData(await call('/api/page/today/live', { method: 'POST', body: JSON.stringify({ roomId: room, ...entry }) }));
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: `Not saved: ${err.message}` };
+    }
+  }, [room]);
+  return { data, save };
+}
+
 function useQueue({ cards, today, own, tz }) {
   const eng = useEngine();
   const server = eng.mode === 'server';
@@ -243,10 +280,11 @@ function CvToday() {
     ? { label: longDate(today), time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: tz }).toLowerCase() }
     : CV_NOW;
   const period = servicePeriod(clockMinutes(now.time));
-  const sv = tonight(d, now);
-  const brief = briefing(d, { cards, view, now });
+  const live = useLive(own);
+  const sv = tonight(d, now, live.data);
+  const brief = briefing(d, { cards, view, now, live: live.data });
   const res = resultsOf(d, { cards, view });
-  const tiles = tileData({ d, dense: sc.noHistory ? null : dense, sv, flags: sc, now });
+  const tiles = tileData({ d, dense: sc.noHistory ? null : dense, sv, flags: sc, now, live: live.data });
   const through = cards[0]?.source?.through || liveCards[0]?.source?.through;
 
   /** Say it on screen and to a screen reader. */
@@ -418,7 +456,7 @@ function CvToday() {
         <ComparePanel theme={theme} onPick={pickTheme} onClose={() => setComparing(false)} metric={tiles[layout.metrics[0]]}
           lead={leadFrame?.problem} worth={leadW?.figure ? `${leadW.figure} ${leadW.unit || ''}`.trim() : null} />
       )}
-      {tileOpen && tiles[tileOpen] && <TilePanel t={tiles[tileOpen]} onClose={() => setTileOpen(null)} onGo={(p) => { setTileOpen(null); cv.go(p); }} />}
+      {tileOpen && tiles[tileOpen] && <TilePanel t={tiles[tileOpen]} onEntry={live.save} onClose={() => setTileOpen(null)} onGo={(p) => { setTileOpen(null); cv.go(p); }} />}
       {feedsOpen && <FeedsPanel warn={brief.warn} onClose={() => setFeedsOpen(false)} onGo={(p) => { setFeedsOpen(false); cv.go(p); }} />}
       {resOpen && <ResultsPanel which={resOpen} res={res} onClose={() => setResOpen(null)} onGo={(p) => { setResOpen(null); cv.go(p); }} />}
       {customizing && <CustomizePanel layout={layout} custom={custom} role={role} tiles={tiles} onSave={save} onRestore={restore} onClose={() => setCustomizing(false)} />}

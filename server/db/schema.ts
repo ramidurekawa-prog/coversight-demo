@@ -610,12 +610,17 @@ export const serviceLive = pgTable(
     orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
     roomId: text('room_id').notNull(),
     day: text('day').notNull(),
-    slots: jsonb('slots').$type<number[]>().notNull(),
+    /** Covers per 15-minute slot from 5 pm, pulled from Toast. Empty until a pull succeeds. */
+    slots: jsonb('slots').$type<number[]>().notNull().default(sql`'[]'::jsonb`),
     orders: integer('orders').notNull().default(0),
     /** Servers scheduled per slot from 7shifts, when connected. */
     staff: jsonb('staff').$type<number[] | null>(),
-    pulledAt: at('pulled_at').notNull().defaultNow(),
+    /** What a manager entered by hand when a feed is missing or down: covers so far and servers on, as of a time. */
+    manual: jsonb('manual').$type<{ covers?: number; servers?: number; at: string; by?: string } | null>(),
+    pulledAt: at('pulled_at'),
+    staffAt: at('staff_at'),
     error: text('error'),
+    staffError: text('staff_error'),
   },
   (t) => [primaryKey({ columns: [t.orgId, t.roomId, t.day] })],
 );

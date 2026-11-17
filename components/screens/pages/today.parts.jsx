@@ -140,7 +140,7 @@ export function FeedsPanel({ warn, onClose, onGo }) {
  * words saying against what, and the facts behind it for the detail panel.
  * No basis means no comparison, said out loud, never a zero.
  */
-export function tileData({ d, dense, sv, flags, now }) {
+export function tileData({ d, dense, sv, flags, now, live = null }) {
   const rows = d.hist?.rows || [];
   const last = rows.at(-1);
   const before = rows.slice(-5, -1);
@@ -198,6 +198,32 @@ export function tileData({ d, dense, sv, flags, now }) {
   } else {
     t.labor = { label: 'Labor', when: last ? `Week of ${last.label}` : null, fig: last ? `${(last.labourRate * 100).toFixed(1)}%` : null, cmp: 'Comparisons after 4 weeks of data', facts: [['Source', src()]], go: 'labour' };
   }
+  const lt = live?.tonight;
+  const clockOf = (iso) => (iso ? new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: live?.tz }).toLowerCase() : null);
+  const feedWarn = lt ? (lt.feeds.toast === 'down' ? 'Toast not updating' : lt.feeds.toast === 'stale' ? 'Toast delayed' : null) : null;
+  const liveSrc = lt ? (lt.source === 'manual' ? `Entered by hand${lt.enteredBy ? ` by ${lt.enteredBy}` : ''} at ${clockOf(lt.asOf)}` : `Your Toast orders, updated ${clockOf(lt.asOf)}`) : null;
+  const entry = lt ? { feeds: lt.feeds, error: lt.error, staffError: lt.staffError } : null;
+  t.tonight = sv && sv.live
+    ? {
+      // Live pace on a room's own data: from Toast (or a manager's count), against its usual nights.
+      label: 'Dinner pace', when: sv.source === 'manual' ? 'Tonight, your count' : 'Tonight, so far', live: true,
+      fig: `${sv.pace >= 0 ? '+' : '−'}${Math.abs(sv.pace)}%`, cmp: `${sv.so} covers vs ${sv.usual} usual by ${clockOf(sv.asOf) || now?.time || 'now'}`, delta: sv.pace / 100,
+      viz: sv.actual ? <PaceCurve comp={sv.comp} actual={sv.actual} times={serviceTimes(sv.comp.length)} /> : null, claim: 'obs', warn: feedWarn,
+      facts: [['Covers so far', String(sv.so)], [`A usual ${sv.weekday}`, `${sv.usual} by the same time (average of the last ${sv.nights} ${sv.weekday}s)`], ['Pace so far', `${Math.abs(sv.pace)}% ${sv.pace >= 0 ? 'over' : 'under'} a usual ${sv.weekday}`],
+        ...(sv.servers != null ? [['Servers on', `${sv.servers} (${sv.serversFrom === 'manual' ? 'entered by hand' : 'from 7shifts'})`]] : [['Servers on', 'Not known: connect 7shifts or enter it below']]), ['Source', liveSrc]],
+      entry, go: 'service',
+    }
+    : lt && live.inService && lt.started
+      ? {
+        // In service with no pace to show: say why, and let the floor enter tonight's count.
+        label: 'Tonight', when: 'Dinner', live: lt.so != null, fig: lt.so != null ? `${lt.so}` : null,
+        cmp: lt.so != null ? `covers so far · no usual ${lt.weekday} to compare yet` : lt.feeds.toast === 'off' ? 'No live feed · enter covers' : 'Toast not updating · enter covers',
+        warn: feedWarn, claim: lt.so != null ? 'obs' : null,
+        facts: [['Covers so far', lt.so != null ? String(lt.so) : 'Not known yet'], ['Pace', lt.comp ? 'Shows once covers come in' : `Needs at least 2 past ${lt.weekday}s of Toast orders (${lt.nights} so far)`], ['Source', liveSrc && lt.so != null ? liveSrc : lt.feeds.toast === 'off' ? 'Toast isn’t connected. Connect it, or enter tonight’s covers below.' : `Toast hasn’t answered${lt.error ? `: ${lt.error}` : ''}. Enter tonight’s covers below meanwhile.`]],
+        entry, go: lt.feeds.toast === 'off' ? 'connect' : 'service',
+      }
+      : null;
+  if (t.tonight) return t;
   t.tonight = sv
     ? {
       label: 'Dinner pace', when: 'Tonight, so far', live: true, fig: `${sv.pace >= 0 ? '+' : '−'}${Math.abs(sv.pace)}%`, cmp: `${sv.so} covers vs ${sv.usual} usual by ${now?.time || 'now'}`, delta: sv.pace / 100,
@@ -232,7 +258,42 @@ export function Tiles({ ids, tiles, onOpen }) {
   );
 }
 
-export function TilePanel({ t, onClose, onGo }) {
+/**
+ * Tonight by hand: covers so far and servers on, for while Toast or 7shifts
+ * is missing or down. Saved for the room, labelled as entered by hand, and
+ * replaced by the feed again once it's newer.
+ */
+export function LiveEntry({ entry, onSave }) {
+  const [covers, setCovers] = React.useState('');
+  const [servers, setServers] = React.useState('');
+  const [busy, setBusy] = React.useState(false);
+  const [msg, setMsg] = React.useState('');
+  const num = (v) => (v.trim() === '' ? null : Math.max(0, Math.round(+v)));
+  const ok = (covers.trim() !== '' && Number.isFinite(+covers)) || (servers.trim() !== '' && Number.isFinite(+servers));
+  const save = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    const r = await onSave({ covers: num(covers), servers: num(servers) });
+    setBusy(false);
+    setMsg(r.ok ? 'Saved. Today uses your count until the feed is newer.' : r.error);
+    if (r.ok) { setCovers(''); setServers(''); }
+  };
+  const down = [entry.feeds.toast === 'down' && 'Toast isn’t answering', entry.feeds.toast === 'off' && 'Toast isn’t connected', entry.feeds.staff === 'down' && '7shifts isn’t answering', entry.feeds.staff === 'off' && '7shifts isn’t connected'].filter(Boolean);
+  return (
+    <form className={s.entry} onSubmit={save} aria-label="Enter tonight by hand">
+      <span className={s.entryHead}>Enter tonight by hand</span>
+      {down.length > 0 && <span className={s.entryNote}>{down.join(' · ')}. Your count keeps Today working meanwhile.</span>}
+      <span className={s.entryRow}>
+        <label className={s.entryField}><span>Covers so far</span><input inputMode="numeric" pattern="[0-9]*" value={covers} onChange={(e) => setCovers(e.target.value)} placeholder="e.g. 64" /></label>
+        <label className={s.entryField}><span>Servers on now</span><input inputMode="numeric" pattern="[0-9]*" value={servers} onChange={(e) => setServers(e.target.value)} placeholder="e.g. 4" /></label>
+        <Button size="sm" type="submit" disabled={busy || !ok}>{busy ? 'Saving…' : 'Save'}</Button>
+      </span>
+      {msg && <span className={s.entryNote} role="status">{msg}</span>}
+    </form>
+  );
+}
+
+export function TilePanel({ t, onClose, onGo, onEntry }) {
   return (
     <Panel label={t.label} onClose={onClose}>
       <PanelTop over="Key number" title={t.label} onClose={onClose} />
@@ -243,6 +304,7 @@ export function TilePanel({ t, onClose, onGo }) {
           {t.viz && <span className={s.tileViz}>{t.viz}</span>}
         </div>
         <dl className={s.facts}>{t.facts.map(([k, v]) => <React.Fragment key={k}><dt>{k}</dt><dd>{v}</dd></React.Fragment>)}</dl>
+        {t.entry && onEntry && <LiveEntry entry={t.entry} onSave={onEntry} />}
         {t.go && <button type="button" className={s.textLink} onClick={() => onGo(t.go)}>See it in full<Icon name="ArrowRight" size={13} /></button>}
       </div>
     </Panel>
@@ -669,7 +731,7 @@ export function CustomizePanel({ layout, custom, role, tiles, onSave, onRestore,
   const order = [...m, ...Object.keys(METRICS).filter((id) => !m.includes(id))];
   return (
     <Panel label="Customize Today" onClose={onClose}>
-      <PanelTop over={role === 'gm' ? 'General manager view' : 'Owner view'} title="Customize Today" onClose={onClose} />
+      <PanelTop over={{ gm: 'General manager view', floor: 'Floor manager view' }[role] || 'Owner view'} title="Customize Today" onClose={onClose} />
       <div className={s.panelBody}>
         <section className={s.block}>
           <h3 className={s.blockTitle}>Key numbers <span className={s.blockCount}>{m.length} of {MAX_METRICS} shown</span></h3>
