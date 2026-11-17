@@ -1,6 +1,6 @@
 // Guided write-back tasks: created when a change is approved, ticked off by the
 // manager, confirmed by the next data upload where the data can show it.
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { findingBlocked } from '../lib/data/findings.js';
@@ -59,13 +59,18 @@ export async function createTask(db: Db, v: V, input: unknown) {
   if (v.rooms && !v.rooms.includes(roomId)) throw new AuthError(403, 'That room is not one of yours.');
   const [room] = await db.select({ id: rooms.id }).from(rooms).where(and(eq(rooms.orgId, v.orgId), eq(rooms.id, roomId)));
   if (!room) throw new InputError(`no room '${roomId}' in this org`);
-  // One open task per approval per room: approving twice doesn't duplicate the work.
-  const [dup] = await db.select().from(tasks).where(and(eq(tasks.orgId, v.orgId), eq(tasks.roomId, roomId), eq(tasks.approvalId, approvalId), inArray(tasks.status, ['open', 'done'])));
-  if (dup) return dup;
-  await refusePrice(db, v.orgId, roomId, approvalId);
-  const [row] = await db.insert(tasks).values({ orgId: v.orgId, roomId, approvalId, title, system, steps: stepsFor(system, diff), expect: expectFor(approvalId), createdBy: v.userId }).returning();
-  await db.insert(auditLog).values({ orgId: v.orgId, userId: v.userId, action: 'task.created', detail: { id: row!.id, roomId, approvalId } });
-  return row!;
+  // One open task per approval per room: approving twice, or from two screens at once
+  // (the approval sheet and Today both ask), doesn't duplicate the work.
+  return db.transaction(async (tx) => {
+    const t = tx as unknown as Db;
+    await t.execute(sql`select pg_advisory_xact_lock(hashtext(${`task:${v.orgId}:${roomId}:${approvalId}`}))`);
+    const [dup] = await t.select().from(tasks).where(and(eq(tasks.orgId, v.orgId), eq(tasks.roomId, roomId), eq(tasks.approvalId, approvalId), inArray(tasks.status, ['open', 'done'])));
+    if (dup) return dup;
+    await refusePrice(t, v.orgId, roomId, approvalId);
+    const [row] = await t.insert(tasks).values({ orgId: v.orgId, roomId, approvalId, title, system, steps: stepsFor(system, diff), expect: expectFor(approvalId), createdBy: v.userId }).returning();
+    await t.insert(auditLog).values({ orgId: v.orgId, userId: v.userId, action: 'task.created', detail: { id: row!.id, roomId, approvalId } });
+    return row!;
+  });
 }
 
 export async function listTasks(db: Db, orgId: string, roomScope: string[] | null = null) {

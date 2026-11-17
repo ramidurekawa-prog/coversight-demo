@@ -6,6 +6,7 @@ import { and, desc, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 
 import type { Db } from './db/client';
+import { meetingSchemas } from './page/meeting';
 import { actions, auditLog, rooms } from './db/schema';
 import { InputError } from './org';
 import { AuthError, type Viewer } from './session';
@@ -15,8 +16,8 @@ const isoDate = z.string().max(40);
 const flags = z.record(id, isoDate);
 
 export const ACTION_KEYS = {
-  /** Today's work queue: cards cleared or refused, with when. */
-  queue: { scope: 'room', schema: z.object({ done: flags, refused: flags }) },
+  /** Today's work queue: cards done or declined (with when, and why declined), and snoozed (until which day). Written by /api/page/today. */
+  queue: { scope: 'room', schema: z.object({ done: flags, refused: flags, snoozed: flags.optional(), meta: z.record(id, z.object({ reason: z.enum(['not_relevant', 'handled', 'disagree', 'not_now']).optional(), worth: z.number().min(0).max(1e7).optional() })).optional() }).refine((q) => Object.keys(q.done).length + Object.keys(q.refused).length + Object.keys(q.snoozed ?? {}).length <= 300, 'too many cards') },
   /** Tonight's one labour suggestion on the Service screen. */
   service: { scope: 'room', schema: z.enum(['ask', 'yes', 'no']) },
   /** Approvals written back, by approval id. */
@@ -49,6 +50,8 @@ export const ACTION_KEYS = {
   autonomy: { scope: 'room', schema: z.record(z.string().min(1).max(40), z.number().int().min(0).max(4)) },
   /** Pricing on the invoice: per room per month, and the fee on reconciled savings. */
   pricing: { scope: 'group', schema: z.object({ perRoomMonthlyCents: z.number().int().min(0).max(1_000_000), feePct: z.number().min(0).max(50) }) },
+  /** Weekly meeting: the room's slot (day of week, 0 = Sunday, local time, length) and who usually attends. */
+  'meeting.schedule': { scope: 'room', schema: meetingSchemas.schedule },
   /** All rooms: attention items acknowledged or snoozed in this room, by item id (`<roomId>:<kind>:<key>`). */
   'portfolio.handled': { scope: 'room', schema: z.record(z.string().regex(/^[^:\s]{1,60}:[a-z]+:\S{1,100}$/).max(120), z.object({ s: z.enum(['ack', 'snooze']), at: isoDate, until: isoDate.optional() })).refine((v) => Object.keys(v).length <= 50, 'at most 50 handled items') },
 } as const;
