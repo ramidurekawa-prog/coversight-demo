@@ -6,8 +6,8 @@ import s from './week.module.css';
 
 /* Interactive charts for This week. Plain SVG + a hover/focus tooltip:
    every mark can be hovered, tapped or reached with Tab, and each chart
-   carries a screen-reader table of its values. Colours are design-system
-   tokens: --cat-1 for the series, --money-up / --money-down for polarity. */
+   carries a screen-reader table of its values. Colors follow Today:
+   navy ink (--fg-1) for the data, green / red only for which way money moved. */
 
 function useTip() {
   const [tip, setTip] = React.useState(null);
@@ -74,9 +74,9 @@ export function WeekBars({ points, baseline = null, baselineLabel = 'baseline', 
               onClick={() => show(i, ((x + bw / 2) / W) * 100, top)}>
               <rect x={x} y={P.t} width={bw} height={H - P.t - P.b} fill="transparent" />
               <rect x={x + bw * 0.18} y={top} width={bw * 0.64} height={Math.max(2, bot - top)} rx={4}
-                fill={p.current ? 'var(--accent)' : 'var(--cat-1)'} opacity={p.current || on ? 1 : 0.32} />
-              {(p.current || ((points.length - 1 - i) % every === 0 && points.length - 1 - i >= every)) && <text x={i === points.length - 1 ? x + bw : x + bw / 2} y={H - 8} textAnchor={i === points.length - 1 ? 'end' : 'middle'} style={p.current ? { fill: 'var(--fg-1)', fontWeight: 700 } : undefined}>{p.current ? 'This week' : p.label}</text>}
-              {p.current && <text x={x + bw / 2} y={top - 6} textAnchor="middle" className="lbl" style={{ fontWeight: 700, fill: 'var(--fg-1)' }}>{fmt(p.value)}</text>}
+                fill={p.current ? 'var(--fg-1)' : 'var(--fg-3)'} opacity={p.current ? 1 : on ? 0.6 : 0.28} />
+              {(p.current || ((points.length - 1 - i) % every === 0 && points.length - 1 - i >= every)) && <text x={i === points.length - 1 ? x + bw : x + bw / 2} y={H - 8} textAnchor={i === points.length - 1 ? 'end' : 'middle'} style={p.current ? { fill: 'var(--fg-1)', fontWeight: 600 } : undefined}>{p.current ? 'This week' : p.label}</text>}
+              {p.current && <text x={x + bw / 2} y={top - 6} textAnchor="middle" className="lbl" style={{ fontWeight: 600, fill: 'var(--fg-1)' }}>{fmt(p.value)}</text>}
             </g>
           );
         })}
@@ -112,7 +112,7 @@ export function Waterfall({ start, parts, end, fmt, caption, height = 220 }) {
   const y = (v) => P.t + (1 - (Math.max(lo, v) - lo) / (hi - lo)) * (H - P.t - P.b);
   const bw = (W - P.l - P.r) / steps.length;
   const narrow = bw < 110;
-  const fill = { total: 'var(--cat-1)', up: 'var(--money-up)', down: 'var(--money-down)' };
+  const fill = { total: 'var(--fg-1)', up: 'var(--success-600)', down: 'var(--error-600)' };
   return (
     <div className={s.chartWrap} ref={ref} onMouseLeave={hide}>
       <svg className="cv-chart" width={W} height={H} viewBox={`0 0 ${W} ${H}`} role="group" aria-label={caption}>
@@ -124,10 +124,10 @@ export function Waterfall({ start, parts, end, fmt, caption, height = 220 }) {
           return (
             <g key={st.key} tabIndex={0} role="img" aria-label={`${st.label}: ${st.kind === 'total' ? fmt(st.value) : fmt(st.value, true)}`} className={s.mark} onMouseEnter={at} onFocus={at} onBlur={hide} onClick={at}>
               <rect x={x} y={P.t} width={bw} height={H - P.t - P.b} fill="transparent" />
-              <rect x={x + bw * 0.16} y={top} width={bw * 0.68} height={Math.max(3, bot - top)} rx={4} fill={fill[st.kind]} opacity={st.kind === 'total' ? (on ? 0.9 : 0.55) : on ? 1 : 0.85} />
+              <rect x={x + bw * 0.16} y={top} width={bw * 0.68} height={Math.max(3, bot - top)} rx={4} fill={fill[st.kind]} opacity={st.kind === 'total' ? (on ? 1 : 0.88) : on ? 1 : 0.9} />
               {st.kind === 'total' && <path d={`M${x + bw * 0.16},${H - P.b - 10} l${bw * 0.68},0`} stroke="var(--surface)" strokeWidth="3" strokeDasharray="6 5" />}
               {i < steps.length - 1 && <line x1={x + bw * 0.84} x2={x + bw * 1.16} y1={y(st.kind === 'total' ? st.value : st.to)} y2={y(st.kind === 'total' ? st.value : st.to)} stroke="var(--fg-3)" strokeDasharray="2 3" />}
-              <text x={x + bw / 2} y={top - 8} textAnchor="middle" className="lbl" style={{ fontWeight: 700, fill: st.kind === 'total' ? 'var(--fg-1)' : fill[st.kind] }}>{st.kind === 'total' ? fmt(st.value) : fmt(st.value, true)}</text>
+              <text x={x + bw / 2} y={top - 8} textAnchor="middle" className="lbl" style={{ fontWeight: 600, fill: 'var(--fg-1)' }}>{st.kind === 'total' ? fmt(st.value) : fmt(st.value, true)}</text>
               <text x={x + bw / 2} y={H - 10} textAnchor="middle" style={{ fill: 'var(--fg-2)' }}>{narrow && st.short ? st.short : st.label}</text>
             </g>
           );
@@ -148,7 +148,7 @@ export function TestTrack({ day, waiting, label }) {
   const pct = Math.max(2, Math.min(100, (day / 28) * 100));
   return (
     <div className={s.track28} role="img" aria-label={`${label}: day ${day} of 28`}>
-      <span className={s.track28Fill} style={{ width: `${pct}%`, background: waiting ? 'var(--warning-600)' : 'var(--accent)' }} />
+      <span className={s.track28Fill} style={{ width: `${pct}%`, background: waiting ? 'var(--warning-600)' : 'var(--fg-1)' }} />
       {[7, 14, 21, 28].map((d) => <span key={d} className={`${s.track28Mark} ${day >= d ? s.track28Done : ''}`} style={{ left: `${(d / 28) * 100}%` }} title={`Checkpoint, day ${d}`} />)}
       <span className={s.track28Lbls} aria-hidden="true">{[0, 7, 14, 21, 28].map((d) => <span key={d}>{d === 28 ? 'Day 28' : d}</span>)}</span>
     </div>

@@ -2,12 +2,14 @@
 
 import * as React from 'react';
 
-import { Icon, Button, Tabs } from '../../kit';
+import { Icon, Button } from '../../kit';
 import { engine, useEngine, useSaved } from '../../engine';
 import { PLAN_KEY, PLAN_TOP, REVIEW_KEY, buildCommit, planState, setItemStatus, trimReviews, weekView } from '../../../lib/data/page/week';
-import { useCv, cvMoney, CV_D, CV_DS, CV_ROOM, Claim, Money, Callout, Interval, PageHead, Pill } from '../core';
+import { useCv, cvMoney, CV_D, CV_DS, CV_ROOM, Claim, Money, Callout, Interval, PageHead } from '../core';
 import { DenseWeek } from '../dense-sections';
 import { Meter, TestTrack, Waterfall, WeekBars } from './week-charts';
+import { useTodayTheme } from './today.themes';
+import './today.module.css';
 import s from './week.module.css';
 
 /* This week: your week in review, mostly as pictures. Big numbers first,
@@ -29,6 +31,21 @@ const usd = (v, sign = false) => cvMoney(Math.round(v), { sign });
 function Fig({ id, show, children }) {
   return show ? <Money id={id}>{children}</Money> : <span>{children}</span>;
 }
+
+/** A segmented toggle, as on Today: one choice of a few. */
+function Toggle({ label, options, value, onChange }) {
+  return (
+    <div className={s.toggle} role="radiogroup" aria-label={label}>
+      {options.map((o) => <button key={o.value} type="button" role="radio" aria-checked={o.value === value} onClick={() => onChange(o.value)}>{o.label}</button>)}
+    </div>
+  );
+}
+
+/** Today's state chip: an icon and a word, never color alone. */
+function StateChip({ icon, tone, children }) {
+  return <span className={`${s.stateChip} ${tone === 'warn' ? s.stateWarn : tone === 'good' ? s.stateGood : tone === 'mute' ? s.stateMute : ''}`}><Icon name={icon} size={13} />{children}</span>;
+}
+const leverName = (l) => (l === 'Labour' ? 'Labor' : l);
 
 /** Long text, one click away. */
 function More({ label = 'How this is worked out', children }) {
@@ -102,14 +119,14 @@ function Board({ v }) {
         <div className={s.tileHead}><span className="cv-over">Contribution</span><Claim k={c.claim} /></div>
         <span className={`cv-fig xl ${s.big}`}>{c.value == null ? '—' : <Money id="earned-week">{usd(c.value)}</Money>}</span>
         {spark.length > 1 && <MiniLine vals={spark} />}
-        <span className={s.tileFoot}>After food and labour{c.status === 'estimated' ? ' · labour estimated' : ''}</span>
+        <span className={s.tileFoot}>After food & labor{c.status === 'estimated' ? ' · labor estimated' : ''}</span>
       </div>
       <div className={s.tile}>
         <div className={s.tileHead}><span className="cv-over">Vs {v.comparator ? v.comparator.label.toLowerCase() : 'before'}</span><Claim k={v.comparator?.id === 'matched' ? 'mod' : 'obs'} /></div>
-        <span className={`cv-fig xl ${s.big} ${ch == null ? '' : ch >= 0 ? 'cv-up' : 'cv-down'}`}>
+        <span className={`cv-fig xl ${s.big}`}>
           {ch == null ? '—' : <Fig id="margin-move" show={sample && v.comparator?.id === 'matched'}>{usd(ch, true)}</Fig>}
         </span>
-        {ch != null && <span className={`${s.delta} ${ch >= 0 ? 'cv-up' : 'cv-down'}`}><Icon name={ch >= 0 ? 'TrendingUp' : 'TrendingDown'} size={16} /> {Math.abs((ch / (v.decomposition.contribution.then || 1)) * 100).toFixed(1)}%</span>}
+        {ch != null && <span className={s.delta}><Icon name={ch >= 0 ? 'ArrowUpRight' : 'ArrowDownRight'} size={14} />{ch >= 0 ? '+' : '−'}{Math.abs((ch / (v.decomposition.contribution.then || 1)) * 100).toFixed(1)}%</span>}
         <span className={s.tileFoot}>{ch == null ? 'No earlier week of yours yet' : 'A change, not a saving'}</span>
       </div>
       <div className={s.tile}>
@@ -131,8 +148,8 @@ function MiniLine({ vals }) {
   const xy = vals.map((v, i) => [(i / (vals.length - 1)) * (w - 6) + 3, h - 4 - ((v - lo) / span) * (h - 8)]);
   return (
     <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-hidden="true" style={{ maxWidth: '100%' }}>
-      <polyline points={xy.map((p) => p.join(',')).join(' ')} fill="none" stroke="var(--cat-1)" strokeWidth="2" strokeLinejoin="round" />
-      <circle cx={xy.at(-1)[0]} cy={xy.at(-1)[1]} r="3.5" fill="var(--accent)" />
+      <polyline points={xy.map((p) => p.join(',')).join(' ')} fill="none" stroke="var(--fg-1)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+      <circle cx={xy.at(-1)[0]} cy={xy.at(-1)[1]} r="4" fill="var(--fg-1)" stroke="var(--surface)" strokeWidth="2" />
     </svg>
   );
 }
@@ -150,12 +167,12 @@ function MoneyMoved({ v, comparator, setComparator }) {
         <span className="cv-h4" id="week-moved">Where the money moved</span>
         <Claim k="obs" />
       </div>
-      {avail.length > 1 && <Tabs tabs={avail.map((c) => ({ value: c.id, label: `vs ${c.label.toLowerCase()}` }))} value={comparator || v.comparator?.id} onChange={setComparator} />}
+      {avail.length > 1 && <Toggle label="Compare with" options={avail.map((c) => ({ value: c.id, label: `vs ${c.label.toLowerCase()}` }))} value={comparator || v.comparator?.id} onChange={setComparator} />}
       {dec ? <>
         <Waterfall
           caption={`Contribution from ${v.comparator.label.toLowerCase()} to this week`}
           start={{ label: v.comparator.label, short: 'Before', value: dec.contribution.then }}
-          parts={['net', 'food', 'labour'].map((k) => ({ key: k, label: { net: 'Sales', food: 'Food cost', labour: 'Labour cost' }[k], short: { net: 'Sales', food: 'Food', labour: 'Labour' }[k], value: line(k).effect }))}
+          parts={['net', 'food', 'labour'].map((k) => ({ key: k, label: { net: 'Sales', food: 'Food cost', labour: 'Labor cost' }[k], short: { net: 'Sales', food: 'Food', labour: 'Labor' }[k], value: line(k).effect }))}
           end={{ label: 'This week', short: 'Now', value: dec.contribution.now }}
           fmt={(x, sign) => usd(x, sign)} />
         <div className={s.chips}>
@@ -166,20 +183,20 @@ function MoneyMoved({ v, comparator, setComparator }) {
               <div key={k} className={s.chip}>
                 <span className="cv-xs cv-faint">{label}</span>
                 <span className={s.chipNum}>{k === 'covers' ? Math.round(l.now).toLocaleString('en-US') : cvMoney(k === 'check' ? l.now : Math.round(l.now), { cents: k === 'check' })}</span>
-                <span className={`cv-xs ${up ? 'cv-up' : 'cv-down'}`}><Icon name={up ? 'ArrowUp' : 'ArrowDown'} size={12} /> {k === 'covers' ? Math.abs(Math.round(l.change)) : cvMoney(Math.abs(k === 'check' ? l.change : Math.round(l.change)), { cents: k === 'check' })}</span>
+                <span className={s.delta} style={{ fontSize: 13.5 }}><Icon name={up ? 'ArrowUpRight' : 'ArrowDownRight'} size={13} />{up ? '+' : '−'}{k === 'covers' ? Math.abs(Math.round(l.change)) : cvMoney(Math.abs(k === 'check' ? l.change : Math.round(l.change)), { cents: k === 'check' })}</span>
               </div>
             );
           })}
           {v.comparator.id === 'matched' && m.move > 0 && (
             <div className={s.chip} style={{ flex: 2, minWidth: 220 }}>
               <span className="cv-xs cv-faint">How much of the rise is verified</span>
-              <Meter label={`${usd(m.claimable)} verified, ${usd(m.unexplained)} not claimed`} parts={[{ label: 'Verified', value: m.claimable, color: 'var(--claim-book)' }, { label: 'Not claimed', value: m.unexplained, color: 'var(--border-strong)' }]} />
+              <Meter label={`${usd(m.claimable)} verified, ${usd(m.unexplained)} not claimed`} parts={[{ label: 'Verified', value: m.claimable, color: 'var(--success-600)' }, { label: 'Not claimed', value: m.unexplained, color: 'var(--border-strong)' }]} />
               <span className="cv-xs"><b className="cv-up">{usd(m.claimable)}</b> verified · <span className="cv-faint">{usd(m.unexplained)} not claimed</span></span>
             </div>
           )}
         </div>
         <More>
-          Contribution is net sales minus food cost minus hourly labour. It isn’t profit: rent and other costs aren’t taken off. Sales, food and labour add up exactly to the change; that describes the week, it doesn’t prove what caused it, and none of it is a saving we claim. Food cost is plates sold × recipe cost{v.contribution.status === 'estimated' ? '; labour isn’t measured yet, so it’s estimated' : ''}. {v.comparator.desc}.
+          Contribution is net sales minus food cost minus hourly labor. It isn’t profit: rent and other costs aren’t taken off. Sales, food and labor add up exactly to the change; that describes the week, it doesn’t prove what caused it, and none of it is a saving we claim. Food cost is plates sold × recipe cost{v.contribution.status === 'estimated' ? '; labor isn’t measured yet, so it’s estimated' : ''}. {v.comparator.desc}.
           {missing.length ? ` Not available yet: ${missing.map((c) => `${c.label.toLowerCase()} (${c.reason.replace(/\.$/, '').toLowerCase()})`).join('; ')}.` : ''}
         </More>
       </> : <Callout icon="CalendarRange">Comparisons appear once there’s an earlier week of your own data.</Callout>}
@@ -202,7 +219,7 @@ function Weeks({ v }) {
     <section className="cv-card" aria-labelledby="week-weeks">
       <div className="cv-card-head">
         <span className="cv-h4" id="week-weeks">The last {v.history.length} weeks</span>
-        <Tabs tabs={Object.entries(TREND_FIELDS).map(([k, x]) => ({ value: k, label: x.label }))} value={f} onChange={setF} />
+        <Toggle label="Show" options={Object.entries(TREND_FIELDS).map(([k, x]) => ({ value: k, label: x.label }))} value={f} onChange={setF} />
       </div>
       <WeekBars points={pts} baseline={base} baselineLabel={v.comparator?.label.toLowerCase()} fmt={field.fmt} caption={`${field.label} by week`} />
       <span className="cv-xs cv-faint">Hover or tap a week. The dashed line is {v.comparator ? v.comparator.label.toLowerCase() : 'the baseline'}.</span>
@@ -218,7 +235,7 @@ function PlanRow({ n, item, children, lead }) {
       <span className="cv-rank" aria-hidden="true">{n}</span>
       <div className={s.grow}>
         <span className={s.planTitle}>{item.title}</span>
-        <span className="cv-xs cv-faint">{item.lever} · {minutes(item.hours)}{item.blocked ? '' : ' · '}{!item.blocked && <span className="cv-up">Ready</span>}</span>
+        <span className="cv-xs cv-faint">{leverName(item.lever)} · {minutes(item.hours)}{item.blocked ? '' : ' · '}{!item.blocked && <span className="cv-up">Ready</span>}</span>
         {item.blocked && <span className={s.blockedNote}><Icon name="Lock" size={12} /> Blocked: {item.blocked.split('.')[0]}</span>}
         {(item.why || item.safety) && <More label="Why and what could go wrong">{item.why} {item.safety && <><br /><Icon name="ShieldCheck" size={12} /> {item.safety}</>}</More>}
         {children}
@@ -281,7 +298,7 @@ function PlanDraft({ v, rec, defaults, onCancel }) {
         </div>
         <div className="cv-row" style={{ gap: 8 }}>
           {onCancel && <Button variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>}
-          <Button icon="ClipboardCheck" disabled={rec.busy || picked.length === 0} onClick={commit}>{defaults ? 'Re-commit' : 'Commit the plan'}</Button>
+          <Button size="lg" className={s.cta} iconRight="ArrowRight" disabled={rec.busy || picked.length === 0} onClick={commit}>{defaults ? 'Re-commit' : 'Commit the plan'}</Button>
         </div>
       </div>
     </>
@@ -407,7 +424,7 @@ function InFlight({ v }) {
             <div key={t.id} className={s.testRow}>
               <div className="cv-row" style={{ justifyContent: 'space-between', flexWrap: 'nowrap', gap: 8 }}>
                 <span className={s.planTitle}>{t.title}</span>
-                <Pill tone={t.waiting ? 'warn' : 'info'} icon={t.waiting ? 'Hourglass' : 'Timer'}>{t.waiting ? 'Waiting' : `Day ${d}`}</Pill>
+                <StateChip tone={t.waiting ? 'warn' : ''} icon={t.waiting ? 'Hourglass' : 'FlaskConical'}>{t.waiting ? 'Waiting on data' : `Day ${d} of 28`}</StateChip>
               </div>
               <TestTrack day={d} waiting={t.waiting} label={t.title} />
               <More label="Details">
@@ -490,7 +507,7 @@ function CloseOut({ v, names }) {
           <span className="cv-h4">Close out the week</span>
           <span className="cv-small cv-faint">Mark the week of {v.period.label} reviewed, with a line on what you decided. Everyone with this room sees it.</span>
         </div>
-        {mine && <Pill tone="good" icon="ClipboardCheck">Reviewed {stampDay(mine.at)}{by(key) ? ` by ${by(key)}` : ''}</Pill>}
+        {mine && <StateChip tone="good" icon="ClipboardCheck">Reviewed {stampDay(mine.at)}{by(key) ? ` by ${by(key)}` : ''}</StateChip>}
       </div>
       {mine && !editing ? (
         <div className="cv-col" style={{ gap: 10 }}>
@@ -505,7 +522,7 @@ function CloseOut({ v, names }) {
           <label htmlFor="week-note" className="cv-xs cv-faint">Note (optional)</label>
           <textarea id="week-note" className={`input ${s.note}`} maxLength={1000} value={note} onChange={(e) => setNote(e.target.value)} placeholder="What you decided this week" />
           <div className="cv-row" style={{ gap: 8 }}>
-            <Button size="sm" icon="ClipboardCheck" onClick={save}>{mine ? 'Save the note' : 'Mark the week reviewed'}</Button>
+            <Button size="sm" variant="secondary" icon="ClipboardCheck" onClick={save}>{mine ? 'Save the note' : 'Mark the week reviewed'}</Button>
             {editing && <Button variant="ghost" size="sm" onClick={() => { setNote(mine?.note || ''); setEditing(false); }}>Cancel</Button>}
             <span className="cv-xs cv-faint">{note.length > 900 ? `${1000 - note.length} characters left` : eng.mode === 'server' ? 'Saved to your group.' : 'Saved in this browser.'}</span>
           </div>
@@ -545,6 +562,7 @@ function Waiting({ v }) {
 /* ---------------------------------------------------------------- the page */
 function CvThisWeek() {
   const eng = useEngine();
+  useTodayTheme(false);
   const real = eng.mode === 'server' && !!eng.org && !eng.org.sample;
   const [plan] = useSaved('plan', { hours: CV_D.room.managerHours });
   const [dismissed] = useSaved('findings', {});
@@ -556,7 +574,7 @@ function CvThisWeek() {
   const q = 'Your week in review';
   if (v.awaiting) {
     return (
-      <div className="cv-page">
+      <div className={`cv-page ${s.page}`} data-page="week">
         <PageHead over={CV_ROOM.name} q={q} />
         <Waiting v={v} />
       </div>
@@ -564,16 +582,16 @@ function CvThisWeek() {
   }
   const reviewed = v.period && reviews[v.period.start];
   return (
-    <div className="cv-page">
+    <div className={`cv-page ${s.page}`} data-page="week">
       <PageHead over={`${CV_ROOM.name}${v.period ? ` · ${v.period.label}` : ''}`} q={q} sub={v.headline}
         right={reviewed
-          ? <Pill tone="good" icon="ClipboardCheck">Reviewed</Pill>
+          ? <StateChip tone="good" icon="ClipboardCheck">Reviewed</StateChip>
           : <a className="btn btn-secondary btn-sm" style={{ textDecoration: 'none' }} href="#week-review"><Icon name="ClipboardCheck" size={14} /> Close out the week</a>} />
       <div className="cv-row" style={{ gap: 8, marginTop: -8 }} aria-label="About this data">
-        <Pill tone={v.status === 'complete' ? 'neutral' : 'warn'} icon={v.status === 'complete' ? 'CalendarRange' : 'Hourglass'}>{v.status === 'complete' ? 'Complete week' : 'Week in progress'}</Pill>
-        <Pill icon="Database">Data through {day(v.dataThrough)}</Pill>
-        {v.sample ? <Pill icon="FlaskConical">Sample data</Pill> : v.own ? <Pill icon="Store">Your Toast data</Pill> : null}
-        {v.contribution.status === 'estimated' && <Pill tone="warn" icon="CircleDashed">Labour estimated</Pill>}
+        <StateChip tone={v.status === 'complete' ? 'good' : 'warn'} icon={v.status === 'complete' ? 'CircleCheck' : 'Hourglass'}>{v.status === 'complete' ? 'Complete week' : 'Week in progress'}</StateChip>
+        <StateChip tone="mute" icon="Database">Data through {day(v.dataThrough)}</StateChip>
+        {v.sample ? <StateChip tone="mute" icon="FlaskConical">Sample data</StateChip> : v.own ? <StateChip tone="mute" icon="Store">Your Toast data</StateChip> : null}
+        {v.contribution.status === 'estimated' && <StateChip tone="warn" icon="CircleDashed">Labor estimated</StateChip>}
       </div>
       <Board v={v} />
       <div className="cv-grid g-hero" style={{ alignItems: 'start' }}>

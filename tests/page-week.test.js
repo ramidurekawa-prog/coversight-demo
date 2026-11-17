@@ -208,7 +208,7 @@ describe('the digest and the review record', () => {
     const g = weekDigest(v);
     expect(g.title).toBe(`${v.short}: the week of ${v.period.label}`);
     expect(g.body.split('\n')[0]).toBe(v.headline);
-    expect(g.body).toMatch(/Contribution after food and labour/);
+    expect(g.body).toMatch(/Contribution after food and labor/);
     expect(['info', 'warn']).toContain(g.severity);
   });
 
