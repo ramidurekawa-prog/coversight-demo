@@ -53,14 +53,54 @@ export function MarkBar({ value, mark, max, fmt = String, label = 'This week', t
   );
 }
 
-/** Covers so far tonight against a comparable night by the same time: two labelled bars on one scale. */
-export function PaceBars({ so, usual, at }) {
-  const top = Math.max(so, usual, 1);
+/**
+ * Tonight's covers against a comparable night, per 15 minutes: the usual night
+ * as a shaded shape across the whole service, tonight as a line up to now,
+ * and when the usual rush is. Times come from the service's own slots.
+ */
+export function PaceCurve({ comp, actual, times, h = 56 }) {
+  if (!comp?.length || !actual?.length) return null;
+  const n = comp.length - 1;
+  const top = Math.max(...comp, ...actual) * 1.1 || 1;
+  const x = (i) => (i / n) * 100;
+  const y = (v) => 3 + (1 - v / top) * (h - 6);
+  const area = `0,${h} ${comp.map((v, i) => `${x(i)},${y(v)}`).join(' ')} 100,${h}`;
+  const peak = Math.max(...comp);
+  const p0 = comp.indexOf(peak), p1 = comp.lastIndexOf(peak);
+  const endOf = (i) => times[i + 1] || times[i];
+  const rush = `${times[p0]}–${endOf(p1)} pm`;
+  const nowI = actual.length - 1;
   return (
-    <span className={s.pace} aria-hidden="true">
-      <span className={s.paceRow}><span className={s.paceLbl}>Usual by {at}</span><span className={s.paceTrack}><span className={s.paceUsual} style={{ width: `${(usual / top) * 100}%` }} /></span><b className={s.paceVal}>{usual}</b></span>
-      <span className={s.paceRow}><span className={s.paceLbl}>Tonight</span><span className={s.paceTrack}><span className={s.paceNow} style={{ width: `${(so / top) * 100}%` }} /></span><b className={s.paceVal}>{so}</b></span>
-      <span className={s.sparkAxis}><span>Covers so far</span></span>
+    <span className={s.sparkWrap}>
+      <span className={s.sparkPlot} style={{ height: h, width: '100%' }}>
+        <svg className={s.spark} width="100%" height={h} viewBox={`0 0 100 ${h}`} preserveAspectRatio="none" aria-hidden="true">
+          <rect x={x(p0)} width={Math.max(0.8, x(p1 + 1) - x(p0))} y={0} height={h} className={s.curveRush} />
+          <polygon points={area} className={s.curveUsual} />
+          <polyline points={actual.map((v, i) => `${x(i)},${y(v)}`).join(' ')} className={s.sparkLine} vectorEffect="non-scaling-stroke" />
+          <line x1={x(nowI)} x2={x(nowI)} y1={0} y2={h} className={s.curveNow} vectorEffect="non-scaling-stroke" />
+        </svg>
+        <i className={s.sparkDot} style={{ left: `${x(nowI)}%`, top: y(actual[nowI]) }} aria-hidden="true" />
+      </span>
+      <span className={s.sparkAxis} style={{ width: "100%" }}><span>{times[0]}</span><span className={s.sparkCap}>Usual rush {rush}</span><span>{times[n]}</span></span>
+      <span className={s.curveKey}><span><i className={s.keyLine} />Tonight</span><span><i className={s.keyArea} />A comparable night</span></span>
+    </span>
+  );
+}
+
+/** Weekly refunds by app, as labelled bars on one scale. */
+export function RefundBars({ rows }) {
+  const top = Math.max(...rows.map((r) => r[1]), 1);
+  const total = rows.reduce((t, r) => t + r[1], 0);
+  return (
+    <span className={s.refunds}>
+      {rows.map(([name, v]) => (
+        <span key={name} className={s.refundRow}>
+          <span className={s.paceLbl}>{name}</span>
+          <span className={s.paceTrack}><span className={s.paceNow} style={{ width: `${(v / top) * 100}%` }} /></span>
+          <b className={s.paceVal}>${Math.round(v).toLocaleString('en-US')}</b>
+        </span>
+      ))}
+      <span className={s.sparkAxis}><span>Refunds a week, by app · ${Math.round(total).toLocaleString('en-US')} in all</span></span>
     </span>
   );
 }

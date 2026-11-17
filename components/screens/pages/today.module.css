@@ -97,8 +97,8 @@
 button.pill { cursor: pointer; }
 .pillWarn { background: color-mix(in srgb, var(--warning-600) 10%, transparent); color: var(--warning-700); font-weight: 600; }
 .pillWarn:hover { background: color-mix(in srgb, var(--warning-600) 16%, transparent); }
-.headline { margin: 6px 0 0; max-width: 30ch; font-size: 36px; font-weight: 600; line-height: 1.12; letter-spacing: -0.03em; color: var(--fg-1); text-wrap: balance; }
-.explain { margin: 0; max-width: 62ch; font-size: 16px; line-height: 1.5; color: var(--fg-2); }
+.headline { margin: 6px 0 0; max-width: 30ch; font-size: 31px; font-weight: 600; line-height: 1.12; letter-spacing: -0.03em; color: var(--fg-1); text-wrap: balance; }
+.explain { margin: 0; max-width: 62ch; font-size: 15px; line-height: 1.5; color: var(--fg-2); }
 .offline { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 13px; color: var(--warning-600); }
 
 /* ---------------------------------------------------------------- three tiles */
@@ -106,10 +106,10 @@ button.pill { cursor: pointer; }
 .tile { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-areas: 'l' 'f' 'c' 'v'; align-content: start; gap: 8px; min-width: 0; min-height: 0; padding: 18px 20px 16px; border: none; border-radius: var(--card-r); background: var(--surface); box-shadow: 0 0 0 1px var(--border), 0 1px 2px rgba(23, 37, 54, 0.04); text-align: left; font: inherit; color: inherit; cursor: pointer; transition: box-shadow var(--dur-base, 160ms), transform var(--dur-base, 160ms); }
 .tile:hover { box-shadow: 0 0 0 1px var(--border-strong), 0 6px 18px -12px rgba(20, 28, 40, 0.25); }
 .tileLabel { grid-area: l; align-self: start; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; font-size: 13px; font-weight: 600; color: var(--fg-1); }
-.tileWhen { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 500; color: var(--fg-3); }
+.tileWhen { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 600; color: var(--fg-2); }
 .tileLive { color: var(--fg-1); }
 .tileLive i { width: 6px; height: 6px; border-radius: 50%; background: var(--success-600); box-shadow: 0 0 0 3px color-mix(in srgb, var(--success-600) 18%, transparent); }
-.tileFig { grid-area: f; margin-top: 4px; font-size: 34px; font-weight: 600; line-height: 1; letter-spacing: -0.03em; color: var(--fg-1); }
+.tileFig { grid-area: f; margin-top: 4px; font-size: 31px; font-weight: 600; line-height: 1; letter-spacing: -0.03em; color: var(--fg-1); }
 .tileNone { color: var(--fg-3); }
 .tileViz { grid-area: v; display: flex; min-width: 0; margin-top: 10px; padding-top: 14px; border-top: 1px solid var(--border); }
 .tileFoot { grid-area: c; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
@@ -126,7 +126,8 @@ button.pill { cursor: pointer; }
 .sparkAvgLbl { position: absolute; left: calc(100% + 12px); transform: translateY(-50%); white-space: nowrap; font-size: 11.5px; font-weight: 600; color: var(--fg-2); background: color-mix(in srgb, var(--surface) 85%, transparent); line-height: 1.2; font-variant-numeric: tabular-nums; }
 .sparkPlot + .sparkAxis { width: calc(100% - 78px); }
 .sparkAxis { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; font-weight: 500; color: var(--fg-2); font-variant-numeric: tabular-nums; }
-.sparkCap { color: var(--fg-3); text-align: center; }
+.sparkAxis > span { white-space: nowrap; }
+.sparkCap { color: var(--fg-2); font-weight: 600; text-align: center; overflow: hidden; text-overflow: ellipsis; }
 .markBar { position: relative; display: block; width: 100%; height: 40px; }
 .markTrack { position: absolute; left: 0; right: 0; bottom: 4px; height: 10px; border-radius: 5px; background: var(--surface-sunken); overflow: hidden; }
 .markFill { display: block; height: 100%; border-radius: 5px; background: var(--fg-1); }
@@ -140,6 +141,22 @@ button.pill { cursor: pointer; }
 .paceUsual, .paceNow { display: block; height: 100%; border-radius: 5px; }
 .paceUsual { background: var(--border-strong); }
 .paceNow { background: var(--fg-1); }
+.curveUsual { fill: color-mix(in srgb, var(--fg-3) 22%, transparent); }
+.curveRush { fill: color-mix(in srgb, var(--accent) 14%, transparent); }
+.curveNow { stroke: var(--fg-2); stroke-width: 1; stroke-dasharray: 2 2; }
+.curveKey { display: flex; gap: 14px; font-size: 12px; color: var(--fg-2); }
+.curveKey span { display: inline-flex; align-items: center; gap: 6px; }
+.keyLine { width: 14px; height: 2px; border-radius: 1px; background: var(--fg-1); }
+.keyArea { width: 12px; height: 10px; border-radius: 2px; background: color-mix(in srgb, var(--fg-3) 30%, transparent); }
+.refunds { display: flex; flex-direction: column; gap: 8px; max-width: 420px; }
+.refundRow { display: grid; grid-template-columns: 82px 1fr 44px; align-items: center; gap: 10px; }
+.worthRange { flex-direction: column; align-items: flex-end; gap: 1px; }
+.worthRange.worthBig { align-items: flex-start; }
+.worthTag { font-size: 11px; font-weight: 600; letter-spacing: 0.02em; color: var(--warning-700); text-transform: uppercase; }
+.worthRangeFig { font-size: 13px; font-weight: 500; color: var(--fg-2); font-variant-numeric: tabular-nums; }
+.worthBig .worthRangeFig { font-size: 20px; font-weight: 600; color: var(--fg-1); }
+.rowSub { font-size: 12.5px; color: var(--fg-2); }
+.rowGroupHead { margin: 6px 0 -2px; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--fg-2); }
 .people { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
 .peopleDots { display: inline-flex; gap: 6px; }
 .peopleDots span { width: 16px; height: 16px; border-radius: 50%; }
@@ -171,8 +188,8 @@ button.pill { cursor: pointer; }
 /* ---------------------------------------------------------------- the one action: calm by default, strong only when critical */
 .action {
   position: relative; overflow: hidden;
-  display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: var(--s5) var(--s6); align-items: center;
-  padding: 26px 28px 26px 32px; border-radius: var(--hero-r);
+  display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: var(--s4) var(--s6); align-items: center;
+  padding: 20px 24px 20px 30px; border-radius: var(--hero-r);
   background: var(--surface); color: var(--fg-1);
   box-shadow: 0 0 0 1px var(--border), 0 1px 2px rgba(23, 37, 54, 0.04), 0 16px 36px -24px rgba(23, 37, 54, 0.28);
 }
@@ -183,14 +200,14 @@ button.pill { cursor: pointer; }
   --primary: #E2B54A; --primary-hover: #F0C463; --primary-active: #C99A30; --primary-fg: #14130F; --accent: #E2B54A;
   background: radial-gradient(120% 140% at 100% 0%, #22304A 0%, #141C28 55%, #111A28 100%);
 }
-.actionMain { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.actionMain { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .actionTop { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .actionDue { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 600; color: var(--fg-1); }
 .actionDue svg { color: var(--warning-600); }
-.actionTitle { margin: 4px 0 0; font-size: 23px; font-weight: 600; line-height: 1.2; letter-spacing: -0.02em; color: var(--fg-1); text-wrap: balance; }
+.actionTitle { margin: 2px 0 0; font-size: 21px; font-weight: 600; line-height: 1.2; letter-spacing: -0.02em; color: var(--fg-1); text-wrap: balance; }
 .actionWhy { margin: 0; max-width: 58ch; font-size: 15px; line-height: 1.5; color: var(--fg-2); }
-.actionViz { margin-top: 10px; }
-.actionSide { display: flex; flex-direction: column; justify-content: center; gap: 10px; padding-left: var(--s6); border-left: 1px solid var(--border); }
+.actionViz { margin-top: 8px; }
+.actionSide { display: flex; flex-direction: column; justify-content: center; gap: 8px; padding-left: var(--s6); border-left: 1px solid var(--border); }
 .actionFix { display: flex; align-items: flex-start; gap: 8px; font-size: 14px; font-weight: 500; line-height: 1.4; color: var(--fg-1); }
 .actionFix svg { flex: none; margin-top: 2px; color: var(--fg-2); }
 .actionBtn { width: 100%; justify-content: center; gap: 8px; min-height: 48px; margin-top: 4px; border-radius: var(--btn-r); font-size: 15px; font-weight: 600; letter-spacing: -0.005em; box-shadow: 0 1px 0 rgba(23, 37, 54, 0.08), 0 6px 16px -8px color-mix(in srgb, var(--primary) 70%, transparent); transition: background var(--dur-base, 160ms), transform 80ms, box-shadow var(--dur-base, 160ms); }
@@ -204,10 +221,10 @@ button.pill { cursor: pointer; }
 .seeWhy:hover { color: var(--fg-1); background: var(--surface-sunken); }
 .worth { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
 .worthBig { flex-direction: column; align-items: flex-start; gap: 2px; white-space: normal; }
-.worthRow { display: inline-flex; align-items: center; gap: 10px; }
+.worthRow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; white-space: normal; }
 .worthMeans { font-size: 13px; line-height: 1.4; color: var(--fg-2); }
 .worthFig { font-size: 14px; font-weight: 600; color: var(--fg-1); }
-.worthBig .worthFig { font-size: 32px; font-variant-numeric: tabular-nums; line-height: 1.05; letter-spacing: -0.03em; }
+.worthBig .worthFig { font-size: 30px; font-variant-numeric: tabular-nums; line-height: 1.05; letter-spacing: -0.03em; }
 .worthPre, .worthUnit { font-size: 12px; font-weight: 500; letter-spacing: 0; color: var(--fg-2); }
 .worthBig .worthUnit, .worthBig .worthPre { font-size: 14px; }
 .allClear { display: flex; align-items: center; gap: var(--s4); padding: 22px 26px; border-radius: var(--hero-r); background: var(--surface); box-shadow: 0 0 0 1px var(--border); }
@@ -258,6 +275,8 @@ button.pill { cursor: pointer; }
 .stripState { display: inline-flex; align-items: center; gap: 6px; }
 .stripState b { font-weight: 600; }
 .stripMute { color: var(--fg-2); font-size: 13px; }
+.stripDetail { flex-basis: 100%; font-size: 12.5px; line-height: 1.4; color: var(--fg-2); }
+.ic_muted { color: var(--fg-3); }
 
 /* lists inside the Being handled panel */
 .handled { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }

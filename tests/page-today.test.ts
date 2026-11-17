@@ -375,8 +375,8 @@ describe('the briefing, coming up and results (pure)', () => {
     expect(b.line).toBe('Covers are 22% below the usual Tuesday dinner pace. Check staffing for the next service hour.');
     expect(b.warn.map((w: { name: string }) => w.name)).toContain('7shifts');
     const q = for_('berkeley');
-    expect(briefing(q.d, { cards: q.cards, view, now: NOW }).headline).toBe('Dinner is on track.');
-    expect(briefing(q.d, { cards: [], view, now: NOW }).headline).toBe('Everything looks on track for dinner.');
+    expect(briefing(q.d, { cards: q.cards, view, now: NOW }).headline).toBe('Dinner demand is on track.');
+    expect(briefing(q.d, { cards: [], view, now: NOW }).headline).toBe('Dinner demand is on track.');
     expect(briefing({ ...q.d, room: { ...q.d.room, service: null } }, { cards: [], view, now: NOW })).toMatchObject({ tone: 'calm', headline: 'Everything looks on track.' });
   });
 

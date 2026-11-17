@@ -185,9 +185,10 @@ const CV_CLAIM = {
   obs: { label: "Observed", icon: "Eye", tip: "Read directly from your systems. No model involved." },
   none: { label: "No claim", icon: "Ban", tip: "Nothing is claimed for this." },
 };
-function Claim({ k }) {
+/** A claim chip. `label` can say more precisely what was observed or estimated ("Refunds observed"); the icon and meaning stay the claim's. */
+function Claim({ k, label }) {
   const c = CV_CLAIM[k] || CV_CLAIM.none;
-  return <span className={`cv-claim ${k}`} title={c.tip}><Icon name={c.icon} size={12} />{c.label}</span>;
+  return <span className={`cv-claim ${k}`} title={c.tip}><Icon name={c.icon} size={12} />{label || c.label}</span>;
 }
 
 /** A dollar figure that opens its derivation. */

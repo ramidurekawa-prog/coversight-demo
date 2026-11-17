@@ -5,12 +5,9 @@ import { engine, useEngine, useSaved } from '../../engine';
 import { useCv, cvMoney, CV_D, CV_ROOM, CV_NOW, Claim, Money, Pill, Callout, PageHead, cvScale, SampleNote } from '../core';
 import { DenseService } from '../dense-sections';
 import { tonightPlan } from '../week';
-import { servicePace } from '../../../lib/data/model';
+import { servicePace, serviceTimes } from '../../../lib/data/model';
 
 /* ================================================================ Service (live, phone-first) */
-function serviceTimes(n) {
-  return Array.from({ length: n }, (_, i) => { const m = 17 * 60 + i * 15; const h = Math.floor(m / 60), mm = m % 60; return `${h - 12}:${mm ? mm : '00'}`; });
-}
 
 function ServiceChart({ s }) {
   const { comp, actual, now, factor, mode } = s;

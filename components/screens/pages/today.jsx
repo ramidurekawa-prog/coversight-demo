@@ -279,7 +279,8 @@ function CvToday() {
     if (q.go) return cv.go(q.go, q.input ? { kind: q.input } : undefined);
     return decide('done', q, { summary: `${q.title}: done` }, 'Marked done, with your name and the time.', rcpt(`Done: ${q.title}`, ['Done', 'Recorded with your name and the time'], { undo: q.id }));
   };
-  const primaryOf = (q) => () => (q.approval && !q.blocked ? setReview(q.id) : perform(q));
+  // A decision or a change made by hand opens its review first: what happens, who does it, and how it's checked.
+  const primaryOf = (q) => () => ((q.approval && !q.blocked) || (!q.blocked && !q.task && !q.start && !q.go) ? setReview(q.id) : perform(q));
   const decline = (q, reason) => decide('refuse', q, { reason, summary: `${q.title}: not for us` }, `Recommendation dismissed: ${DECLINE[reason].label.toLowerCase()}. It stays away for ${DECLINE[reason].days} days unless it becomes worth much more.`,
     rcpt(`Not worth acting on: ${q.title}`, ['Dismissed', `Hidden for ${DECLINE[reason].days} days`], { icon: 'CircleMinus', undo: q.id })).then((ok) => {
     const id = findingId(q);
@@ -305,17 +306,26 @@ function CvToday() {
     open: q.go === 'finding' ? () => { close(); cv.go('finding', { id: q.goId }); } : q.go && !q.input ? () => { close(); cv.go(q.go); } : undefined,
   });
 
-  const [lead, ...rest] = ready;
+  // Data and system fixes rank on their own, apart from the business opportunities.
+  const isFix = (q) => areaOf(q) === 'data';
+  const leadAt = Math.max(0, ready.findIndex((q) => !isFix(q)));
+  const lead = ready[leadAt];
+  const rest = ready.filter((_, i) => i !== leadAt);
   const next = [...upNextOrder(rest, cards), ...waiting];
-  const top = next.slice(0, FIRST_SCREEN - 1);
-  const more = next.slice(FIRST_SCREEN - 1);
+  const opps = next.filter((q) => !isFix(q));
+  const fixes = next.filter(isFix);
+  const top = opps.slice(0, FIRST_SCREEN - 1);
+  const more = opps.slice(FIRST_SCREEN - 1);
   const reviewing = review ? byId(review) : null;
   const leadTrust = lead ? cardTrust(lead, d, now) : null;
   const leadFrame = lead ? frameFor(lead, d, sv, leadTrust) : null;
   // One supporting sentence: the decision that needs attention, in plain words.
   const others = ready.length - 1;
+  const KIND = { labor: 'staffing decision', data: 'data fix', delivery: 'operational fix', stock: 'operational fix', comps: 'operational fix', menu: 'menu decision' };
+  // When tonight is on track or slow, say the pace first, so "on track" can't be read as "nothing to do".
+  const paceBit = sv && sv.mode !== 'cut' ? `You’re ${Math.abs(sv.pace)}% ${sv.pace >= 0 ? 'above' : 'below'} usual pace. ` : '';
   const explain = lead
-    ? `${areaOf(lead) === 'labor' ? 'One staffing decision needs' : 'One decision needs'} attention${others > 0 ? `; ${others} more ${others === 1 ? 'is' : 'are'} below` : ''}.`
+    ? `${paceBit}One ${KIND[areaOf(lead)] || 'decision'} needs your attention${others > 0 ? `; ${others} more ${others === 1 ? 'is' : 'are'} below` : ''}.`
     : brief.line;
   const leadW = lead ? worthOf(lead) : null;
   const handled = handledOf({ cards, view, tasks: roomTasks, windows, d });
@@ -351,16 +361,25 @@ function CvToday() {
         </div>
       )}
 
-      {next.length > 0 && (
-        <section className={s.rows} aria-label="Also on your list">
+      {opps.length > 0 && (
+        <section className={s.rows} aria-labelledby={fixes.length ? 'opps-head' : undefined} aria-label={fixes.length ? undefined : 'Also on your list'}>
+          {fixes.length > 0 && <h3 id="opps-head" className={s.rowGroupHead}>Opportunities</h3>}
           <ul className={s.rowList}>
-            {(showMore ? next : top).map((q) => <IssueRow key={q.id} q={q} cards={cards} onOpen={() => setReview(q.id)} />)}
+            {(showMore ? opps : top).map((q) => <IssueRow key={q.id} q={q} cards={cards} onOpen={() => setReview(q.id)} />)}
           </ul>
           {more.length > 0 && (
             <button type="button" className={s.moreBtn} aria-expanded={showMore} onClick={() => setShowMore(!showMore)}>
               {showMore ? 'Show less' : `View remaining (${more.length})`}<Icon name={showMore ? 'ChevronUp' : 'ChevronDown'} size={14} />
             </button>
           )}
+        </section>
+      )}
+      {fixes.length > 0 && (
+        <section className={s.rows} aria-labelledby="fix-head">
+          <h3 id="fix-head" className={s.rowGroupHead}>Data to fix</h3>
+          <ul className={s.rowList}>
+            {fixes.map((q) => <IssueRow key={q.id} q={q} cards={cards} onOpen={() => setReview(q.id)} />)}
+          </ul>
         </section>
       )}
 

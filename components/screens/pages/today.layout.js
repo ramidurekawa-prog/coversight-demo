@@ -14,6 +14,7 @@ export const METRICS = {
   sales: 'Sales',
   labor: 'Labor',
   covers: 'Covers',
+  margin: 'After food & labor',
 };
 /** Optional extras, below the main flow and off by default. */
 export const WIDGETS = {
@@ -22,14 +23,17 @@ export const WIDGETS = {
 };
 export const MAX_METRICS = 3;
 
-/** Each role's starting layout: three tiles, no extras. */
+/**
+ * Each role's starting layout. An owner leads with money (sales, then what's
+ * left after food and labor) and sees every location ranked by what needs
+ * them; a GM, who runs the shift, leads with tonight. */
 export const PRESETS = {
-  owner: { metrics: ['sales', 'labor', 'tonight'], widgets: [] },
+  owner: { metrics: ['sales', 'margin', 'tonight'], widgets: ['locations'] },
   gm: { metrics: ['tonight', 'labor', 'sales'], widgets: [] },
 };
 export const presetFor = (role) => PRESETS[role] || PRESETS.owner;
 
-const KEY = (role) => `cv-today-layout-v2:${role in PRESETS ? role : 'owner'}`;
+const KEY = (role) => `cv-today-layout-v3:${role in PRESETS ? role : 'owner'}`;
 const clean = (v, role) => {
   const base = presetFor(role);
   if (!v || typeof v !== 'object') return base;

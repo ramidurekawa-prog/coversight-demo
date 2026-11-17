@@ -4,14 +4,14 @@ import * as React from 'react';
 
 import { Button, Icon } from '../../kit';
 import { assigneeLabel, cardState, isActive, queueView, todayCards, worthOf, unlocksOf } from '../../../lib/data/page/today';
-import { comingUp } from '../../../lib/data/page/today-brief';
+import { areaOf, comingUp } from '../../../lib/data/page/today-brief';
 import { CV_D, CV_DS, CV_GROUP, Claim, cvMoney } from '../core';
-import { ACCRUAL_START, deriveRoom } from '../../../lib/data/model';
+import { ACCRUAL_START, deriveRoom, serviceTimes } from '../../../lib/data/model';
 import { Panel } from './today.review';
 import { dayLabel, shortMoney } from './today.last';
 import { MAX_METRICS, METRICS, SCENARIOS, WIDGETS } from './today.layout';
 import { THEMES, tokensFor } from './today.themes';
-import { AgeBar, HoursBar, MarkBar, PaceBars, Spark, StaffBar } from './today.viz';
+import { AgeBar, HoursBar, MarkBar, PaceCurve, RefundBars, Spark, StaffBar } from './today.viz';
 import s from './today.module.css';
 
 const money = (v) => cvMoney(Math.round(v));
@@ -162,28 +162,37 @@ export function tileData({ d, dense, sv, flags, now }) {
     };
   };
   const byWeek = (k, label) => {
-    if (!(last && before.length >= 4) || flags.noHistory) return { label, when: last ? `Week of ${last.label}` : null, fig: last ? (k === 'net' ? money(last[k]) : String(last[k])) : null, cmp: 'Comparisons after 4 weeks of data', facts: [['Source', src()]], go: 'trends' };
+    const isMoney = k === 'net' || k === 'earned';
+    if (!(last && before.length >= 4) || flags.noHistory) return { label, when: last ? `Week of ${last.label}` : null, fig: last ? (isMoney ? money(last[k]) : String(last[k])) : null, cmp: 'Comparisons after 4 weeks of data', facts: [['Source', src()]], go: 'trends' };
     const avg = mean(before.map((r) => r[k]));
     return {
-      label, when: `Week of ${last.label}`, fig: k === 'net' ? money(last[k]) : String(last[k]), cmp: `${signPct((last[k] - avg) / avg)} vs the 4 weeks before`, delta: (last[k] - avg) / avg,
-      viz: <Spark values={rows.slice(-5).map((r) => r[k])} avg={avg} fmt={k === 'net' ? money : (v) => String(Math.round(v))} first={rows.at(-5).label} last={last.label} caption="Last 5 weeks" />, claim: 'obs',
-      facts: [[`Week of ${last.label}`, k === 'net' ? money(last[k]) : String(last[k])], ['Average of the 4 weeks before', k === 'net' ? money(avg) : String(Math.round(avg))], ['Source', src()]], go: 'trends',
+      label, when: `Week of ${last.label}`, fig: isMoney ? money(last[k]) : String(last[k]), cmp: `${signPct((last[k] - avg) / avg)} vs the 4 weeks before`, delta: (last[k] - avg) / avg,
+      viz: <Spark values={rows.slice(-5).map((r) => r[k])} avg={avg} fmt={isMoney ? money : (v) => String(Math.round(v))} first={rows.at(-5).label} last={last.label} caption="Last 5 weeks" />, claim: 'obs',
+      facts: [[`Week of ${last.label}`, isMoney ? money(last[k]) : String(last[k])], ['Average of the 4 weeks before', isMoney ? money(avg) : String(Math.round(avg))], ['Source', src()]], go: 'trends',
     };
   };
   t.sales = byDay('net', 'Sales') || byWeek('net', 'Sales');
   t.covers = byDay('covers', 'Covers') || byWeek('covers', 'Covers');
+  // What's left of sales after food and labor: the owner's "are we making money", by week.
+  t.margin = byWeek('earned', 'After food & labor');
+  if (last && t.margin.fig) t.margin.facts = [[`Sales, week of ${last.label}`, money(last.net)], ['Food', money(last.food)], ['Labor', money(last.labour)], ['Left after food & labor', `${money(last.earned)} (${((last.earned / last.net) * 100).toFixed(1)}% of sales)`], ...t.margin.facts.filter(([k]) => k !== `Week of ${last.label}`)];
   if (flags.laborDown) {
     t.labor = { label: 'Labor', when: 'Last week', fig: null, cmp: 'Not updating', warn: '7shifts delayed', facts: [['Status', 'Labor shows again once 7shifts updates. Nothing here is guessed in the meantime.']], go: 'sources' };
   } else if (last && before.length >= 4 && !flags.noHistory) {
     const avg = mean(before.map((r) => r.labourRate));
     // Compare the figures as shown, so the words and the two numbers always agree.
-    const diff = Math.round(last.labourRate * 1000) / 10 - Math.round(avg * 1000) / 10;
+    const pts = (a, b) => Math.round(a * 1000) / 10 - Math.round(b * 1000) / 10;
+    const vs = (diff, what) => (Math.abs(diff) < 0.05 ? `Same as ${what}` : `${diff > 0 ? '+' : '−'}${Math.abs(diff).toFixed(1)} pts vs ${what}`);
+    const pc = (v) => `${(v * 100).toFixed(1)}%`;
+    // A target, when the owner has set one, comes first; "usual" is history, not a goal, so it's second.
+    const target = d.profile?.laborTarget > 0 ? d.profile.laborTarget : null;
+    const diff = pts(last.labourRate, target ?? avg);
     t.labor = {
-      label: 'Labor', when: `Week of ${last.label}`, fig: `${(last.labourRate * 100).toFixed(1)}%`,
-      cmp: Math.abs(diff) < 0.05 ? 'Same as usual' : `${diff > 0 ? '+' : '−'}${Math.abs(diff).toFixed(1)} pts vs usual`, delta: Math.abs(diff) < 0.05 ? 0 : diff / 100,
-      viz: <MarkBar value={last.labourRate} mark={avg} max={Math.max(last.labourRate, avg) * 1.25} fmt={(v) => `${(v * 100).toFixed(1)}%`} label="Share of sales" tickLabel="Usual" />, claim: 'obs',
+      label: 'Labor', when: `Week of ${last.label}`, fig: pc(last.labourRate),
+      cmp: target ? `${vs(diff, 'target')} · ${pc(avg)} usual` : `${vs(diff, 'usual')} · no target set`, delta: Math.abs(diff) < 0.05 ? 0 : diff / 100,
+      viz: <MarkBar value={last.labourRate} mark={target ?? avg} max={Math.max(last.labourRate, target ?? avg) * 1.25} fmt={pc} label="Share of sales" tickLabel={target ? 'Target' : 'Usual'} />, claim: 'obs',
       warn: labor7?.state === 'stale' ? '7shifts delayed' : null,
-      facts: [['Labor, share of sales', `${(last.labourRate * 100).toFixed(1)}% (week of ${last.label})`], ['Usual (the 4 weeks before)', `${(avg * 100).toFixed(1)}%`], ['Labor cost', money(last.labour)], ['Source', `${src()}${labor7?.state === 'stale' ? `; 7shifts last updated ${labor7.last}` : ''}`]],
+      facts: [['Labor, share of sales', `${pc(last.labourRate)} (week of ${last.label})`], ...(target ? [['Your target', pc(target)]] : [['Target', 'Not set. Add one in your restaurant profile (Data inputs).']]), ['Usual (the 4 weeks before)', pc(avg)], ['Labor cost', money(last.labour)], ['Source', `${src()}${labor7?.state === 'stale' ? `; 7shifts last updated ${labor7.last}` : ''}`]],
       go: 'labour',
     };
   } else {
@@ -191,8 +200,8 @@ export function tileData({ d, dense, sv, flags, now }) {
   }
   t.tonight = sv
     ? {
-      label: 'Dinner pace', when: 'Tonight, so far', live: true, fig: `${sv.pace >= 0 ? '+' : '−'}${Math.abs(sv.pace)}%`, cmp: `${sv.pace >= 0 ? 'above' : 'below'} a usual ${String(sv.day).split(' ')[0]} dinner`, delta: sv.pace / 100,
-      viz: <PaceBars so={sv.so} usual={sv.usual} at={now?.time || 'now'} />, claim: 'obs',
+      label: 'Dinner pace', when: 'Tonight, so far', live: true, fig: `${sv.pace >= 0 ? '+' : '−'}${Math.abs(sv.pace)}%`, cmp: `${sv.so} covers vs ${sv.usual} usual by ${now?.time || 'now'}`, delta: sv.pace / 100,
+      viz: <PaceCurve comp={sv.comp} actual={sv.actual} times={serviceTimes(sv.comp.length)} />, claim: 'obs',
       facts: [['Covers so far', `${sv.so}${now?.time ? ` by ${now.time}` : ''}`], [`A usual ${String(sv.day).split(' ')[0]}`, `${sv.usual} by the same time`], ['Pace so far', `${Math.abs(sv.pace)}% ${sv.pace >= 0 ? 'over' : 'under'} a usual ${String(sv.day).split(' ')[0]}`], ...(sv.tiles || []).map(([k, v, g]) => [k, `${v} (${g})`]), ['Source', src('live')]],
       go: 'service',
     }
@@ -248,14 +257,24 @@ export function Worth({ q, cards, big = false }) {
   const un = w.figure ? null : unlocksOf(q, cards);
   if (!w.figure && !un) return null;
   const unit = w.unit || un?.unit;
+  // A range that spans a loss and a gain is uncertain, not a saving: say so and keep it quiet.
+  const range = !un && / to /.test(w.figure || '');
+  if (range) {
+    return (
+      <span className={`${s.worth} ${s.worthRange} ${big ? s.worthBig : ''}`} title={w.means || undefined}>
+        <span className={s.worthTag}>Uncertain{(w.dollars ?? 0) < 0 ? ', could lose' : ''}</span>
+        <span className={s.worthRangeFig}>{w.figure}{unit && <span className={s.worthUnit}>{unit.startsWith('/') ? '' : ' '}{unit}</span>}</span>
+      </span>
+    );
+  }
   if (big) {
     return (
       <span className={`${s.worth} ${s.worthBig}`}>
+        <span className={s.worthFig}>{w.about && <span className={s.worthPre}>about </span>}{w.figure || un.figure}{unit?.startsWith('/') && <span className={s.worthUnit}>{unit}</span>}</span>
         <span className={s.worthRow}>
-          <span className={s.worthFig}>{w.about && <span className={s.worthPre}>about </span>}{w.figure || un.figure}{unit?.startsWith('/') && <span className={s.worthUnit}>{unit}</span>}</span>
-          <Claim k={un ? un.claim : q.claim} />
+          <Claim k={un ? un.claim : q.claim} label={un ? undefined : q.claimLabel} />
+          <span className={s.worthMeans}>{un ? 'What finishing this unlocks' : w.means}</span>
         </span>
-        <span className={s.worthMeans}>{un ? 'What finishing this unlocks' : w.means}</span>
       </span>
     );
   }
@@ -278,6 +297,10 @@ export function evidenceFor(q, d, sv) {
     const at = /at (\d{1,2}):00/.exec(q.title)?.[1];
     const i = at ? plan.hours.indexOf(`${at} pm`) : -1;
     if (i >= 0) return <StaffBar on={plan.sched[i]} need={plan.need[i]} />;
+  }
+  if (/refund/i.test(`${q.means || ''} ${q.unit || ''}`)) {
+    const apps = (d.room?.channels || []).filter((c) => /doordash|uber/i.test(c.name) && c.refunds > 0);
+    if (apps.length) return <RefundBars rows={apps.map((c) => [c.name, c.refunds])} />;
   }
   const hrs = /tracking to (\d+) hours/i.exec(q.body || '')?.[1];
   if (hrs) return <HoursBar hours={Number(hrs)} />;
@@ -373,6 +396,7 @@ export function IssueRow({ q, cards, onOpen }) {
         <span className={s.rowIcon} aria-hidden="true"><Icon name={q.blocked ? 'Lock' : q.icon || 'CircleDot'} size={16} /></span>
         <span className={s.rowText}>
           <span className={s.rowTitle}>{q.title}</span>
+          {q.affects && !q.blocked && <span className={s.rowSub}>{q.affects}</span>}
           {q.blocked ? <StateChip k="waiting" /> : q.deadline === 'today' ? <span className={s.rowDue}><Icon name="Clock" size={12} />Today</span> : null}
         </span>
         <span className={s.rowEnd}>
@@ -471,6 +495,9 @@ export function comingSoon({ d, cards, view, now, todayIso, skip = [] }) {
  */
 export function ActivityStrip({ h, confirmed, soon, onHandled, onResults, onGo, flash }) {
   const next = soon[0];
+  // The test that reports first: what it measures and when, so "being measured" says something.
+  const tests = [...h.tests].filter((p) => p.closes).sort((a, b) => Date.parse(`${a.closes} 2026`) - Date.parse(`${b.closes} 2026`));
+  const first = tests[0];
   return (
     <section className={`${s.strip} ${flash ? s.stripFlash : ''}`} aria-label="Activity and results">
       <button type="button" className={s.stripPart} onClick={onHandled} aria-haspopup="dialog">
@@ -479,6 +506,7 @@ export function ActivityStrip({ h, confirmed, soon, onHandled, onResults, onGo, 
           {h.states.length ? h.states.map((x) => (
             <span key={`${x.k}-${x.label}`} className={s.stripState}><Icon name={STATES[x.k].icon} size={14} className={s[`ic_${STATES[x.k].tone}`]} /><b>{x.n}</b> {x.label}</span>
           )) : <span className={s.stripMute}>Nothing under way</span>}
+          {first && <span className={s.stripDetail}>{first.title} · result {first.closes}</span>}
         </span>
       </button>
       <button type="button" className={s.stripPart} onClick={onResults} aria-haspopup="dialog">
@@ -489,7 +517,12 @@ export function ActivityStrip({ h, confirmed, soon, onHandled, onResults, onGo, 
               <span className={s.stripState}><Icon name="BadgeCheck" size={14} className={s.ic_good} /><b>{money(confirmed.week)}/wk</b> confirmed</span>
               <span className={s.stripMute}>{money(confirmed.toDate)} since {ACCRUAL_START}</span>
             </>
-          ) : <span className={s.stripMute}>None confirmed yet</span>}
+          ) : (
+            <>
+              <span className={s.stripState}><Icon name="Hourglass" size={14} className={s.ic_muted} />None confirmed yet</span>
+              {first && <span className={s.stripDetail}>{h.tests.length} {h.tests.length === 1 ? 'test' : 'tests'} running · first result {first.closes}</span>}
+            </>
+          )}
         </span>
       </button>
       {next && (
@@ -582,25 +615,30 @@ export function Locations({ eng, onPick, today }) {
     <section className={s.locs} aria-labelledby="locs-head">
       <div className={s.sectionHead}>
         <h3 id="locs-head" className={s.sectionTitle}>Your locations</h3>
-        <span className={s.sectionSub}>Most to decide first</span>
+        <span className={s.sectionSub}>Ranked by what needs you</span>
       </div>
       <ul className={s.locList}>
         {rows.map((r) => {
           const d = deriveRoom(CV_DS, r.id);
           const cards = todayCards(d, { today, testing: [], dismissed: eng.actions?.[r.id]?.findings || {}, tasks: (eng.tasks || []).filter((t) => t.roomId === r.id) });
           const view = queueView(eng.actions?.[r.id]?.queue, { today, own: !!d.room.fromToast, tz: d.room.tz || tz, cards });
-          const open = cards.filter((c) => isActive(c, view) && !c.blocked).length;
-          return { r, d, open };
-        }).sort((a, b) => b.open - a.open).map(({ r, d, open }) => (
+          const ready = cards.filter((c) => isActive(c, view) && !c.blocked);
+          const open = ready.length;
+          // Material first: what's due tonight, then the money on the table, then how many.
+          const due = ready.filter((c) => c.deadline === 'today' || c.approval).length;
+          const stake = Math.max(0, ...ready.map((c) => worthOf(c).dollars ?? 0));
+          const top = ready.find((c) => areaOf(c) !== 'data') || ready[0];
+          return { r, d, open, due, stake, top };
+        }).sort((a, b) => b.due - a.due || b.stake - a.stake || b.open - a.open).map(({ r, d, open, due, top }) => (
           <li key={r.id}>
             <button type="button" className={`${s.loc} ${r.id === CV_D.id ? s.locOn : ''}`} aria-current={r.id === CV_D.id ? 'true' : undefined} onClick={() => onPick(r.id)}>
               <span className={s.locName}>{r.name}</span>
-              <span className={s.locFig}>{open}<span className={s.locUnit}> to decide</span></span>
+              <span className={s.locFig}>{open}<span className={s.locUnit}> to decide{due ? ` · ${due} due today` : ''}</span></span>
               <span className={s.locSub}>
                 {r.stale ? <span className={s.snapWarn}><Icon name="TriangleAlert" size={12} />{r.stale} feed{r.stale === 1 ? '' : 's'} behind</span> : <span>Data current</span>}
                 <span>{r.banked ? `${money(r.banked)}/wk confirmed` : 'No confirmed savings yet'}</span>
               </span>
-              <span className={s.locNote}>{d.room.service?.title || r.note}</span>
+              <span className={s.locNote}>{top ? top.title : 'Nothing needs a decision'}</span>
             </button>
           </li>
         ))}
