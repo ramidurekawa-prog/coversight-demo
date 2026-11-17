@@ -9,7 +9,8 @@ import {
 import { areaOf, briefing, cardTrust, carriedOut, clockMinutes, comingUp, results, servicePeriod } from '../lib/data/page/today-brief.js';
 import { NOW, SEED } from '../lib/data/seed.js';
 import { readToastExports } from '../lib/data/toast.js';
-import { saveAction } from '../server/actions';
+import { loadActions, saveAction } from '../server/actions';
+import { listNotifications } from '../server/notify';
 import type { Db } from '../server/db/client';
 import { actions, memberships, tasks, users } from '../server/db/schema';
 import { commitInput, createSampleOrg } from '../server/org';
@@ -201,13 +202,48 @@ describe('the Today API', () => {
     const now = new Date();
     await expect(actOnToday(db, owner(), { roomId: 'oakland', op: 'assign', cardId: 'ot', to: 'chef' }, now)).rejects.toThrow(/invalid request/);
     const t = await actOnToday(db, owner(), { roomId: 'oakland', op: 'assign', cardId: 'ot', to: 'gm' }, now);
-    expect(t.state.assigned).toEqual({ ot: { to: 'gm', at: expect.any(String) } });
+    expect(t.state.assigned).toEqual({ ot: { to: 'gm', at: expect.any(String), from: 'user:u1' } });
     expect(t.cards.find((c: { id: string }) => c.id === 'ot')?.state).toBe('assigned');
     expect(t.summary.total).toBe(t.summary.ready + t.summary.blocked + t.summary.handled);
     const [row] = await db.select().from(actions).where(and(eq(actions.orgId, orgId), eq(actions.key, 'queue')));
     expect(row!.summary).toMatch(/assigned to the general manager/);
     const u = await actOnToday(db, owner(), { roomId: 'oakland', op: 'undo', cardId: 'ot' }, now);
     expect(u.state.assigned).toEqual({});
+  });
+
+  it('hands a card to a teammate who can see the room, alerts only them, and tells the sender once they’ve seen it', async () => {
+    const now = new Date();
+    await db.insert(users).values([{ id: 'u3', name: 'Luis', email: 'l@x.co' }, { id: 'u4', name: 'Ana', email: 'a@x.co' }]);
+    await db.insert(memberships).values([{ orgId, userId: 'u3', role: 'floor', rooms: ['oakland'] }, { orgId, userId: 'u4', role: 'floor', rooms: ['berkeley'] }]);
+    const floor = { orgId, userId: 'u3', role: 'floor' as const, rooms: ['oakland'] };
+    const t0 = await loadToday(db, owner(), 'oakland', now);
+    // Offered: everyone who can see Oakland (owner, Luis), not Jess or Ana, who see Berkeley only.
+    expect(t0.people.map((x: { name: string }) => x.name)).toEqual(['Luis', 'Maria']);
+    await expect(actOnToday(db, owner(), { roomId: 'oakland', op: 'assign', cardId: 'ot', to: 'user:u4' }, now)).rejects.toThrow(/can’t see this room/);
+    const t = await actOnToday(db, owner(), { roomId: 'oakland', op: 'assign', cardId: 'ot', to: 'user:u3' }, now);
+    expect(t.state.assigned.ot).toMatchObject({ to: 'user:u3', name: 'Luis', from: 'user:u1' });
+    const notes = await listNotifications(db, floor);
+    expect(notes.items.find((n: { kind: string }) => n.kind === 'today.assigned')).toMatchObject({ title: expect.stringMatching(/^For you: /), link: '/today/?card=ot' });
+    // The alert is for Luis alone: the owner's bell doesn't show it.
+    expect((await listNotifications(db, owner())).items.some((n: { kind: string }) => n.kind === 'today.assigned')).toBe(false);
+    // Only Luis can mark it seen.
+    await expect(actOnToday(db, owner(), { roomId: 'oakland', op: 'ack', cardId: 'ot' }, now)).rejects.toThrow(/Only the person/);
+    const seen = await actOnToday(db, floor, { roomId: 'oakland', op: 'ack', cardId: 'ot' }, now);
+    expect(seen.state.assigned.ot.ack).toMatchObject({ by: 'Luis' });
+    expect(seen.history.map((h: { op: string }) => h.op)).toEqual(['assign', 'ack']);
+    expect((await listNotifications(db, owner())).items.find((n: { kind: string }) => n.kind === 'today.seen')?.body).toMatch(/Luis has seen it/);
+    // Luis can hand it back; a floor manager can't change group settings.
+    const done = await actOnToday(db, floor, { roomId: 'oakland', op: 'undo', cardId: 'ot' }, now);
+    expect(done.state.assigned).toEqual({});
+    await expect(saveAction(db, floor, { key: 'pricing', value: { perRoomMonthlyCents: 1, feePct: 1 } })).rejects.toThrow(/owner or admin/);
+  });
+
+  it('keeps each person’s Today layout to themselves', async () => {
+    const layout = { owner: { metrics: ['sales', 'covers', 'tonight'], widgets: [] } };
+    await saveAction(db, owner(), { key: 'today.layout', value: layout });
+    expect((await loadActions(db, orgId, null, 'u1'))['@me']?.['today.layout']).toEqual(layout);
+    expect((await loadActions(db, orgId, ['berkeley'], 'u2'))['@me']).toBeUndefined();
+    expect(Object.keys(await loadActions(db, orgId)).some((k) => k.startsWith('user:') || k === '@me')).toBe(false);
   });
 
   it('an approval made anywhere is the same action here, pending execution until it’s made', async () => {

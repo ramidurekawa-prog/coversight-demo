@@ -10,7 +10,7 @@ import { z } from 'zod';
 import type { Db } from './db/client';
 import { auditLog, rooms, toastConnections } from './db/schema';
 import { InputError } from './org';
-import { AuthError, type Viewer } from './session';
+import { AuthError, roomLevel, type Viewer } from './session';
 
 const keyBytes = () => {
   const k = process.env.CREDENTIALS_KEY;
@@ -101,7 +101,7 @@ export async function toastStatus(db: Db, orgId: string) {
 
 /** Re-check stored credentials against Toast (owner/admin). */
 export async function recheckToast(db: Db, v: Pick<Viewer, 'orgId' | 'role'>, fetchImpl: typeof fetch = fetch) {
-  if (v.role === 'gm') throw new AuthError(403, 'Only an owner or admin can re-check the connection.');
+  if (roomLevel(v.role)) throw new AuthError(403, 'Only an owner or admin can re-check the connection.');
   const [c] = await db.select().from(toastConnections).where(eq(toastConnections.orgId, v.orgId));
   if (!c) throw new InputError('Toast isn’t connected.');
   const res = await checkToast({ host: c.host, clientId: c.clientId, secret: unseal(c.secretSealed), restaurants: c.restaurants.map(({ guid, roomId }) => ({ guid, roomId })) }, fetchImpl);

@@ -78,9 +78,11 @@ function whoDecides(q) {
 
 /**
  * @param {{ q: any, cards: any[], history: any[], fix: any, busy: boolean, label: string, onClose: () => void, caution?: string|null,
- *   act: { primary: () => void, snooze: () => void, decline: (r: string) => void, assign: (to: string) => void, done: () => void, open?: () => void } }} p
+ *   people?: { id: string, name: string, roleLabel: string }[], held?: any, meId?: string|null,
+ *   act: { primary: () => void, snooze: () => void, decline: (r: string) => void, assign: (to: string, name?: string) => void, ack: () => void, done: () => void, open?: () => void } }} p
  */
-export function ReviewPanel({ q, cards, history, fix, busy, label, onClose, act, caution }) {
+export function ReviewPanel({ q, cards, history, fix, busy, label, onClose, act, caution, people = [], held = null, meId = null }) {
+  const forMe = !!(held && meId && held.to === meId);
   const [asking, setAsking] = React.useState(null); // 'decline' | 'assign' | null
   const w = worthOf(q);
   const un = w.figure ? null : unlocksOf(q, cards);
@@ -95,6 +97,10 @@ export function ReviewPanel({ q, cards, history, fix, busy, label, onClose, act,
     <Panel label={q.title} onClose={onClose}>
       <PanelHead over={[area, q.deadline === 'today' ? 'Due today' : q.deadline ? `Due ${q.deadline}` : null].filter(Boolean).join(' · ')} title={q.title} onClose={onClose} />
       <div className={s.panelBody}>
+        {held && (
+          <p className={s.heldNote} role="status"><Icon name="UserCheck" size={15} /><span>{forMe ? 'Handed to you' : `With ${assigneeLabel(held.to, CV_D.profile, held.name)}`}{held.ack ? ` · seen ${new Date(held.ack.at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : ' · not seen yet'}</span>
+            {forMe && !held.ack && <Button size="sm" icon="Check" disabled={busy} onClick={act.ack}>Got it</Button>}</p>
+        )}
         {caution && (
           <p className={s.caution} role="note"><Icon name="TriangleAlert" size={15} /><span>{caution}</span></p>
         )}
@@ -138,7 +144,7 @@ export function ReviewPanel({ q, cards, history, fix, busy, label, onClose, act,
           <p className={s.blockText}>{whoDecides(q)}</p>
           {mine.length > 0 && (
             <ul className={s.hist}>
-              {mine.map((h, i) => <li key={i}>{h.op === 'assign' ? `Assigned to ${assigneeLabel(h.to, CV_D.profile)}` : { done: 'Marked done', refuse: 'Turned down', snooze: 'Snoozed', undo: 'Put back', reset: 'Reset' }[h.op]}{h.by?.you ? ', by you' : h.by?.name ? `, by ${h.by.name}` : ''}</li>)}
+              {mine.map((h, i) => <li key={i}>{h.op === 'assign' ? `Assigned to ${assigneeLabel(h.to, CV_D.profile, h.name)}` : h.op === 'ack' ? 'Seen' : { done: 'Marked done', refuse: 'Turned down', snooze: 'Snoozed', undo: 'Put back', reset: 'Reset' }[h.op]}{h.by?.you ? ', by you' : h.by?.name ? `, by ${h.by.name}` : ''}</li>)}
             </ul>
           )}
         </Block>
@@ -155,6 +161,7 @@ export function ReviewPanel({ q, cards, history, fix, busy, label, onClose, act,
         {asking === 'assign' && (
           <div className={s.ask} role="group" aria-label="Assign to">
             <span className={s.askQ}>Assign to</span>
+            {people.filter((p) => p.id !== meId).map((p) => <button key={p.id} type="button" className={s.choice} disabled={busy} onClick={() => { setAsking(null); act.assign(p.id, p.name); }}>{p.name} <span className={s.choiceSub}>{p.roleLabel}</span></button>)}
             {Object.keys(ASSIGNEES).map((k) => <button key={k} type="button" className={s.choice} disabled={busy} onClick={() => { setAsking(null); act.assign(k); }}>{assigneeLabel(k, CV_D.profile)}</button>)}
             <button type="button" className={s.textBtn} onClick={() => setAsking(null)}>Cancel</button>
           </div>

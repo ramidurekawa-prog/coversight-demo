@@ -433,7 +433,7 @@ export function handledOf({ cards, view, tasks, windows, d }) {
   return { assigned, live, tests, extra, states };
 }
 
-export function HandledPanel({ h, view, d, busy, onUndo, onDone, steps, decided, onClose }) {
+export function HandledPanel({ h, view, d, busy, onUndo, onDone, onAck, meId, steps, decided, onClose }) {
   return (
     <Panel label="Being handled" onClose={onClose}>
       <PanelTop over="Today" title="Being handled" onClose={onClose} />
@@ -449,8 +449,9 @@ export function HandledPanel({ h, view, d, busy, onUndo, onDone, steps, decided,
             {h.assigned.map((c) => (
               <li key={c.id}>
                 <Icon name="UserCheck" size={15} className={s.hIcon} />
-                <span className={s.hText}><span className={s.hTitle}>{c.title}</span><span className={s.hSub}>{assigneeLabel(view.assigned[c.id].to, d.profile)} · not done yet</span></span>
+                <span className={s.hText}><span className={s.hTitle}>{c.title}</span><span className={s.hSub}>{(() => { const a = view.assigned[c.id]; const mine = meId && a.to === meId; return `${mine ? 'You' : assigneeLabel(a.to, d.profile, a.name)} · ${a.ack ? 'seen' : a.to.startsWith('user:') ? 'not seen yet' : 'not done yet'}`; })()}</span></span>
                 <span className={s.hActs}>
+                  {meId && view.assigned[c.id].to === meId && !view.assigned[c.id].ack && onAck && <button type="button" className={s.textBtn} disabled={busy === c.id} onClick={() => onAck(c)}>Got it</button>}
                   {!c.approval && !c.task && !c.start && !c.blocked && <button type="button" className={s.textBtn} disabled={busy === c.id} onClick={() => onDone(c)}>Done</button>}
                   <button type="button" className={s.textBtn} disabled={busy === c.id} onClick={() => onUndo(c.id)}>Take back</button>
                 </span>

@@ -2,9 +2,12 @@
 
 import * as React from 'react';
 
+import { useEngine, useSaved } from '../../engine';
+
 /* Today's layout preferences: which three numbers sit in the tiles, and
  * which optional extras show below the main flow. A per-viewer convenience
- * kept in this browser (it never changes a figure or a decision). Each role
+ * saved per person when signed in, else in this browser (it never changes a
+ * figure or a decision). Each role
  * starts from its own default; "Restore defaults" goes back to it. The
  * status, the action and the progress line always show. */
 
@@ -30,6 +33,7 @@ export const MAX_METRICS = 3;
 export const PRESETS = {
   owner: { metrics: ['sales', 'margin', 'tonight'], widgets: ['locations'] },
   gm: { metrics: ['tonight', 'labor', 'sales'], widgets: [] },
+  floor: { metrics: ['tonight', 'covers', 'labor'], widgets: [] },
 };
 export const presetFor = (role) => PRESETS[role] || PRESETS.owner;
 
@@ -42,28 +46,33 @@ const clean = (v, role) => {
   return { metrics: metrics.length ? metrics : base.metrics, widgets };
 };
 
-/** The layout for a role, and setters that keep it in this browser. */
+/**
+ * The layout for a role. Signed in, it's saved for this person on the server
+ * (so it follows them to any device); otherwise it's kept in this browser.
+ */
 export function useLayout(role) {
-  const [layout, setLayout] = React.useState(() => presetFor(role));
-  const [custom, setCustom] = React.useState(false);
+  const eng = useEngine();
+  const server = eng.mode === 'server';
+  const [saved, setSaved] = useSaved('today.layout', {}, { person: true });
+  const [local, setLocal] = React.useState(null);
   React.useEffect(() => {
+    if (server) return;
     let v = null;
     try { v = JSON.parse(window.localStorage.getItem(KEY(role)) || 'null'); } catch { /* storage blocked: defaults */ }
-    setLayout(clean(v, role));
-    setCustom(!!v);
-  }, [role]);
+    setLocal(v);
+  }, [role, server]);
+  const r = role in PRESETS ? role : 'owner';
+  const mine = server ? saved?.[r] ?? null : local;
   const save = React.useCallback((next) => {
     const v = clean(next, role);
-    setLayout(v);
-    setCustom(true);
-    try { window.localStorage.setItem(KEY(role), JSON.stringify(v)); } catch { /* kept for this visit only */ }
-  }, [role]);
+    if (server) setSaved((cur) => ({ ...(cur || {}), [r]: v }), 'Today layout');
+    else { setLocal(v); try { window.localStorage.setItem(KEY(role), JSON.stringify(v)); } catch { /* kept for this visit only */ } }
+  }, [role, r, server, setSaved]);
   const restore = React.useCallback(() => {
-    setLayout(presetFor(role));
-    setCustom(false);
-    try { window.localStorage.removeItem(KEY(role)); } catch { /* nothing stored */ }
-  }, [role]);
-  return { layout, custom, save, restore };
+    if (server) setSaved((cur) => { const { [r]: _, ...rest } = cur || {}; return rest; }, 'Today layout restored');
+    else { setLocal(null); try { window.localStorage.removeItem(KEY(role)); } catch { /* nothing stored */ } }
+  }, [role, r, server, setSaved]);
+  return { layout: clean(mine, role), custom: !!mine, save, restore };
 }
 
 /**

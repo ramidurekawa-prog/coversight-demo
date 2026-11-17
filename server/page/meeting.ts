@@ -14,7 +14,7 @@ import type { Db } from '../db/client';
 import { actions, auditLog, meetingActions, meetingSessions, rooms, users } from '../db/schema';
 import { notify } from '../notify';
 import { InputError } from '../org';
-import { AuthError, type Viewer } from '../session';
+import { AuthError, roomLevel, type Viewer } from '../session';
 
 /** How long an editor holds the meeting without saving before someone else may pick it up. */
 export const LEASE_MS = 3 * 60_000;
@@ -108,7 +108,7 @@ function mayEdit(s: typeof meetingSessions.$inferSelect, v: Who, now: Date, take
   if (s.status !== 'live') return { ok: false, why: 'This meeting is already closed.' };
   if (!s.editorId || s.editorId === v.userId) return { ok: true };
   if (!s.lockedUntil || s.lockedUntil.getTime() < now.getTime()) return { ok: true };
-  if (takeover && v.role !== 'gm') return { ok: true };
+  if (takeover && !roomLevel(v.role)) return { ok: true };
   return { ok: false, why: 'Someone else is running this meeting.' };
 }
 
@@ -117,7 +117,7 @@ function shapeSession(s: typeof meetingSessions.$inferSelect, editor: string | n
   return {
     id: s.id, roomId: s.roomId, week: s.week, status: s.status, version: s.version, agenda: s.agenda, state: s.state,
     startedAt: s.startedAt.toISOString(), editor, editorIsMe: !s.editorId || s.editorId === v.userId,
-    lockedUntil: s.lockedUntil?.toISOString() ?? null, canEdit: mayEdit(s, v, now).ok, canTakeOver: v.role !== 'gm',
+    lockedUntil: s.lockedUntil?.toISOString() ?? null, canEdit: mayEdit(s, v, now).ok, canTakeOver: !roomLevel(v.role),
   };
 }
 
@@ -213,7 +213,7 @@ export async function finalizeMeeting(db: Db, v: Who, body: { id?: unknown; vers
   const agenda = parse(agendaSchema, s.agenda, 'agenda');
   const room = await roomFor(db, v, s.roomId);
   const by = (await nameOf(db, v.userId)) ?? 'Someone';
-  const { record, upserts, updates, dismiss } = (finalizePure as unknown as (a: unknown, st: unknown, o: object) => Finalized)(agenda, state, { now, startedAt: s.startedAt.toISOString(), roomName: room.name, defaultOwner: v.role === 'gm' ? by : 'Owner' });
+  const { record, upserts, updates, dismiss } = (finalizePure as unknown as (a: unknown, st: unknown, o: object) => Finalized)(agenda, state, { now, startedAt: s.startedAt.toISOString(), roomName: room.name, defaultOwner: roomLevel(v.role) ? by : 'Owner' });
   const at = now.toISOString();
   await db.transaction(async (tx) => {
     const [claimed] = await tx.update(meetingSessions).set({ status: 'finalized', state, record, endedAt: now, version: s.version + 1, editorId: null, lockedUntil: null, updatedAt: now })

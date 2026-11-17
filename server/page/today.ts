@@ -10,16 +10,17 @@ import { z } from 'zod';
 
 import { deriveRoom } from '../../lib/data/model.js';
 import { dataEnd } from '../../lib/data/readers.js';
-import { applyOp, ASSIGNEES, cardState, DECLINE, DEFAULT_TZ, localDay, OPS, queueChanges, queueHistory, queueSummary, queueView, todayCards } from '../../lib/data/page/today.js';
+import { applyOp, ASSIGNEES, assigneeLabel, cardState, DECLINE, DEFAULT_TZ, localDay, OPS, queueChanges, queueHistory, queueSummary, queueView, PERSON, todayCards } from '../../lib/data/page/today.js';
 import { saveAction } from '../actions';
 import type { Db } from '../db/client';
-import { actions, snapshots, tasks, testWindows, users } from '../db/schema';
+import { actions, memberships, snapshots, tasks, testWindows, users } from '../db/schema';
+import { notify } from '../notify';
 import { loadDataset } from '../dataset';
 import { InputError } from '../org';
-import { AuthError, type Viewer } from '../session';
+import { AuthError, groupWide, roleName, type Viewer } from '../session';
 
 type V = Pick<Viewer, 'orgId' | 'userId' | 'role' | 'rooms'>;
-type QueueValue = { done?: Record<string, string>; refused?: Record<string, string>; snoozed?: Record<string, string>; assigned?: Record<string, { to: string; at: string }>; meta?: Record<string, unknown> };
+type QueueValue = { done?: Record<string, string>; refused?: Record<string, string>; snoozed?: Record<string, string>; assigned?: Record<string, { to: string; at: string; name?: string; from?: string; ack?: { at: string; by?: string } }>; meta?: Record<string, unknown> };
 type Card = { id: string; title: string; [k: string]: unknown };
 
 const roomId = z.string().min(1).max(60);
@@ -28,10 +29,10 @@ const body = z.object({
   op: z.enum(OPS as [string, ...string[]]),
   cardId: z.string().min(1).max(120).regex(/^[\w:.\- ]+$/).optional(),
   reason: z.enum(Object.keys(DECLINE) as [string, ...string[]]).optional(),
-  to: z.enum(Object.keys(ASSIGNEES) as [string, ...string[]]).optional(),
+  to: z.union([z.enum(Object.keys(ASSIGNEES) as [string, ...string[]]), z.string().regex(PERSON)]).optional(),
 });
 
-const OP_SUMMARY: Record<string, string> = { assign: 'assigned', done: 'done', refuse: 'not for us', snooze: 'snoozed until tomorrow', undo: 'back on the queue', reset: 'today’s cards shown again' };
+const OP_SUMMARY: Record<string, string> = { assign: 'assigned', ack: 'seen', done: 'done', refuse: 'not for us', snooze: 'snoozed until tomorrow', undo: 'back on the queue', reset: 'today’s cards shown again' };
 
 /** Everything the queue rules need for one room, read on the server. */
 async function context(db: Db, v: V, room: string, now: Date) {
@@ -93,6 +94,18 @@ async function changes(db: Db, orgId: string, room: string, ctx: { today: string
   return { builtAt: data.since, ...diff };
 }
 
+/**
+ * Teammates who can see this room (to hand a card to), never guests. A GM or
+ * floor manager sees only their rooms, so only people with this room are offered.
+ */
+export async function peopleFor(db: Db, orgId: string, room: string) {
+  const rows = await db.select({ userId: memberships.userId, role: memberships.role, rooms: memberships.rooms, name: users.name, anonymous: users.isAnonymous })
+    .from(memberships).innerJoin(users, eq(users.id, memberships.userId)).where(eq(memberships.orgId, orgId));
+  return rows.filter((r) => !r.anonymous && (groupWide(r.role) || !r.rooms || r.rooms.includes(room)))
+    .map((r) => ({ id: `user:${r.userId}`, userId: r.userId, name: r.name || 'Teammate', role: r.role, roleLabel: roleName(r.role) }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
 /** The room's queue as of today: decisions, card states, totals, history and what changed. */
 export async function loadToday(db: Db, v: V, room: unknown, now = new Date()) {
   const p = roomId.safeParse(room);
@@ -110,6 +123,7 @@ export async function loadToday(db: Db, v: V, room: unknown, now = new Date()) {
     summary: queueSummary(ctx.cards, state),
     history: await history(db, v, p.data, ctx, now),
     changes: await changes(db, v.orgId, p.data, ctx, state, now),
+    people: await peopleFor(db, v.orgId, p.data),
   };
 }
 
@@ -119,20 +133,43 @@ export async function actOnToday(db: Db, v: V, input: unknown, now = new Date())
   if (!p.success) throw new InputError(`invalid request: ${p.error.issues[0]?.path.join('.')} ${p.error.issues[0]?.message}`);
   const { roomId: room, op, cardId, reason, to } = p.data;
   if (op !== 'reset' && !cardId) throw new InputError('cardId is required');
+  let tell: Parameters<typeof notify>[1] | null = null;
   await db.transaction(async (tx) => {
     const t = tx as unknown as Db;
     await t.execute(sql`select pg_advisory_xact_lock(hashtext(${`today:${v.orgId}:${room}`}))`);
     const ctx = await context(t, v, room, now);
     let next;
     try {
-      next = applyOp(ctx.stored, { op, cardId, reason, to }, { cards: ctx.cards, today: ctx.today, own: ctx.own, now: now.getTime(), tz: ctx.tz });
+      const me = (await t.select({ name: users.name }).from(users).where(eq(users.id, v.userId)))[0]?.name ?? undefined;
+      let name: string | undefined;
+      if (op === 'assign' && to && PERSON.test(to)) {
+        // Only someone who can see this room can be handed its card.
+        const who = (await peopleFor(t, v.orgId, room)).find((x) => x.id === to);
+        if (!who) throw new Error('That person can’t see this room. Add them to it on the Team page first.');
+        name = who.name;
+      }
+      if (op === 'ack') {
+        const a = (ctx.stored?.assigned ?? {})[cardId!];
+        if (a && PERSON.test(a.to) && a.to !== `user:${v.userId}`) throw new Error('Only the person it was handed to can mark it seen.');
+      }
+      next = applyOp(ctx.stored, { op, cardId, reason, to, name, by: me }, { cards: ctx.cards, today: ctx.today, own: ctx.own, now: now.getTime(), tz: ctx.tz });
+      if (op === 'assign' && next.assigned?.[cardId!]) next.assigned[cardId!] = { ...next.assigned[cardId!], from: `user:${v.userId}` };
     } catch (err) {
       throw new InputError((err as Error).message);
     }
     const title = ctx.cards.find((c) => c.id === cardId)?.title ?? cardId ?? '';
+    const held = next.assigned?.[cardId!];
     const why = op === 'refuse' && reason ? ` (${DECLINE[reason as keyof typeof DECLINE].label.toLowerCase()})`
-      : op === 'assign' && to ? ` to the ${ASSIGNEES[to as keyof typeof ASSIGNEES].toLowerCase()}` : '';
+      : op === 'assign' && to ? (PERSON.test(to) ? ` to ${held?.name ?? 'a teammate'}` : ` to the ${ASSIGNEES[to as keyof typeof ASSIGNEES].toLowerCase()}`) : '';
     await saveAction(t, v, { roomId: room, key: 'queue', value: next, summary: op === 'reset' ? `Today: ${OP_SUMMARY.reset}` : `${title}: ${OP_SUMMARY[op]}${why}` });
+    // Tell the person it was handed to, and the person who handed it once it's seen.
+    const stamp = held?.at ?? now.toISOString();
+    if (op === 'assign' && held && PERSON.test(held.to)) {
+      tell = { orgId: v.orgId, roomId: room, userId: held.to.slice(5), kind: 'today.assigned', severity: 'warn', title: `For you: ${title}`, body: `Handed to you on Today. Open it and tap “Got it” so they know you’ve seen it.`, link: `/today/?card=${encodeURIComponent(cardId!)}`, dedupe: `today.assigned:${room}:${cardId}:${stamp}` };
+    } else if (op === 'ack' && held?.from && PERSON.test(held.from) && held.from !== `user:${v.userId}`) {
+      tell = { orgId: v.orgId, roomId: room, userId: held.from.slice(5), kind: 'today.seen', severity: 'good', title: `Seen: ${title}`, body: `${held.ack?.by ?? assigneeLabel(held.to, null, held.name)} has seen it.`, link: '/today/', dedupe: `today.seen:${room}:${cardId}:${stamp}` };
+    }
+    if (tell) await notify(t, tell);
   });
   return loadToday(db, v, room, now);
 }

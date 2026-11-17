@@ -63,7 +63,10 @@ function localHistory(view) {
   for (const [id, at] of Object.entries(view.done)) out.push({ cardId: id, op: 'done', at, by: { you: true } });
   for (const [id, at] of Object.entries(view.refused)) out.push({ cardId: id, op: 'refuse', at, by: { you: true }, reason: view.meta?.[id]?.reason });
   for (const id of Object.keys(view.snoozed)) out.push({ cardId: id, op: 'snooze', at: null, by: { you: true } });
-  for (const [id, a] of Object.entries(view.assigned || {})) out.push({ cardId: id, op: 'assign', at: a.at, by: { you: true }, to: a.to });
+  for (const [id, a] of Object.entries(view.assigned || {})) {
+    out.push({ cardId: id, op: 'assign', at: a.at, by: { you: true }, to: a.to, name: a.name });
+    if (a.ack) out.push({ cardId: id, op: 'ack', at: a.ack.at, by: { you: true } });
+  }
   return out;
 }
 
@@ -90,10 +93,10 @@ function useQueue({ cards, today, own, tz }) {
   const history = server && remote ? remote.history : localHistory(view);
 
   /** One decision. Resolves { ok, error? }. */
-  const run = async (op, card, { reason, to, summary } = {}) => {
+  const run = async (op, card, { reason, to, name, summary } = {}) => {
     let next;
     try {
-      next = applyOp(view, { op, cardId: card?.id, reason, to }, { cards, today, own, tz });
+      next = applyOp(view, { op, cardId: card?.id, reason, to, name }, { cards, today, own, tz });
     } catch (err) {
       return { ok: false, error: err.message };
     }
@@ -114,7 +117,7 @@ function useQueue({ cards, today, own, tz }) {
       setBusy(null);
     }
   };
-  return { view, history, run, busy, remote, offline };
+  return { view, history, run, busy, remote, offline, people: (server && remote?.people) || [] };
 }
 
 const clock = (at, tz) => new Date(at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: tz });
@@ -137,6 +140,7 @@ const panelLabel = (q, fix) => (q.approval ? 'Approve…' : actLabel(q, fix));
 function cautionFor(q, d, now) {
   const t = cardTrust(q, d, now);
   if (!t.delayed) return null;
+  if (!(q.approval && t.before)) return `Check ${t.delayed.name} first: it last updated ${t.delayed.last}, so the hours here may be out of date.`;
   return `Verify first. "Scheduled" is the ${t.delayed.name} schedule as of ${t.delayed.last}; "forecast need" is what usual covers call for${t.before ? ` at ${t.before}` : ''}. Neither is who is actually on the floor. Check that before you approve.`;
 }
 
@@ -198,7 +202,7 @@ function CvToday() {
   const tz = CV_D.room.tz || DEFAULT_TZ;
   const today = localDay(Date.now(), tz);
   const own = !!CV_D.room.fromToast;
-  const role = eng.viewer?.role === 'gm' ? 'gm' : cv.role === 'gm' ? 'gm' : 'owner';
+  const role = ['gm', 'floor'].includes(eng.viewer?.role) ? eng.viewer.role : cv.role === 'gm' ? 'gm' : 'owner';
   const { layout, custom, save, restore } = useLayout(role);
   const [scenario, setScenario] = React.useState('live');
   const [dismissed, setDismissed] = useSaved('findings', {});
@@ -222,7 +226,13 @@ function CvToday() {
   const sc = applyScenario(scenario, CV_D, liveCards);
   const d = sc.d;
   const cards = sc.cards;
-  const { view, history, run, busy, remote, offline } = useQueue({ cards, today, own, tz });
+  const { view, history, run, busy, remote, offline, people } = useQueue({ cards, today, own, tz });
+  const meId = eng.viewer?.userId ? `user:${eng.viewer.userId}` : null;
+  // A link from a "For you" alert opens that card.
+  React.useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get('card');
+    if (id) setReview(id);
+  }, []);
   const sum = queueSummary(cards, view);
   const left = cards.filter((c) => isActive(c, view));
   const ready = left.filter((c) => !c.blocked);
@@ -301,7 +311,8 @@ function CvToday() {
     primary: () => { close(); perform(q); },
     snooze: () => { close(); decide('snooze', q, { summary: `${q.title}: snoozed` }, 'Not now: it comes back tomorrow.', rcpt(`Snoozed: ${q.title}`, ['Snoozed', 'Back tomorrow'], { icon: 'CalendarClock', undo: q.id })); },
     decline: (r) => { close(); decline(q, r); },
-    assign: (to) => { close(); decide('assign', q, { to, summary: `${q.title}: assigned` }, `Assigned to ${assigneeLabel(to, d.profile)}. Moved to Being handled until it’s done.`, rcpt(`Assigned to ${assigneeLabel(to, d.profile)}: ${q.title}`, ['Assigned', 'Awaiting their update', 'Done once they mark it'], { icon: 'UserCheck', undo: q.id })); },
+    assign: (to, name) => { close(); const who = assigneeLabel(to, d.profile, name); const person = to.startsWith('user:'); decide('assign', q, { to, name, summary: `${q.title}: assigned` }, `Assigned to ${who}.${person ? ' They’ve been alerted.' : ''} Moved to Being handled until it’s done.`, rcpt(`Assigned to ${who}: ${q.title}`, person ? ['Assigned', 'Alert sent', 'Waiting for them to see it', 'Done once they mark it'] : ['Assigned', 'Awaiting their update', 'Done once they mark it'], { icon: 'UserCheck', undo: q.id })); },
+    ack: () => { close(); decide('ack', q, { summary: `${q.title}: seen` }, 'Marked seen. Whoever handed it to you has been told.'); },
     done: () => { close(); decide('done', q, { summary: `${q.title}: done` }, 'Marked done, with your name and the time.', rcpt(`Done: ${q.title}`, ['Done', 'Recorded with your name and the time'], { undo: q.id })); },
     open: q.go === 'finding' ? () => { close(); cv.go('finding', { id: q.goId }); } : q.go && !q.input ? () => { close(); cv.go(q.go); } : undefined,
   });
@@ -393,10 +404,12 @@ function CvToday() {
       {reviewing && (
         <ReviewPanel q={reviewing} cards={cards} history={history} fix={reviewing.blockedBy ? byId(reviewing.blockedBy) : null} busy={busy === reviewing.id}
           label={panelLabel(reviewing, reviewing.blockedBy ? byId(reviewing.blockedBy) : null)} onClose={close} act={panelActs(reviewing)}
+          people={people} held={view.assigned?.[reviewing.id] || null} meId={meId}
           caution={cautionFor(reviewing, d, now)} />
       )}
       {handledOpen && (
-        <HandledPanel h={handled} view={view} d={d} busy={busy} onClose={() => setHandledOpen(false)}
+        <HandledPanel h={handled} view={view} d={d} busy={busy} onClose={() => setHandledOpen(false)} meId={meId}
+          onAck={(c) => decide('ack', c, { summary: `${c.title}: seen` }, 'Marked seen. Whoever handed it to you has been told.')}
           onUndo={undo} onDone={(c) => decide('done', c, { summary: `${c.title}: done` }, 'Marked done, with your name and the time.')}
           steps={roomTasks.some((t) => t.status === 'open' || t.status === 'mismatch' || t.status === 'done') ? <TasksPanel /> : null}
           decided={<Decided cards={cards} view={view} history={history} tz={tz} busy={busy} own={own} onUndo={undo} onReset={reset} />} />
