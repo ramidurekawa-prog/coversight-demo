@@ -3,52 +3,28 @@
 import * as React from 'react';
 
 import { Button, Icon } from '../../kit';
-import { CV_D, CV_DS, CV_ROOM, Callout, PageHead, Pill } from '../core';
+import { CV_D, CV_DS, CV_ROOM, PageHead, Pill } from '../core';
 import { useEngine } from '../../engine';
 import { KINDS } from '../../../lib/data/ingest';
-import { attention, blockedWhy, dependsOn, stakes } from '../../../lib/data/page/inputs';
-import { Coverage, FixNext, Hero, KindTiles, StakeBars } from './inputs-visual';
+import { SCHEMAS, attention, blockedWhy, dependsOn, stakes } from '../../../lib/data/page/inputs';
+import { Connections, CoverageMatrix, FixNext, Summary } from './inputs-visual';
 import { ToastImport } from '../toast-import';
 import { BringIn } from '../bring-in';
 import { boardRows } from './inputs-board';
 import { Editor } from './inputs-editor';
 import { History } from './inputs-history';
-import { LinkedSheets, useLinkActions } from './inputs-links';
-import { AddPanel, CapabilityPanel, KindPanel, LinkPanel, ReadinessPanel, SamplePanel } from './inputs-panels';
+import { host, useLinkActions, when } from './inputs-links';
+import { AddPanel, CapabilityPanel, KindPanel, LinkPanel, ReadinessPanel, SamplePanel, SidePanel } from './inputs-panels';
 import { useHistory, useLinks } from './inputs-data';
 import { useTodayTheme } from './today.themes';
 import s from './inputs.module.css';
 
-/* Data inputs: the manual ingestion layer. First, where each kind of this
- * room's data comes from now. Then the ways in: drop, paste, link, photo.
- * Anything that comes in opens in the editor, where it's checked row by row
- * and previewed (exactly which figures move) before it's committed. The
- * server checks it again with the same rules. Every commit is in the history
- * with who made it, the one in use can be undone, and verified figures never
- * move. */
-
-function ToastExports() {
-  const [open, setOpen] = React.useState(false);
-  const t = CV_D.inputs.toast?.rows?.[0];
-  if (open) return <ToastImport />;
-  return (
-    <section className="cv-card" aria-label="Toast data exports">
-      <div className="cv-card-head">
-        <div className="cv-row nowrap" style={{ gap: 12 }}>
-          <span className="cv-q-ico"><Icon name="FileArchive" size={18} /></span>
-          <div className="cv-col" style={{ gap: 2 }}>
-            <span className="cv-small" style={{ fontWeight: 600 }}>Toast data exports, file by file</span>
-            <span className="cv-xs cv-faint">No API keys needed: download 13 weeks from Toast Web → Reports → Data exports. A zip dropped above works too.</span>
-          </div>
-        </div>
-        <span className="cv-row" style={{ gap: 8 }}>
-          {t ? <Pill tone="good" icon="CircleCheck">{`Toast data to ${t.end}`}</Pill> : <Pill icon="CircleDashed">Not loaded</Pill>}
-          <Button size="sm" variant="secondary" icon="ChevronDown" onClick={() => setOpen(true)} aria-expanded={false}>Open</Button>
-        </span>
-      </div>
-    </section>
-  );
-}
+/* Data & Connections. Outcome and action first: is the data working, what
+ * needs fixing and what fixing it unlocks. Then connections (the systems) kept
+ * apart from coverage (the kinds of data). Adding data has one entry point,
+ * and the editor and import steps only appear in a focused workspace while
+ * something is actually being entered or imported. The server checks every
+ * import again with the same rules; verified figures never move. */
 
 function CvInputs() {
   const eng = useEngine();
@@ -59,11 +35,11 @@ function CvInputs() {
   const [seed, setSeed] = React.useState(null);
   const [startMode, setStartMode] = React.useState(null);
   const [editing, setEditing] = React.useState(false);
-  const [panel, setPanel] = React.useState(null); // { type, kind?, link? }
+  const [panel, setPanel] = React.useState(null); // { type, kind?, link?, start? }
   const [histKind, setHistKind] = React.useState('');
   const close = React.useCallback(() => setPanel(null), []);
   const { links, setLinks } = useLinks(server);
-  // The board needs who made each room's current entry; the History card keeps its own filtered list.
+  // Coverage needs who made each room's current entry; Recent activity keeps its own filtered list.
   const roomHistory = useHistory({ server, roomId: CV_D.id, kind: null });
 
   React.useEffect(() => {
@@ -72,76 +48,114 @@ function CvInputs() {
     window.addEventListener('hashchange', read);
     return () => window.removeEventListener('hashchange', read);
   }, []);
-  const setHash = (k) => { try { window.history.replaceState(null, '', `#${k}`); } catch { /* no history */ } };
+  const setHash = (k) => { try { window.history.replaceState(null, '', k ? `#${k}` : window.location.pathname + window.location.search); } catch { /* no history */ } };
   const scrollTo = (id) => requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
-  const open = (k, m = null) => { setKind(k); setSeed(null); setStartMode(m); setEditing(true); setHash(k); scrollTo('inputs-editor'); };
-  const focusLink = () => { scrollTo('bring-in'); setTimeout(() => document.getElementById('inputs-link')?.focus(), 350); };
+  const open = (k, m = null) => { setPanel(null); setKind(k); setSeed(null); setStartMode(m); setEditing(true); setHash(k); };
+  const closeEditor = React.useCallback(() => { setEditing(false); setSeed(null); setHash(''); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const review = (x) => { setPanel(null); setSeed(x); setKind(x.kind); setStartMode('csv'); setEditing(true); setHash(x.kind); };
+  const add = (start = null) => setPanel({ type: 'add', start });
+
+  const room = CV_DS.rooms[CV_D.id];
   const rows = boardRows(links, roomHistory.entries);
   const linkedKinds = new Set(links.filter((l) => l.roomId === CV_D.id).flatMap((l) => l.picks.map((p) => p.kind)));
-  const items = attention(CV_D, CV_DS.rooms[CV_D.id], { windows: eng.windows, linkedKinds, server });
-  const stake = stakes(CV_D, CV_DS.rooms[CV_D.id]);
+  const items = attention(CV_D, room, { windows: eng.windows, linkedKinds, server });
+  const stake = stakes(CV_D, room);
   const { busy: linkBusy, readNow, unlink } = useLinkActions(setLinks);
   const linkFor = (k) => links.find((l) => l.roomId === CV_D.id && l.picks.some((p) => p.kind === k)) || null;
   const lastFor = (k) => roomHistory.entries.find((e) => e.kind === k && e.room === CV_D.id && e.current) || null;
-  const edit = (k, m = null) => { setPanel(null); open(k, m); };
-  const review = (x) => { setPanel(null); setSeed(x); setKind(x.kind); setStartMode('csv'); setEditing(true); setHash(x.kind); scrollTo('inputs-editor'); };
-  const findingsFor = (k) => {
-    const room = CV_DS.rooms[CV_D.id];
-    return CV_D.candidates.filter((c) => dependsOn(k, c) && !c.prevent && c.value > 0)
-      .map((c) => { const why = blockedWhy(c, room, CV_D.inputs || {}); return { id: c.id, title: c.title, value: c.value, claim: c.claim, held: why && (k === 'recipes' || c.needs === k) ? why : null }; })
-      .sort((a, b) => b.value - a.value);
-  };
+  const findingsFor = (k) => CV_D.candidates.filter((c) => dependsOn(k, c) && !c.prevent && c.value > 0)
+    .map((c) => { const why = blockedWhy(c, room, CV_D.inputs || {}); return { id: c.id, title: c.title, value: c.value, claim: c.claim, held: why && (k === 'recipes' || c.needs === k) ? why : null }; })
+    .sort((x, y) => y.value - x.value);
+
+  // Connections are systems, not kinds of data: the feeds that aren't one of the seven hand-entered kinds, plus linked sheets.
+  const own = !!CV_D.room?.fromToast;
+  const systems = [
+    ...CV_D.feeds.filter((f) => !f.input || f.input === 'toast').map((f) => ({
+      id: f.name, name: f.name, icon: 'PlugZap', supplies: f.what, state: f.state, last: f.last, note: f.note, ok: f.state === 'healthy', sample: !own,
+      refresh: f.name === 'Toast' ? 'Every night once Toast is connected, or whenever you upload new exports' : 'Managed on Sources',
+      href: f.name === 'Toast' ? '/connect' : '/sources',
+    })),
+    ...links.filter((l) => l.roomId === CV_D.id).map((l) => ({
+      id: l.id, name: `${host(l.url)} sheet`, icon: 'Link2', supplies: l.picks.map((p) => SCHEMAS[p.kind]?.title ?? p.kind).join(', '),
+      state: !l.pulledAt ? 'off' : l.lastError ? 'partial' : 'healthy', last: l.pulledAt ? `Read ${when(l.pulledAt)}` : 'Not read yet', note: l.lastError || null,
+      ok: !!l.pulledAt && !l.lastError, sample: false, refresh: 'Every morning at 1:30 am Pacific, or when you press Read it now', link: l, failed: l.lastResult?.failed || [],
+    })),
+  ];
+  const onHold = stake.reduce((x, k) => x + k.blocked, 0);
+  const headline = !items.length ? 'Your data is working' : `${items.length} thing${items.length === 1 ? '' : 's'} to fix before your data is fully working`;
+  const sub = !items.length ? 'Nothing is missing or out of date. Coversight keeps watching every source.'
+    : `Start with ${items[0].title.toLowerCase()}: about ${items[0].minutes} minutes${onHold > 0 ? `, and it frees up findings that are on hold` : ''}.`;
 
   return (
     <div className={`cv-page wide ${s.page}`} data-page="inputs">
-      <PageHead over={`Data inputs · ${CV_ROOM.name}`} q="Your data, at a glance"
-        sub="The more of it is yours, the sharper every number in Coversight."
+      <PageHead over={`Data & Connections · ${CV_ROOM.name}`} q={headline} sub={sub}
         right={<>
-          {sample && <button type="button" className={`cv-pill warn ${s.pillBtn}`} onClick={() => setPanel({ type: 'sample' })} aria-label="Sample group: what this is and how to switch to real data"><Icon name="FlaskConical" size={13} />Sample group<Icon name="ChevronRight" size={13} /></button>}
-          <Button size="sm" variant="secondary" icon="Plus" onClick={() => setPanel({ type: 'add' })}>Add data</Button>
-          <Pill tone={server ? 'good' : 'neutral'} icon={server ? 'Cloud' : 'HardDrive'}>{server ? 'Saved to your account' : 'Saved in this browser only'}</Pill></>} />
-      {sample && <Callout icon="FlaskConical">Sample restaurant group. Anything you enter replaces the sample for that kind and is labeled as yours.</Callout>}
-      <Hero rows={rows} stakes={stake} items={items} onReadiness={() => setPanel({ type: 'ready' })} />
-      <div className={s.split}>
-        <section className="cv-card" aria-labelledby="inputs-next">
-          <span className="cv-h4" id="inputs-next">Fix next</span>
-          <FixNext items={items} server={server} onOpen={open} onLink={focusLink} quiet={editing} />
+          <Pill tone={server ? 'good' : 'neutral'} icon={server ? 'Cloud' : 'HardDrive'}>{server ? 'Saved to your account' : 'Saved in this browser only'}</Pill>
+          <Button size="sm" variant={items.length || editing ? 'secondary' : 'primary'} icon="Plus" onClick={() => add()}>Add data</Button>
+        </>} />
+      {sample && (
+        <button type="button" className={s.sampleBar} onClick={() => setPanel({ type: 'sample' })}>
+          <Icon name="FlaskConical" size={18} />
+          <span><b>Sample data.</b> This is a made-up restaurant group, so every figure here is an example, not your restaurant&apos;s result.</span>
+          <span className={s.sampleGo}>How to use your own<Icon name="ChevronRight" size={15} className={s.chev} /></span>
+        </button>
+      )}
+      <Summary systems={systems} rows={rows} items={items}
+        onConnections={() => scrollTo('inputs-conns')} onReadiness={() => setPanel({ type: 'ready' })} onIssues={() => scrollTo('inputs-next')} />
+
+      <section className="cv-card" aria-labelledby="inputs-next-h" id="inputs-next" style={{ scrollMarginTop: 16 }}>
+        <div className="cv-card-head">
+          <span className="cv-h4" id="inputs-next-h">Fix next</span>
+          {items.length > 0 && <span className="cv-xs cv-faint">Most important first</span>}
+        </div>
+        <FixNext items={items} server={server} sample={sample} onOpen={open} onLink={() => add('connect')} onUnlocks={(k) => setPanel({ type: 'cap', kind: k })} quiet={editing} />
+      </section>
+
+      <div className={s.split2}>
+        <section className="cv-card" aria-labelledby="inputs-conns-h" id="inputs-conns" style={{ scrollMarginTop: 16 }}>
+          <div className="cv-card-head">
+            <div className="cv-col" style={{ gap: 2 }}>
+              <span className="cv-h4" id="inputs-conns-h">Connections</span>
+              <span className="cv-xs cv-faint">The systems your data comes from</span>
+            </div>
+          </div>
+          <Connections systems={systems} sample={sample} busy={linkBusy} onReadNow={readNow}
+            onSettings={(l) => setPanel({ type: 'link', link: l })} onToastExports={() => setPanel({ type: 'toast' })} />
         </section>
-        <section className="cv-card" aria-labelledby="inputs-cover">
-          <span className="cv-h4" id="inputs-cover">Where your data comes from</span>
-          <Coverage rows={rows} onPick={() => setPanel({ type: 'ready' })} />
+        <section className="cv-card" aria-labelledby="inputs-cover-h">
+          <div className="cv-card-head">
+            <div className="cv-col" style={{ gap: 2 }}>
+              <span className="cv-h4" id="inputs-cover-h">Data coverage</span>
+              <span className="cv-xs cv-faint">What Coversight needs, and whether it can be trusted</span>
+            </div>
+          </div>
+          <CoverageMatrix rows={rows} kind={editing ? kind : null} onPick={(k) => setPanel({ type: 'kind', kind: k })} />
         </section>
       </div>
-      <section className="cv-card" aria-labelledby="inputs-stakes">
-        <span className="cv-h4" id="inputs-stakes">What each kind of data unlocks</span>
-        <StakeBars stakes={stake} onPick={(k) => setPanel({ type: 'cap', kind: k })} />
-      </section>
-      <section className="cv-card" aria-labelledby="inputs-kinds">
-        <div className="cv-card-head">
-          <span className="cv-h4" id="inputs-kinds">All seven kinds</span>
-          <span className="cv-xs cv-faint">Tap one for a preview, its freshness and checks</span>
-        </div>
-        <KindTiles rows={rows} kind={editing ? kind : null} onPick={(k) => setPanel({ type: 'kind', kind: k })} />
-      </section>
-      {editing
-        ? <Editor key={`${CV_D.id}-${kind}-${seed?.id ?? ''}-${startMode ?? ''}`} kind={kind} seed={seed?.kind === kind ? seed : null} startMode={startMode} />
-        : null}
-      {panel?.type !== 'add' && <BringIn setLinks={setLinks} onReview={review} />}
-      {server && <LinkedSheets links={links} setLinks={setLinks} onSettings={(l) => setPanel({ type: 'link', link: l })} />}
+
       <div id="inputs-history-card" style={{ scrollMarginTop: 16 }}><History server={server} onChanged={roomHistory.reload} kindFilter={histKind} /></div>
-      <ToastExports />
       <span className="cv-xs cv-faint" style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}><Icon name="ShieldCheck" size={13} />Your data is labeled wherever it&apos;s used, and it never re-prices a verified saving.</span>
 
-      {panel?.type === 'kind' && (() => { const r = rows.find((x) => x.kind === panel.kind); return (
-        <KindPanel row={r} item={items.find((x) => x.kind === panel.kind)} stake={stake.find((x) => x.kind === panel.kind)} last={lastFor(panel.kind)} link={linkFor(panel.kind)} server={server}
-          onEdit={edit} onLink={() => { setPanel(null); focusLink(); }} onReadNow={readNow}
+      {editing && (
+        <SidePanel workspace over={CV_ROOM.short} title={seed ? 'Import a file' : 'Edit data'} onClose={closeEditor}>
+          <Editor key={`${CV_D.id}-${kind}-${seed?.id ?? ''}-${startMode ?? ''}`} kind={kind} seed={seed?.kind === kind ? seed : null} startMode={startMode} />
+        </SidePanel>
+      )}
+      {!editing && panel?.type === 'kind' && (() => { const r = rows.find((x) => x.kind === panel.kind); return (
+        <KindPanel row={r} item={items.find((x) => x.kind === panel.kind)} stake={stake.find((x) => x.kind === panel.kind)} last={lastFor(panel.kind)} link={linkFor(panel.kind)} server={server} sample={sample}
+          onEdit={open} onLink={() => add('connect')} onReadNow={readNow}
           onHistory={(k) => { setPanel(null); setHistKind(k); scrollTo('inputs-history-card'); }} onClose={close} />
       ); })()}
-      {panel?.type === 'ready' && <ReadinessPanel rows={rows} items={items} onPick={(k) => setPanel({ type: 'kind', kind: k })} onClose={close} />}
-      {panel?.type === 'cap' && <CapabilityPanel kind={panel.kind} stake={stake.find((x) => x.kind === panel.kind)} findings={findingsFor(panel.kind)} onEdit={edit} onClose={close} />}
-      {panel?.type === 'sample' && <SamplePanel server={server} onAdd={() => setPanel({ type: 'add' })} onClose={close} />}
-      {panel?.type === 'link' && <LinkPanel link={links.find((l) => l.id === panel.link.id) || panel.link} busy={linkBusy} onReadNow={readNow} onUnlink={(l) => unlink(l, close)} onClose={close} />}
-      {panel?.type === 'add' && <AddPanel onClose={close}><BringIn setLinks={setLinks} onReview={review} /></AddPanel>}
+      {!editing && panel?.type === 'ready' && <ReadinessPanel rows={rows} items={items} onPick={(k) => setPanel({ type: 'kind', kind: k })} onClose={close} />}
+      {!editing && panel?.type === 'cap' && <CapabilityPanel kind={panel.kind} stake={stake.find((x) => x.kind === panel.kind)} findings={findingsFor(panel.kind)} sample={sample} onEdit={open} onClose={close} />}
+      {!editing && panel?.type === 'sample' && <SamplePanel server={server} onAdd={() => add()} onClose={close} />}
+      {!editing && panel?.type === 'link' && <LinkPanel link={links.find((l) => l.id === panel.link.id) || panel.link} busy={linkBusy} onReadNow={readNow} onUnlink={(l) => unlink(l, close)} onClose={close} />}
+      {!editing && panel?.type === 'toast' && <SidePanel workspace over="Toast" title="Upload Toast data exports" onClose={close}><ToastImport /></SidePanel>}
+      {!editing && panel?.type === 'add' && (
+        <AddPanel key={panel.start || 'menu'} server={server} start={panel.start} onManual={(k) => open(k, 'grid')} onToastExports={() => setPanel({ type: 'toast' })} onClose={close}>
+          <BringIn setLinks={setLinks} onReview={review} />
+        </AddPanel>
+      )}
     </div>
   );
 }

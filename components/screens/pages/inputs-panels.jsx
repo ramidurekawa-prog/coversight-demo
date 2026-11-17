@@ -13,32 +13,34 @@ import { Button, Icon } from '../../kit';
 import { CV_D, CV_DS, CV_ROOM, Claim, Pill } from '../core';
 import { CALC, METHODS, NEEDS, SCHEMAS, STEP_ORDER } from '../../../lib/data/page/inputs';
 import { templateRows } from '../../../lib/data/ingest';
-import { STATE } from './inputs-visual';
+import { STATE, SampleTag } from './inputs-visual';
 import s from './inputs.module.css';
 
 const usd = (v) => `$${Math.round(v).toLocaleString('en-US')}`;
 const when = (d) => new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
 /* ------------------------------------------------------------------ the shell */
-export function SidePanel({ over, title, onClose, children, foot, wide = false }) {
+export function SidePanel({ over, title, onClose, children, foot, wide = false, workspace = false }) {
   const ref = React.useRef(null);
   const back = React.useRef(null);
   React.useEffect(() => {
     back.current = document.activeElement;
     ref.current?.focus();
-    const key = (e) => { if (e.key === 'Escape') onClose(); };
+    const key = (e) => { if (e.key === 'Escape' && !workspace) onClose(); }; // a workspace holds unsaved rows: only its Close button closes it
     window.addEventListener('keydown', key);
     return () => { window.removeEventListener('keydown', key); try { back.current?.focus?.(); } catch { /* gone */ } };
-  }, [onClose]);
+  }, [onClose, workspace]);
   return (
-    <div className={s.scrim} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <aside className={`${s.panel} ${wide ? s.panelWide : ''}`} role="dialog" aria-modal="true" aria-labelledby="inputs-panel-title">
+    <div className={s.scrim} onMouseDown={(e) => { if (e.target === e.currentTarget && !workspace) onClose(); }}>
+      <aside className={`${s.panel} ${wide ? s.panelWide : ''} ${workspace ? s.panelWork : ''}`} role="dialog" aria-modal="true" aria-labelledby="inputs-panel-title">
         <header className={s.panelHead}>
           <div className={s.panelHeadText}>
             {over && <span className={s.panelOver}>{over}</span>}
             <h2 className={s.panelTitle} id="inputs-panel-title" tabIndex={-1} ref={ref}>{title}</h2>
           </div>
-          <button type="button" className={s.iconBtn} onClick={onClose} aria-label="Close"><Icon name="X" size={18} /></button>
+          {workspace
+            ? <Button size="sm" variant="secondary" icon="X" onClick={onClose}>Close</Button>
+            : <button type="button" className={s.iconBtn} onClick={onClose} aria-label="Close"><Icon name="X" size={18} /></button>}
         </header>
         <div className={s.panelBody}>{children}</div>
         {foot && <footer className={s.panelFoot}>{foot}</footer>}
@@ -58,7 +60,7 @@ function Block({ title, children, note }) {
 }
 
 /* ------------------------------------------------------------------ one kind: compact preview, freshness, checks, sync */
-export function KindPanel({ row, item, stake, last, link, server, onEdit, onLink, onReadNow, onHistory, onClose }) {
+export function KindPanel({ row, item, stake, last, link, server, sample, onEdit, onLink, onReadNow, onHistory, onClose }) {
   const { kind, schema, entry, feed, src } = row;
   const st = STATE[src.key] || STATE.sample;
   const room = CV_DS.rooms[CV_D.id];
@@ -131,9 +133,12 @@ export function KindPanel({ row, item, stake, last, link, server, onEdit, onLink
 
       {stake?.value > 0 && (
         <Block title="What it unlocks">
-          <p className={s.blockText}>{NEEDS[kind].unlocks} <b>{usd(stake.value)}/wk</b> potential opportunity rests on it. <Claim k="est" /></p>
+          <p className={s.blockText}>{NEEDS[kind].unlocks} <b>{usd(stake.value)}/wk</b> potential opportunity rests on it. <Claim k="est" />{sample && <> <SampleTag /></>}</p>
         </Block>
       )}
+      <Block title="Access and removal">
+        <p className={s.blockNote}>Owners see every room; a manager sees only their own. Every change is recorded with who made it. To remove an import, undo it in Recent activity.</p>
+      </Block>
       {onHistory && <span><button type="button" className={s.textLink} onClick={() => onHistory(kind)}>See its history<Icon name="ChevronRight" size={15} /></button></span>}
       <span className="cv-xs cv-faint"><Icon name={m.icon} size={12} style={{ verticalAlign: -2 }} /> Best way in: {m.label}. {m.how}</span>
     </SidePanel>
@@ -169,7 +174,7 @@ export function ReadinessPanel({ rows, items, onPick, onClose }) {
 }
 
 /* ------------------------------------------------------------------ a financial capability: data needed and the calculation */
-export function CapabilityPanel({ kind, stake, findings, onEdit, onClose }) {
+export function CapabilityPanel({ kind, stake, findings, sample, onEdit, onClose }) {
   const schema = SCHEMAS[kind];
   const need = schema.columns.filter((c) => c.required);
   const opt = schema.columns.filter((c) => !c.required);
@@ -178,7 +183,8 @@ export function CapabilityPanel({ kind, stake, findings, onEdit, onClose }) {
       foot={<Button className={s.panelPrimary} icon={CV_D.inputs[kind] ? 'PencilLine' : 'Plus'} onClick={() => onEdit(kind)}>{CV_D.inputs[kind] ? `Update ${schema.title.toLowerCase()}` : `Enter ${schema.title.toLowerCase()}`}</Button>}>
       <div className={s.panelMoney}>
         <span className={s.panelMoneyLabel}>Potential opportunity that rests on {schema.title.toLowerCase()}</span>
-        <span><b className={s.panelFig}>{usd(stake.value)}</b><span className={s.panelUnit}>/wk</span> <Claim k="est" /></span>
+        <span><b className={s.panelFig}>{usd(stake.value)}</b><span className={s.panelUnit}>/wk</span> <Claim k="est" />{sample && <> <SampleTag /></>}</span>
+        {sample && <span className={s.panelClaim}>From the sample restaurant, not a result for yours. It&apos;s an estimate until a test verifies it.</span>}
         {stake.blocked > 0 && <span className={s.panelClaim}><Icon name="Ban" size={13} />{usd(stake.blocked)}/wk on hold until it&apos;s entered</span>}
       </div>
       <Block title="The calculation"><p className={s.blockText}>{CALC[kind]}</p></Block>
@@ -266,11 +272,72 @@ export function LinkPanel({ link, busy, onReadNow, onUnlink, onClose }) {
   );
 }
 
-/* ------------------------------------------------------------------ add data: the universal intake, in a panel */
-export function AddPanel({ children, onClose }) {
+/* ------------------------------------------------------------------ add data: the one way in */
+const WAYS = [
+  { id: 'connect', icon: 'PlugZap', title: 'Connect your software', sub: 'Automatically keep your data up to date.' },
+  { id: 'file', icon: 'Upload', title: 'Upload a file', sub: 'CSV, Excel, or a supported document.' },
+  { id: 'scan', icon: 'Camera', title: 'Scan a document', sub: 'Extract invoice or inventory information.' },
+  { id: 'manual', icon: 'PencilLine', title: 'Enter information manually', sub: 'Add or correct a few records.' },
+];
+
+export function AddPanel({ server, start = null, onManual, onToastExports, children, onClose }) {
+  const [way, setWay] = React.useState(start);
   return (
-    <SidePanel over={CV_ROOM.short} title="Add data" onClose={onClose} wide>
-      {children}
+    <SidePanel over={CV_ROOM.short} title="Add restaurant data" onClose={onClose} wide>
+      {!way && (
+        <>
+          <p className={s.blockText}>Choose what you&apos;d like to bring into Coversight.</p>
+          <ul className={s.readyList}>
+            {WAYS.map((w) => (
+              <li key={w.id}>
+                <button type="button" className={s.readyRow} onClick={() => setWay(w.id)}>
+                  <Icon name={w.icon} size={18} />
+                  <span className={s.readyText}><b>{w.title}</b><span>{w.sub}</span></span>
+                  <span />
+                  <Icon name="ChevronRight" size={16} className={s.chev} />
+                </button>
+              </li>
+            ))}
+          </ul>
+          <p className={s.blockNote}>Everything that comes in goes through the same checks, and you see what will change before anything is saved. Forwarding invoices by email and done-for-you imports aren&apos;t available yet.</p>
+        </>
+      )}
+      {way && <span><button type="button" className={s.textLink} onClick={() => setWay(null)}><Icon name="ArrowLeft" size={15} />All ways to add data</button></span>}
+      {way === 'connect' && (
+        <>
+          <Block title="Point of sale">
+            <p className={s.blockText}>Connect Toast once and sales, checks, voids, comps and hours keep themselves current.</p>
+            <span className="cv-row" style={{ gap: 8 }}>
+              <Link className="btn btn-primary btn-sm" href="/connect"><Icon name="PlugZap" size={15} />Connect Toast</Link>
+              <Button size="sm" variant="ghost" icon="FileArchive" onClick={onToastExports}>Upload Toast exports instead</Button>
+            </span>
+          </Block>
+          <Block title="A spreadsheet you already keep" note={server ? 'Paste its link below. It is read now and again every morning.' : 'Linking needs a signed-in account. In this browser-only preview, upload the file instead.'}>
+            {children}
+          </Block>
+          <Block title="Other systems"><p className={s.blockText}>Labor, kitchen display and accounting connections are managed on <Link href="/sources">Sources</Link>.</p></Block>
+        </>
+      )}
+      {(way === 'file' || way === 'scan') && (
+        <>
+          <p className={s.blockText}>{way === 'file' ? 'Drop the file. We recognize what it is, match its columns and show you only what needs a decision.' : 'Take or drop a photo or PDF of an invoice, count sheet or statement. The rows it reads always come back for you to check.'}</p>
+          {children}
+        </>
+      )}
+      {way === 'manual' && (
+        <ul className={s.readyList}>
+          {STEP_ORDER.map((k) => (
+            <li key={k}>
+              <button type="button" className={s.readyRow} onClick={() => onManual(k)}>
+                <Icon name={SCHEMAS[k].icon} size={18} />
+                <span className={s.readyText}><b>{SCHEMAS[k].title}</b><span>{NEEDS[k].unlocks}</span></span>
+                <span className={s.readyMin}>~{NEEDS[k].minutes} min</span>
+                <Icon name="ChevronRight" size={16} className={s.chev} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </SidePanel>
   );
 }

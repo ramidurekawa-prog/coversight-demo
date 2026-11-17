@@ -21,6 +21,7 @@ export function History({ server, onChanged, kindFilter = '' }) {
   const [scope, setScope] = React.useState('room');
   const [kind, setKind] = React.useState(kindFilter);
   const [open, setOpen] = React.useState(null);
+  const [all, setAll] = React.useState(false);
   React.useEffect(() => { setKind(kindFilter); }, [kindFilter]);
   const [confirm, setConfirm] = React.useState(false);
   const [busy, setBusy] = React.useState(null);
@@ -41,7 +42,7 @@ export function History({ server, onChanged, kindFilter = '' }) {
     <section className="cv-card" aria-labelledby="inputs-history">
       <div className="cv-card-head">
         <div className="cv-col" style={{ gap: 4 }}>
-          <span className="cv-h4" id="inputs-history">History</span>
+          <span className="cv-h4" id="inputs-history">Recent activity</span>
           <span className="cv-small cv-muted">Who changed what. Undo the latest one per kind.</span>
         </div>
         <div className={s.filters}>
@@ -68,7 +69,7 @@ export function History({ server, onChanged, kindFilter = '' }) {
       )}
       {hist.entries.length > 0 && (
         <div className="cv-col" style={{ gap: 0 }}>
-          {hist.entries.map((e) => {
+          {(all ? hist.entries : hist.entries.slice(0, 3)).map((e) => {
             const status = e.undone ? { tone: 'neutral', icon: 'Undo2', label: 'Undone' } : e.current ? { tone: 'good', icon: 'CircleCheck', label: 'In use' } : { tone: 'neutral', icon: 'History', label: 'Replaced later' };
             const on = open === e.id;
             const moves = e.effects?.moves || [];
@@ -101,7 +102,8 @@ export function History({ server, onChanged, kindFilter = '' }) {
           })}
         </div>
       )}
-      {(hist.more || hist.loading) && <span><Button size="sm" variant="ghost" icon="ChevronDown" disabled={hist.loading} onClick={hist.loadMore}>{hist.loading ? 'Loading…' : 'Show older'}</Button></span>}
+      {!all && hist.entries.length > 3 && <span><Button size="sm" variant="ghost" icon="ChevronDown" onClick={() => setAll(true)}>Show all activity</Button></span>}
+      {all && (hist.more || hist.loading) && <span><Button size="sm" variant="ghost" icon="ChevronDown" disabled={hist.loading} onClick={hist.loadMore}>{hist.loading ? 'Loading…' : 'Show older'}</Button></span>}
 
       {hist.canReset && (
         <div className="cv-row" style={{ gap: 8, borderTop: '1px solid var(--border)', paddingTop: 12, justifyContent: 'space-between' }}>

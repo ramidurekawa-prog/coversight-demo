@@ -388,7 +388,7 @@ export function Editor({ kind, seed, startMode }) {
       </div>
       {last && <Verified r={last} onClose={() => { done.key = null; setLast(null); }} />}
       <Stepper step={step} bad={!!result?.errors} csv={mode === 'csv'} />
-      <Tabs value={mode} onChange={(m) => { setMode(m); stale(); }} tabs={[{ value: 'grid', label: 'Type it in' }, { value: 'csv', label: 'Paste or upload CSV' }]} />
+      {!seed && <Tabs value={mode} onChange={(m) => { setMode(m); stale(); }} tabs={[{ value: 'grid', label: 'Type it in' }, { value: 'csv', label: 'Paste or upload CSV' }]} />}
       {mode === 'grid' ? (
         <>
           <span className="cv-xs cv-faint">{kind === 'waste' ? `Each row adds to the log${eng.inputs[CV_D.id]?.waste?.rows?.length ? ` (${plural(eng.inputs[CV_D.id].waste.rows.length, 'entry', 'entries')} logged so far)` : ''}. A row already logged isn’t added twice.` : 'Pre-filled with what this room has now. Change what’s different, then check it.'}</span>
@@ -402,6 +402,15 @@ export function Editor({ kind, seed, startMode }) {
         </>
       ) : (
         <div className="cv-col" style={{ gap: 8 }}>
+          {seed && parsed && (
+            <div className={s.recog} role="status">
+              <Icon name="ScanSearch" size={16} />
+              <span><b>Recognized as {schema.title.toLowerCase()}.</b> {plural(parsed.rows.length, 'row')} read{review && !missingCols.length && !review.needsConfirm ? ', every column matched' : ''}. Only what needs a decision is shown below.</span>
+            </div>
+          )}
+          <details className={s.rawRows} open={!seed}>
+            <summary>{seed ? 'See or edit the raw rows' : 'Rows'}</summary>
+            <div className="cv-col" style={{ gap: 8, marginTop: 8 }}>
           <label htmlFor={`csv-${kind}`} className="cv-small" style={{ fontWeight: 600 }}>Paste rows with a header line, or upload a .csv</label>
           <textarea id={`csv-${kind}`} rows={8} value={csv} onChange={(e) => { setCsv(e.target.value); if (file?.source === 'file') setFile({ name: `${file.name} (edited)`, source: 'paste' }); else if (!file) setFile({ name: null, source: 'paste' }); }} placeholder={safeCSV(schema.columns.map((c) => c.k), templateRows(kind, room)).split('\n').slice(0, 3).join('\n')} className={s.paste} spellCheck={false} />
           <div className="cv-row" style={{ gap: 8 }}>
@@ -409,7 +418,11 @@ export function Editor({ kind, seed, startMode }) {
             <Button size="sm" variant="secondary" icon="Upload" onClick={() => fileRef.current && fileRef.current.click()}>Upload a file</Button>
             <Button size="sm" variant="ghost" icon="ClipboardPaste" onClick={() => { setCsv(safeCSV(schema.columns.map((c) => c.k), templateRows(kind, room))); setFile({ name: 'template', source: 'paste' }); }}>Paste the template</Button>
           </div>
-          {review && <Mapping kind={kind} review={review} map={curMap} setMap={setMap} confirmed={mapOk} setConfirmed={(v) => { setMapOk(v); stale(); }} />}
+            </div>
+          </details>
+          {review && (seed && !review.needsConfirm && !missingCols.length
+            ? <details className={s.rawRows}><summary>How the columns were matched</summary><div style={{ marginTop: 8 }}><Mapping kind={kind} review={review} map={curMap} setMap={setMap} confirmed={mapOk} setConfirmed={(v) => { setMapOk(v); stale(); }} /></div></details>
+            : <Mapping kind={kind} review={review} map={curMap} setMap={setMap} confirmed={mapOk} setConfirmed={(v) => { setMapOk(v); stale(); }} />)}
         </div>
       )}
       {schema.replace && (
