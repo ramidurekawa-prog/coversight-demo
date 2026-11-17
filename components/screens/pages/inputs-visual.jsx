@@ -26,14 +26,18 @@ export const STATE = {
 const ORDER = ['hand', 'linked', 'stale', 'sample', 'none'];
 
 /* ------------------------------------------------------------------ hero numbers */
-export function Hero({ rows, stakes, items }) {
+export function Hero({ rows, stakes, items, onReadiness }) {
   const own = rows.filter((r) => r.src.key === 'hand' || r.src.key === 'linked').length;
   const blocked = stakes.reduce((x, k) => x + k.blocked, 0);
   const blockedN = stakes.reduce((x, k) => x + k.blockedCount, 0);
   const attention = items.length;
   return (
     <div className={s.hero} role="group" aria-label="Data at a glance">
-      <div className={s.stat}><span className={s.statLabel}>Your own data</span><b className={s.big}>{own}<small>/{rows.length}</small></b><span className={s.statSub}>kinds</span></div>
+      <button type="button" className={`${s.stat} ${s.statBtn}`} onClick={onReadiness} aria-label={`Data readiness: ${own} of ${rows.length} kinds are your own data. Show readiness by kind.`}>
+        <span className={s.statLabel}>Your own data<Icon name="ChevronRight" size={16} className={s.chev} /></span>
+        <b className={s.big}>{own}<small>/{rows.length}</small></b>
+        <span className={s.statSub}>kinds · see why</span>
+      </button>
       <div className={`${s.stat} ${attention ? s.statWarn : ''}`}><span className={s.statLabel}>Need attention</span><b className={s.big}>{attention}</b><span className={s.statSub}>kinds missing or stale</span></div>
       <div className={`${s.stat} ${blockedN ? s.statBad : ''}`}><span className={s.statLabel}>Findings blocked</span><b className={s.big}>{blockedN}</b><span className={s.statSub}>until data arrives</span></div>
       <div className={s.stat}>
@@ -76,7 +80,7 @@ export function Coverage({ rows, onPick }) {
         {counts.map((c) => (
           <li key={c.k}>
             <button type="button" className={`${s.legendBtn} ${hover === c.k ? s.on : ''}`} onPointerEnter={() => setHover(c.k)} onPointerLeave={() => setHover(null)} onFocus={() => setHover(c.k)} onBlur={() => setHover(null)}
-              onClick={() => { const r = rows.find((x) => x.src.key === c.k); if (r) onPick(r.kind); }}>
+              onClick={() => onPick(c.k)}>
               <i style={{ background: STATE[c.k].color }} /><Icon name={STATE[c.k].icon} size={13} /> {STATE[c.k].label} <b>{c.n}</b>
             </button>
           </li>
@@ -100,7 +104,7 @@ export function StakeBars({ stakes, onPick }) {
       </div>
       {rows.map((k) => {
         const ready = k.value - k.blocked;
-        const label = `${SCHEMAS[k.kind].title}: ${usd(k.value)} a week of potential opportunity across ${k.findings} finding${k.findings === 1 ? '' : 's'}${k.blocked ? `, ${usd(k.blocked)} on hold until the data arrives` : ''}. Open ${SCHEMAS[k.kind].title}.`;
+        const label = `${SCHEMAS[k.kind].title}: ${usd(k.value)} a week of potential opportunity across ${k.findings} finding${k.findings === 1 ? '' : 's'}${k.blocked ? `, ${usd(k.blocked)} on hold until the data arrives` : ''}. Show the data it needs and what it calculates.`;
         return (
           <button key={k.kind} type="button" className={s.barRow} aria-label={label} onClick={() => onPick(k.kind)}
             onPointerEnter={() => setTip(k.kind)} onPointerLeave={() => setTip(null)} onFocus={() => setTip(k.kind)} onBlur={() => setTip(null)}>
@@ -116,11 +120,11 @@ export function StakeBars({ stakes, onPick }) {
                 </span>
               )}
             </span>
-            <span className={s.barVal}>{usd(k.value)}</span>
+            <span className={s.barVal}>{usd(k.value)}<Icon name="ChevronRight" size={15} className={s.chev} /></span>
           </button>
         );
       })}
-      <span className={s.barsFoot}>Potential opportunity per week, estimated <Claim k="est" /> · tap a bar to open that data</span>
+      <span className={s.barsFoot}>Potential opportunity per week, estimated <Claim k="est" /> · tap a row for the data it needs and what it calculates</span>
     </div>
   );
 }
@@ -188,11 +192,12 @@ export function KindTiles({ rows, kind, onPick }) {
         const st = STATE[r.src.key] || STATE.sample;
         return (
           <button key={k} type="button" role="listitem" className={`${s.tile} ${k === kind ? s.on : ''}`} onClick={() => onPick(k)} aria-current={k === kind ? 'true' : undefined}
-            aria-label={`${r.schema.title}: ${r.src.label}. ${r.entry ? `${r.entry.n} rows, ${r.entry.date}` : r.feed ? r.feed.last : ''}. Open.`}>
+            aria-label={`${r.schema.title}: ${r.src.label}. ${r.entry ? `${r.entry.n} rows, ${r.entry.date}` : r.feed ? r.feed.last : ''}. Show a preview.`}>
             <span className={s.tileBar} style={{ background: st.color }} />
             <Icon name={r.schema.icon} size={20} />
             <b>{r.schema.title}</b>
             <span className={s.tileState}><Icon name={st.icon} size={12} />{st.label}</span>
+            <Icon name="ChevronRight" size={15} className={`${s.chev} ${s.tileChev}`} />
             <span className={s.tileWhen}>{r.entry ? `${r.entry.n.toLocaleString('en-US')} rows · ${r.entry.date}` : r.feed ? r.feed.last : 'Sample'}</span>
           </button>
         );

@@ -167,6 +167,7 @@ import {
   HardDrive,
   History,
   Minus,
+  Settings,
 } from 'lucide-react';
 
 const ICONS = {
@@ -332,6 +333,7 @@ const ICONS = {
   HardDrive,
   History,
   Minus,
+  Settings,
 };
 
 /** Every icon name the screens use. A unit test keeps this list complete. */

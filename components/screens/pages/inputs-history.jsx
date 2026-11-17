@@ -16,10 +16,12 @@ const META = (k) => SCHEMAS[k] || (k === 'toast' ? { title: 'Toast exports', ico
 const SOURCE = { grid: 'typed in', csv: 'pasted CSV', file: 'uploaded file', paste: 'pasted', link: 'linked sheet', photo: 'read from a photo', toast: 'Toast export' };
 const roomName = (id) => CV_DS.rooms[id]?.profile?.short || id;
 
-export function History({ server, onChanged }) {
+export function History({ server, onChanged, kindFilter = '' }) {
   const cv = useCv();
   const [scope, setScope] = React.useState('room');
-  const [kind, setKind] = React.useState('');
+  const [kind, setKind] = React.useState(kindFilter);
+  const [open, setOpen] = React.useState(null);
+  React.useEffect(() => { setKind(kindFilter); }, [kindFilter]);
   const [confirm, setConfirm] = React.useState(false);
   const [busy, setBusy] = React.useState(null);
   const hist = useHistory({ server, roomId: scope === 'room' ? CV_D.id : null, kind: kind || null });
@@ -68,15 +70,32 @@ export function History({ server, onChanged }) {
         <div className="cv-col" style={{ gap: 0 }}>
           {hist.entries.map((e) => {
             const status = e.undone ? { tone: 'neutral', icon: 'Undo2', label: 'Undone' } : e.current ? { tone: 'good', icon: 'CircleCheck', label: 'In use' } : { tone: 'neutral', icon: 'History', label: 'Replaced later' };
+            const on = open === e.id;
+            const moves = e.effects?.moves || [];
             return (
-              <div key={e.id} className={`${s.entry} ${e.undone || !e.current ? s.gone : ''}`}>
-                <span className="cv-q-ico" style={{ width: 32, height: 32 }}><Icon name={META(e.kind).icon} size={15} /></span>
-                <div className="cv-col" style={{ gap: 2, minWidth: 0 }}>
-                  <span className={s.entryTitle}>{META(e.kind).title}{scope === 'all' ? ` · ${roomName(e.room)}` : ''} · {e.rows.toLocaleString('en-US')} row{e.rows === 1 ? '' : 's'} <Pill tone={status.tone} icon={status.icon}>{status.label}</Pill></span>
-                  <span className={s.entryMeta}>{e.at} · {e.by.kind === 'link' ? <><Icon name="Link2" size={11} /> read from a linked sheet</> : `by ${e.by.kind === 'you' ? 'you' : e.by.name}`}{e.source && e.by.kind !== 'link' ? ` · ${SOURCE[e.source] || e.source}${e.file ? ` (${e.file})` : ''}` : ''}{e.counts ? ` · ${e.counts.added ?? 0} new, ${e.counts.updated ?? 0} updated${e.counts.duplicates ? `, ${e.counts.duplicates} already logged` : ''}` : ''}{e.verified === true ? ' · verified' : e.verified === false ? ' · stored rows didn’t match' : ''}</span>
-                  {e.summary && <span className={s.entrySum}>{e.summary}</span>}
+              <div key={e.id} className={`${s.entryWrap} ${e.undone || !e.current ? s.gone : ''}`}>
+                <div className={s.entry}>
+                  <span className="cv-q-ico" style={{ width: 32, height: 32 }}><Icon name={META(e.kind).icon} size={15} /></span>
+                  <button type="button" className={s.entryBtn} aria-expanded={on} aria-controls={`hist-${e.id}`} onClick={() => setOpen(on ? null : e.id)}>
+                    <span className={s.entryTitle}>{META(e.kind).title}{scope === 'all' ? ` · ${roomName(e.room)}` : ''} · {e.rows.toLocaleString('en-US')} row{e.rows === 1 ? '' : 's'} <Pill tone={status.tone} icon={status.icon}>{status.label}</Pill></span>
+                    <span className={s.entryMeta}>{e.at} · {e.by.kind === 'link' ? 'read from a linked sheet' : `by ${e.by.kind === 'you' ? 'you' : e.by.name}`}{e.source && e.by.kind !== 'link' ? ` · ${SOURCE[e.source] || e.source}` : ''}</span>
+                  </button>
+                  <Icon name={on ? 'ChevronUp' : 'ChevronDown'} size={16} className={s.chev} />
+                  {e.current && !e.undone && <Button size="sm" variant="secondary" icon="Undo2" disabled={!!busy} onClick={() => undo(e)}>{busy === e.id ? 'Undoing…' : 'Undo'}</Button>}
                 </div>
-                {e.current && !e.undone && <Button size="sm" variant="secondary" icon="Undo2" disabled={!!busy} onClick={() => undo(e)}>{busy === e.id ? 'Undoing…' : 'Undo'}</Button>}
+                {on && (
+                  <dl className={s.histDetail} id={`hist-${e.id}`}>
+                    <dt>Source</dt><dd>{e.by.kind === 'link' ? 'Linked sheet' : SOURCE[e.source] || e.source || 'Entered here'}{e.file ? ` · ${e.file}` : ''}</dd>
+                    {e.counts && <><dt>Rows</dt><dd>{e.counts.added ?? 0} new, {e.counts.updated ?? 0} updated{e.counts.duplicates ? `, ${e.counts.duplicates} already logged` : ''}</dd></>}
+                    {e.validation && <><dt>Checks</dt><dd>{e.validation.warnings ?? 0} warning{e.validation.warnings === 1 ? '' : 's'}{e.validation.rejected ? `, ${e.validation.rejected} rejected` : ''}</dd></>}
+                    {e.mapping && Object.keys(e.mapping).length > 0 && <><dt>Columns</dt><dd>{Object.entries(e.mapping).map(([from, to]) => `${from} → ${to}`).join(', ')}</dd></>}
+                    {moves.length > 0 && <><dt>Moved</dt><dd><ul className={s.histMoves}>{moves.slice(0, 6).map((m, i) => <li key={i}>{m}</li>)}</ul></dd></>}
+                    {e.effects?.unblocked?.length > 0 && <><dt>Unblocked</dt><dd>{e.effects.unblocked.length} finding{e.effects.unblocked.length === 1 ? '' : 's'}</dd></>}
+                    {e.effects?.tests?.length > 0 && <><dt>Tests</dt><dd>{e.effects.tests.length} running test{e.effects.tests.length === 1 ? '' : 's'} flagged for review</dd></>}
+                    {e.summary && <><dt>Summary</dt><dd>{e.summary}</dd></>}
+                    {e.verified != null && <><dt>Stored</dt><dd>{e.verified ? 'Verified: what was saved matches what was sent' : 'Stored rows didn’t match what was sent'}</dd></>}
+                  </dl>
+                )}
               </div>
             );
           })}

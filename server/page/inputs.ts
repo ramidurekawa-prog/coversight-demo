@@ -213,6 +213,9 @@ export async function inputHistory(db: Db, v: V, raw: Record<string, string | un
         source: r.userId == null ? 'link' : ((d?.source as string | undefined) ?? null),
         file: (d?.file as string | null | undefined) ?? null,
         counts: (d?.counts as Json | undefined) ?? null,
+        mapping: (d?.mapping as Json | undefined) ?? null,
+        validation: (d?.validation as Json | undefined) ?? null,
+        effects: (d?.effects as Json | undefined) ?? null,
         verified: d ? !!(d.verify as { ok?: boolean } | undefined)?.ok : null,
         replaces: (d?.prior as string | null | undefined) ?? null,
       };
