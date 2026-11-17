@@ -140,7 +140,7 @@ export function FeedsPanel({ warn, onClose, onGo }) {
  * words saying against what, and the facts behind it for the detail panel.
  * No basis means no comparison, said out loud, never a zero.
  */
-export function tileData({ d, dense, sv, flags }) {
+export function tileData({ d, dense, sv, flags, now }) {
   const rows = d.hist?.rows || [];
   const last = rows.at(-1);
   const before = rows.slice(-5, -1);
@@ -156,8 +156,8 @@ export function tileData({ d, dense, sv, flags }) {
     const delta = (day[k] - avg) / avg;
     return {
       label, when: `Last service · ${day.dow} ${dayLabel(day.iso)}`, fig: k === 'net' ? money(day[k]) : String(day[k]), cmp: `${signPct(delta)} vs comparable ${longDow(day.dow)}s`, delta,
-      viz: <Spark values={same.map((x) => x[k])} />, claim: 'obs',
-      facts: [[`${day.dow}, ${dayLabel(day.iso)}`, k === 'net' ? money(day[k]) : String(day[k])], [`Average of the ${prior.length} ${day.dow}s before`, k === 'net' ? money(avg) : String(Math.round(avg))], ['Their range', k === 'net' ? `${money(Math.min(...prior.map((x) => x[k])))} to ${money(Math.max(...prior.map((x) => x[k])))}` : `${Math.min(...prior.map((x) => x[k]))} to ${Math.max(...prior.map((x) => x[k]))}`], ['Source', src(`through ${dayLabel(day.iso)}`)]],
+      viz: <Spark values={same.map((x) => x[k])} avg={avg} fmt={k === 'net' ? money : (v) => String(Math.round(v))} first={dayLabel(same[0].iso)} last={dayLabel(day.iso)} caption={`Last ${same.length} ${longDow(day.dow)}s`} />, claim: 'obs',
+      facts: [[`${day.dow}, ${dayLabel(day.iso)}`, k === 'net' ? money(day[k]) : String(day[k])], [`Average of the ${prior.length} ${longDow(day.dow)}s before`, k === 'net' ? money(avg) : String(Math.round(avg))], ['Their range', k === 'net' ? `${money(Math.min(...prior.map((x) => x[k])))} to ${money(Math.max(...prior.map((x) => x[k])))}` : `${Math.min(...prior.map((x) => x[k]))} to ${Math.max(...prior.map((x) => x[k]))}`], ['Source', src(`through ${dayLabel(day.iso)}`)]],
       go: 'daily',
     };
   };
@@ -166,7 +166,7 @@ export function tileData({ d, dense, sv, flags }) {
     const avg = mean(before.map((r) => r[k]));
     return {
       label, when: `Week of ${last.label}`, fig: k === 'net' ? money(last[k]) : String(last[k]), cmp: `${signPct((last[k] - avg) / avg)} vs the 4 weeks before`, delta: (last[k] - avg) / avg,
-      viz: <Spark values={rows.slice(-8).map((r) => r[k])} />, claim: 'obs',
+      viz: <Spark values={rows.slice(-5).map((r) => r[k])} avg={avg} fmt={k === 'net' ? money : (v) => String(Math.round(v))} first={rows.at(-5).label} last={last.label} caption="Last 5 weeks" />, claim: 'obs',
       facts: [[`Week of ${last.label}`, k === 'net' ? money(last[k]) : String(last[k])], ['Average of the 4 weeks before', k === 'net' ? money(avg) : String(Math.round(avg))], ['Source', src()]], go: 'trends',
     };
   };
@@ -181,7 +181,7 @@ export function tileData({ d, dense, sv, flags }) {
     t.labor = {
       label: 'Labor', when: `Week of ${last.label}`, fig: `${(last.labourRate * 100).toFixed(1)}%`,
       cmp: Math.abs(diff) < 0.05 ? 'Same as usual' : `${diff > 0 ? '+' : '−'}${Math.abs(diff).toFixed(1)} pts vs usual`, delta: Math.abs(diff) < 0.05 ? 0 : diff / 100,
-      viz: <MarkBar value={last.labourRate} mark={avg} max={Math.max(last.labourRate, avg) * 1.4} />, claim: 'obs',
+      viz: <MarkBar value={last.labourRate} mark={avg} max={Math.max(last.labourRate, avg) * 1.25} fmt={(v) => `${(v * 100).toFixed(1)}%`} label="Share of sales" tickLabel="Usual" />, claim: 'obs',
       warn: labor7?.state === 'stale' ? '7shifts delayed' : null,
       facts: [['Labor, share of sales', `${(last.labourRate * 100).toFixed(1)}% (week of ${last.label})`], ['Usual (the 4 weeks before)', `${(avg * 100).toFixed(1)}%`], ['Labor cost', money(last.labour)], ['Source', `${src()}${labor7?.state === 'stale' ? `; 7shifts last updated ${labor7.last}` : ''}`]],
       go: 'labour',
@@ -192,8 +192,8 @@ export function tileData({ d, dense, sv, flags }) {
   t.tonight = sv
     ? {
       label: 'Dinner pace', when: 'Tonight, so far', live: true, fig: `${sv.pace >= 0 ? '+' : '−'}${Math.abs(sv.pace)}%`, cmp: `${sv.pace >= 0 ? 'above' : 'below'} a usual ${String(sv.day).split(' ')[0]} dinner`, delta: sv.pace / 100,
-      viz: <PaceBars factor={sv.factor} />, claim: 'obs',
-      facts: [['Pace so far', `${Math.abs(sv.pace)}% ${sv.pace >= 0 ? 'over' : 'under'} a usual ${String(sv.day).split(' ')[0]}`], ...(sv.tiles || []).map(([k, v, g]) => [k, `${v} (${g})`]), ['Source', src('live')]],
+      viz: <PaceBars so={sv.so} usual={sv.usual} at={now?.time || 'now'} />, claim: 'obs',
+      facts: [['Covers so far', `${sv.so}${now?.time ? ` by ${now.time}` : ''}`], [`A usual ${String(sv.day).split(' ')[0]}`, `${sv.usual} by the same time`], ['Pace so far', `${Math.abs(sv.pace)}% ${sv.pace >= 0 ? 'over' : 'under'} a usual ${String(sv.day).split(' ')[0]}`], ...(sv.tiles || []).map(([k, v, g]) => [k, `${v} (${g})`]), ['Source', src('live')]],
       go: 'service',
     }
     : { ...t.covers };

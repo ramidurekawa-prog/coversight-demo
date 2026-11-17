@@ -165,11 +165,11 @@ function buildDeriv(d) {
   if (d.room.service.mode === "cut") {
     const s = d.room.service;
     out["service-cut"] = {
-      title: s.title, value: `${cvMoney(s.value)} tonight`, claim: "obs",
+      title: s.title, value: `${cvMoney(s.value)} potential tonight`, claim: "est",
       formula: `hours removed × loaded rate\n= 2.0 h (8–10 pm) × $18.50\n= ${cvMoney(s.value)}`,
-      inputs: [["Covers pacing vs comparable night", `${s.pace}%`], ["Servers needed at the upper band", "4"], ["Servers on now", "5"]],
+      inputs: [["Covers pacing vs comparable night", `${M.servicePace(s)?.pace ?? 0}%`], ["Servers needed at the upper band", "4"], ["Servers on now", "5"]],
       sources: [["Toast · live covers", "live"], ["7shifts · tonight's schedule", "write-back ready"]],
-      eq: "C-04 square-root staffing", note: "Observed cost, not a model. It goes into the running test as an execution record.",
+      eq: "C-04 square-root staffing", note: "Potential until the hours are removed: the schedule is planned, not yet worked. Once the cut happens it goes into the running test as an execution record.",
     };
   }
   return out;

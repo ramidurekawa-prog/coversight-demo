@@ -2,7 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { applyInputs } from '../lib/data/apply.js';
-import { deriveRoom } from '../lib/data/model.js';
+import { deriveRoom, servicePace } from '../lib/data/model.js';
 import {
   applyOp, ASSIGNEES, cardState, DECLINE, hoursToMinutes, localDay, nextDay, queueChanges, queueHistory, queueSummary, queueView, RANK_POLICY, todayCards, unlocksOf, upNextOrder, worthOf,
 } from '../lib/data/page/today.js';
@@ -384,7 +384,7 @@ describe('the briefing, coming up and results (pure)', () => {
     const { d, cards } = for_('oakland');
     const items = comingUp(d, { cards, view, now: NOW });
     expect(items.map((x: { when: string }) => x.when)).toEqual(['8 pm', '9 pm', 'Nov 3', 'Nov 30']);
-    expect(items[0]).toMatchObject({ title: 'Usually 18 covers', detail: '5 servers on, 4 needed' });
+    expect(items[0]).toMatchObject({ title: 'Usually 18 covers', detail: '5 scheduled, 4 forecast need' });
     for (const x of items) expect(cards.some((c: C) => c.title === x.title)).toBe(false);
   });
 
@@ -406,5 +406,18 @@ describe('the briefing, coming up and results (pure)', () => {
         if (c.task) expect(how.text).toMatch(/doesn’t change/);
       }
     }
+  });
+});
+
+describe('tonight’s pace', () => {
+  it('is counted from the live covers, never typed, so every screen agrees', () => {
+    const got = Object.fromEntries(Object.entries(SEED.rooms).map(([id, r]) => [id, servicePace((r as { service: object }).service)]));
+    const byPace = Object.values(got).map((p) => p && [p.so, p.usual, p.pace]);
+    expect(byPace).toContainEqual([46, 59, -22]);
+    for (const p of Object.values(got)) {
+      if (!p) continue;
+      expect(p.pace).toBe(Math.round((p.so / p.usual - 1) * 100));
+    }
+    for (const r of Object.values(SEED.rooms)) expect((r as { service: Record<string, unknown> }).service).not.toHaveProperty('pace');
   });
 });

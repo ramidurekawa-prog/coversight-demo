@@ -5,6 +5,7 @@ import { engine, useEngine, useSaved } from '../../engine';
 import { useCv, cvMoney, CV_D, CV_ROOM, CV_NOW, Claim, Money, Pill, Callout, PageHead, cvScale, SampleNote } from '../core';
 import { DenseService } from '../dense-sections';
 import { tonightPlan } from '../week';
+import { servicePace } from '../../../lib/data/model';
 
 /* ================================================================ Service (live, phone-first) */
 function serviceTimes(n) {
@@ -101,6 +102,7 @@ function CvService() {
 function CvServiceSample() {
   const cv = useCv();
   const s = CV_D.room.service;
+  const pace = servicePace(s)?.pace ?? 0;
   const [state, setState] = useSaved('service', 'ask');
   const so = s.actual.reduce((a, b) => a + b, 0);
   const cmp = s.comp.slice(0, s.now).reduce((a, b) => a + b, 0);
@@ -119,7 +121,7 @@ function CvServiceSample() {
           <section className="cv-card">
             <div className="cv-row" style={{ justifyContent: 'space-between' }}>
               <span className="cv-xs cv-faint">Covers so far</span>
-              <span className={`cv-xs cv-num ${s.pace < 0 ? 'cv-down' : 'cv-up'}`} style={{ fontWeight: 600 }}>{s.pace < 0 ? '▼' : '▲'} {Math.abs(s.pace)}% vs comparable</span>
+              <span className={`cv-xs cv-num ${pace < 0 ? 'cv-down' : 'cv-up'}`} style={{ fontWeight: 600 }}>{pace < 0 ? '▼' : '▲'} {Math.abs(pace)}% vs comparable</span>
             </div>
             <div className="cv-row" style={{ alignItems: 'baseline' }}>
               <span className="cv-fig lg">{so}</span>

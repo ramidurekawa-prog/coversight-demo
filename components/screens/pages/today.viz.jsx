@@ -8,45 +8,59 @@ import s from './today.module.css';
  * shows is always written beside it too, so nothing depends on colour or on
  * reading the shape alone (the SVGs are aria-hidden; their text isn't). */
 
-/** A tiny line: recent values, their average dashed, the latest point filled. */
-export function Spark({ values, w = 112, h = 32 }) {
+/**
+ * Recent values as a line across the card, with their dates at each end and
+ * the comparison average as a labelled dashed line. The average is the same
+ * one the card's comparison uses (passed in), so the picture and the words
+ * always agree. The latest point is filled.
+ */
+export function Spark({ values, avg, first, last: lastLabel, caption, fmt = String, h = 44 }) {
   if (!values || values.length < 2) return null;
-  const lo = Math.min(...values), hi = Math.max(...values);
+  const mean = avg ?? values.slice(0, -1).reduce((a, b) => a + b, 0) / (values.length - 1);
+  const lo = Math.min(...values, mean), hi = Math.max(...values, mean);
   const span = hi - lo || 1;
-  const x = (i) => 3 + (i / (values.length - 1)) * (w - 6);
-  const y = (v) => 3 + (1 - (v - lo) / span) * (h - 6);
-  const prior = values.slice(0, -1);
-  const avg = prior.reduce((a, b) => a + b, 0) / prior.length;
-  const last = values.length - 1;
+  const W = 100;
+  const x = (i) => (i / (values.length - 1)) * W;
+  const y = (v) => 4 + (1 - (v - lo) / span) * (h - 8);
+  const n = values.length - 1;
   return (
-    <svg className={s.spark} width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-hidden="true">
-      <line x1={3} x2={w - 3} y1={y(avg)} y2={y(avg)} className={s.sparkAvg} />
-      <polyline points={values.map((v, i) => `${x(i)},${y(v)}`).join(' ')} className={s.sparkLine} />
-      <circle cx={x(last)} cy={y(values[last])} r={3.5} className={s.sparkNow} />
-    </svg>
-  );
-}
-
-/** One value against a usual mark on the same scale: the bar is this week, the tick is usual. */
-export function MarkBar({ value, mark, max, tickLabel = 'usual' }) {
-  const top = max || Math.max(value, mark) * 1.35 || 1;
-  const pc = (v) => `${Math.max(0, Math.min(100, (v / top) * 100))}%`;
-  return (
-    <span className={s.markBar} aria-hidden="true">
-      <span className={s.markTrack}><span className={s.markFill} style={{ width: pc(value) }} /></span>
-      <span className={s.markTick} style={{ left: pc(mark) }}><span className={s.markTickLbl}>{tickLabel}</span></span>
+    <span className={s.sparkWrap}>
+      <span className={s.sparkPlot} style={{ height: h }}>
+        <svg className={s.spark} width="100%" height={h} viewBox={`0 0 ${W} ${h}`} preserveAspectRatio="none" aria-hidden="true">
+          <line x1={0} x2={W} y1={y(mean)} y2={y(mean)} className={s.sparkAvg} vectorEffect="non-scaling-stroke" />
+          <polyline points={values.map((v, i) => `${x(i)},${y(v)}`).join(' ')} className={s.sparkLine} vectorEffect="non-scaling-stroke" />
+        </svg>
+        <i className={s.sparkDot} style={{ left: `${x(n)}%`, top: y(values[n]) }} aria-hidden="true" />
+        <span className={s.sparkAvgLbl} style={{ top: y(mean) }}>avg {fmt(mean)}</span>
+      </span>
+      <span className={s.sparkAxis}><span>{first}</span>{caption && <span className={s.sparkCap}>{caption}</span>}<span>{lastLabel}</span></span>
     </span>
   );
 }
 
-/** Two bars on one scale: usual and tonight. */
-export function PaceBars({ factor }) {
-  const now = Math.max(0, factor);
-  const top = Math.max(1, now);
+/** One value against a usual mark on the same scale: the bar is this period, the tick is usual. Both are labelled. */
+export function MarkBar({ value, mark, max, fmt = String, label = 'This week', tickLabel = 'usual' }) {
+  const top = max || Math.max(value, mark) * 1.35 || 1;
+  const pc = (v) => `${Math.max(0, Math.min(100, (v / top) * 100))}%`;
+  return (
+    <span className={s.sparkWrap}>
+      <span className={s.markBar} aria-hidden="true">
+        <span className={s.markTrack}><span className={s.markFill} style={{ width: pc(value) }} /></span>
+        <span className={s.markTick} style={{ left: pc(mark) }}><span className={s.markTickLbl}>{tickLabel} {fmt(mark)}</span></span>
+      </span>
+      <span className={s.sparkAxis}><span>{label} {fmt(value)}</span></span>
+    </span>
+  );
+}
+
+/** Covers so far tonight against a comparable night by the same time: two labelled bars on one scale. */
+export function PaceBars({ so, usual, at }) {
+  const top = Math.max(so, usual, 1);
   return (
     <span className={s.pace} aria-hidden="true">
-      <span className={s.paceRow}><span className={s.paceLbl}>Usual</span><span className={s.paceTrack}><span className={s.paceUsual} style={{ width: `${(1 / top) * 100}%` }} /></span></span>
-      <span className={s.paceRow}><span className={s.paceLbl}>Tonight</span><span className={s.paceTrack}><span className={s.paceNow} style={{ width: `${(now / top) * 100}%` }} /></span></span>
+      <span className={s.paceRow}><span className={s.paceLbl}>Usual by {at}</span><span className={s.paceTrack}><span className={s.paceUsual} style={{ width: `${(usual / top) * 100}%` }} /></span><b className={s.paceVal}>{usual}</b></span>
+      <span className={s.paceRow}><span className={s.paceLbl}>Tonight</span><span className={s.paceTrack}><span className={s.paceNow} style={{ width: `${(so / top) * 100}%` }} /></span><b className={s.paceVal}>{so}</b></span>
+      <span className={s.sparkAxis}><span>Covers so far</span></span>
     </span>
   );
 }

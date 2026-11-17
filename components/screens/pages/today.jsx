@@ -236,7 +236,7 @@ function CvToday() {
   const sv = tonight(d, now);
   const brief = briefing(d, { cards, view, now });
   const res = resultsOf(d, { cards, view });
-  const tiles = tileData({ d, dense: sc.noHistory ? null : dense, sv, flags: sc });
+  const tiles = tileData({ d, dense: sc.noHistory ? null : dense, sv, flags: sc, now });
   const through = cards[0]?.source?.through || liveCards[0]?.source?.through;
 
   /** Say it on screen and to a screen reader. */
