@@ -6,41 +6,47 @@ import { Button, Icon } from '../../kit';
 import { engine, useEngine, useSaved } from '../../engine';
 import { tonightPlan } from '../week';
 import { weeklySeries } from '../../../lib/data/readers';
+import { HOURLY_WEEKS } from '../../../lib/data/dense';
 import {
-  checkEntry, coverage, DAYS, dayName, entryTotals, listOf, loadGridFromHeat, loadGridFromPlans, moves as movesOf, peakCell, planServices, sampleServices, shortPhrase, splitMoves, topIssue, withEntry,
+  checkEntry, costByRole, coverage, DAYS, dayName, dayOfTitle, entryTotals, gapGrid, groupShare, listOf, loadGridFromHeat, loadGridFromPlans, moves as movesOf, planServices,
+  salesGridFromHeat, sampleServices, serverWage, shortPhrase, splitMoves, STAGES, stageOf, STATUS, trustOf, weekDays, weekSummary, weekTotals, withEntry,
 } from '../../../lib/data/page/labour';
-import { useCv, cvMoney, cvApproval, CV_D, CV_NOW, CV_ROOM, Claim } from '../core';
+import { useCv, cvMoney, cvApproval, CV_D, CV_GROUP, CV_NOW, CV_ROOM, Claim } from '../core';
 import { heat, useDense } from '../dense-ui';
 import { useTodayTheme } from './today.themes';
 import s from './labour.module.css';
 
 /* ================================================================ Labor
- * The redesigned Labor page (Ramidu's concept), in Today's finished style:
- * one next best move with the page's one persimmon button, four numbers that
- * each say their period, then four numbered steps: find the hours, the next
- * best moves, spot the pattern, did the changes work. Detail sits behind a
- * click, in a side panel.
- * Every figure is read from the room (lib/data/page/labour.js); nothing is
- * typed here. Schedules come from 7shifts when it's connected; without it, or
- * while it's down, a manager enters the day's cost and hours by hand
- * ("Update data"). Moves are advice: marking one planned never changes a live
- * schedule. */
+ * Ramidu's redesign concept in Today's finished style, reworked after the
+ * client-perspective review (2026-11-17):
+ *   - a Mon to Sun strip with one status per day; picking a day drives the
+ *     hero, the hourly chart, the moves, the pattern grid and the results;
+ *   - a week summary (biggest shortage, most spare, best matched, missing);
+ *   - a hero that switches between an urgent gap, a savings opportunity, a
+ *     data blocker, a result worth a look, and "on track";
+ *   - every move says the exact change, who it affects, the estimated cost or
+ *     impact, the risk, and how we know (confidence, basis, inputs, quality);
+ *   - one vocabulary for money: Opportunity, Projected impact, In test,
+ *     Measured result, Verified savings, Reversed;
+ *   - three views of the same page: GM, Owner, Operations (saved per person).
+ * Colors have fixed meanings: persimmon = action and the selected thing,
+ * red = short, amber = spare or caution, green = verified, navy = structure.
+ * Every figure is read from the room (lib/data/page/labour.js). Moves are
+ * advice: recording a plan never changes a live schedule. */
 
-const OUTCOME = {
-  verified: { icon: 'BadgeCheck', label: 'Verified', tone: 'good' },
-  limited: { icon: 'BadgeCheck', label: 'Verified, with limits', tone: 'good' },
-  testing: { icon: 'Hourglass', label: 'Being measured', tone: 'info' },
-  running: { icon: 'Hourglass', label: 'Being measured', tone: 'info' },
-  reversed: { icon: 'Undo2', label: 'Reversed', tone: 'warn' },
-};
-const MOVE_ICON = { risk: 'TriangleAlert', ready: 'CalendarClock', potential: 'Sigma', check: 'Eye' };
+const MOVE_ICON = { risk: 'UserPlus', ready: 'CalendarClock', potential: 'Sigma', check: 'UserMinus' };
+const VIEWS = [['gm', 'GM'], ['owner', 'Owner'], ['ops', 'Operations']];
+const MODES = { cps: 'Covers per server', gap: 'Short or spare', sales: 'Sales per server-hour' };
 const fmtDay = (iso) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 const addDays = (iso, n) => new Date(Date.parse(`${iso}T12:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
 const pct1 = (v) => `${(v * 100).toFixed(1)}%`;
+const hrs = (n) => `${n} ${n === 1 ? 'hour' : 'hours'}`;
+const signed = (n) => `${n < 0 ? '−' : '+'}${cvMoney(Math.abs(n))}`;
 
 function Chip({ tone = 'mute', icon, children }) {
   return <span className={`${s.chip} ${s[`chip_${tone}`]}`}>{icon && <Icon name={icon} size={14} />}{children}</span>;
 }
+const Stage = ({ k }) => <Chip tone={STAGES[k].tone} icon={STAGES[k].icon}>{STAGES[k].label}</Chip>;
 
 /* ---------------------------------------------------------------- side panel */
 function Panel({ over, title, onClose, children, foot }) {
@@ -68,23 +74,32 @@ function Panel({ over, title, onClose, children, foot }) {
 function Block({ title, children }) {
   return <section className={s.block}><h3 className={s.blockTitle}>{title}</h3>{children}</section>;
 }
+function Facts({ rows }) {
+  return <dl className={s.facts}>{rows.filter((r) => r && r[1]).map(([k, v]) => <React.Fragment key={k}><dt>{k}</dt><dd>{v}</dd></React.Fragment>)}</dl>;
+}
 
 /* ---------------------------------------------------------------- charts */
 
-/** Scheduled against needed, hour by hour. Each hour is a button. */
+/** Scheduled against needed, hour by hour. Only the hours that are off, the peak and the picked hour are at full strength. */
 function CoverageChart({ svc, sel, onSel, compact = false }) {
   const max = Math.max(...svc.hours.flatMap((h) => [h.sched, h.need]), 1);
+  const peakAt = svc.hours.reduce((b, h, i) => ((h.covers ?? -1) > (svc.hours[b].covers ?? -1) ? i : b), 0);
+  const hasCovers = svc.hours.some((h) => h.covers != null);
   return (
     <div className={compact ? `${s.bars} ${s.barsCompact}` : s.bars} role="group" aria-label={`Servers scheduled and needed by hour, ${svc.label}`}>
       {svc.hours.map((h, i) => {
         const gap = h.sched - h.need;
+        const peak = hasCovers && i === peakAt;
         const Tag = onSel ? 'button' : 'div';
         return (
-          <Tag key={h.label} type={onSel ? 'button' : undefined} className={`${s.barCol} ${sel === i ? s.barColOn : ''}`} aria-pressed={onSel ? sel === i : undefined} onClick={onSel ? () => onSel(i) : undefined}
-            aria-label={`${h.label}: ${h.sched} scheduled, ${h.need} needed${gap < 0 ? `, ${-gap} short` : gap > 0 ? `, ${gap} possibly spare` : ''}`}>
-            <span className={`${s.barGap} ${gap < 0 ? s.gapShort : gap > 0 ? s.gapSpare : ''}`}>{gap < 0 ? `${-gap} short` : gap > 0 ? `${gap} spare` : ''}</span>
+          <Tag key={h.label} type={onSel ? 'button' : undefined} className={`${s.barCol} ${sel === i ? s.barColOn : ''} ${gap === 0 && !peak && sel !== i ? s.barQuiet : ''}`} aria-pressed={onSel ? sel === i : undefined} onClick={onSel ? () => onSel(i) : undefined}
+            aria-label={`${h.label}: ${h.sched} scheduled, ${h.need} needed${gap < 0 ? `, ${-gap} short` : gap > 0 ? `, ${gap} spare` : ''}${peak ? ', peak demand' : ''}`}>
+            <span className={`${s.barGap} ${gap < 0 ? s.gapShort : gap > 0 ? s.gapSpare : s.gapPeak}`}>{gap < 0 ? `${-gap} short` : gap > 0 ? `${gap} spare` : peak && !compact ? 'Peak' : ''}</span>
             <span className={s.barPair}>
-              <span className={s.barSched} style={{ height: `${(h.sched / max) * 100}%` }}><b>{h.sched}</b></span>
+              <span className={s.barSched} style={{ height: `${(h.sched / max) * 100}%` }}>
+                {gap > 0 && <i className={s.barSpare} style={{ height: `${(gap / h.sched) * 100}%` }} />}
+                <b>{h.sched}</b>
+              </span>
               <span className={`${s.barNeed} ${gap < 0 ? s.barNeedShort : ''}`} style={{ height: `${(h.need / max) * 100}%` }}><b>{h.need}</b></span>
             </span>
             <span className={s.barLbl}>{h.label}</span>
@@ -99,32 +114,33 @@ function ChartKey() {
     <div className={s.key}>
       <span><i className={s.kSched} />Scheduled</span>
       <span><i className={s.kNeed} />Needed</span>
-      <span><i className={s.kShort} />Needed, and short</span>
+      <span><i className={s.kShort} />Short</span>
+      <span><i className={s.kSpare} />Spare</span>
     </div>
   );
 }
 
-/** Covers per server-hour, weekday by hour. Each cell is a button. */
-function LoadGrid({ grid, sel, onSel }) {
+/** Weekday by hour. `mode` picks the meaning: a neutral scale, or red for short and amber for spare. */
+function Grid({ grid, mode, fmt, day, sel, onSel }) {
   const vals = grid.rows.flatMap((r) => r.cells).filter((v) => v != null);
-  const max = Math.max(...vals, 1);
+  const max = Math.max(...vals.map(Math.abs), 1);
   return (
-    <div className={s.heatWrap} tabIndex={0} role="group" aria-label="Covers per server-hour, weekday by hour">
+    <div className={s.heatWrap} tabIndex={0} role="group" aria-label={`${MODES[mode]}, weekday by hour`}>
       <table className={s.heat}>
         <thead><tr><th />{grid.hours.map((h) => <th key={h.hour} scope="col">{h.label.replace(' ', '')}</th>)}</tr></thead>
         <tbody>
           {grid.rows.map((r, ri) => (
-            <tr key={r.day}>
+            <tr key={r.day} className={r.day === day ? s.heatRowOn : undefined}>
               <th scope="row">{r.day}</th>
               {r.cells.map((v, ci) => {
-                const k = v == null ? 0 : v / max;
-                const on = sel && sel.ri === ri && sel.ci === ci;
+                if (v == null) return <td key={ci}><span className={s.cellNone}>·</span></td>;
+                const k = Math.abs(v) / max;
+                const on = sel && sel.day === r.day && sel.ci === ci;
+                const cls = mode === 'gap' ? (v < 0 ? s.cellShort : v > 0 ? s.cellSpare : s.cellZero) : k > 0.55 ? s.cellDark : '';
                 return (
                   <td key={ci}>
-                    {v == null ? <span className={s.cellNone}>·</span> : (
-                      <button type="button" className={`${s.cell} ${on ? s.cellOn : ''} ${k > 0.55 ? s.cellDark : ''}`} style={{ '--k': `${Math.round(8 + k * 82)}%` }} aria-pressed={on} onClick={() => onSel({ ri, ci })}
-                        aria-label={`${dayName(r.day)} ${grid.hours[ci].label}: ${v.toFixed(1)} covers per server-hour`}>{v.toFixed(1)}</button>
-                    )}
+                    <button type="button" className={`${s.cell} ${cls} ${on ? s.cellOn : ''}`} style={{ '--k': `${Math.round(8 + k * 82)}%` }} aria-pressed={!!on} onClick={() => onSel({ day: r.day, ri, ci })}
+                      aria-label={`${dayName(r.day)} ${grid.hours[ci].label}: ${fmt(v, true)}`}>{fmt(v)}</button>
                   </td>
                 );
               })}
@@ -156,7 +172,7 @@ function WeekBars({ series, fmt }) {
 function HoursTable({ svc }) {
   return (
     <table className={s.table}>
-      <thead><tr><th>Hour</th><th className={s.r}>Covers</th><th className={s.r}>Scheduled</th><th className={s.r}>Needed</th><th className={s.r}>Gap</th></tr></thead>
+      <thead><tr><th>Hour</th><th className={s.r}>Covers</th><th className={s.r}>Scheduled</th><th className={s.r}>Needed</th><th className={s.r}>Off by</th></tr></thead>
       <tbody>{svc.hours.map((h) => { const g = h.sched - h.need; return (
         <tr key={h.label}><td>{h.label}</td><td className={s.r}>{h.covers ?? '—'}</td><td className={s.r}>{h.sched}</td><td className={s.r}>{h.need}</td>
           <td className={`${s.r} ${g < 0 ? s.tShort : g > 0 ? s.tSpare : ''}`}>{g < 0 ? `${-g} short` : g > 0 ? `${g} spare` : '—'}</td></tr>
@@ -165,16 +181,22 @@ function HoursTable({ svc }) {
   );
 }
 
-function MovePanel({ m, svc, state, own, plan, task, onPlan, onSkip, onUndo, onClose, cv }) {
+function impactText(m) {
+  if (m.kind === 'candidate') return `${cvMoney(m.value)} ${m.prevent ? 'of overtime avoided this week' : 'a week, projected'}`;
+  if (m.cost == null) return m.hours ? `${hrs(m.hours)} of server time` : null;
+  return m.cost >= 0 ? `${signed(m.cost)} estimated labor cost a week` : `Up to ${cvMoney(-m.cost)} a week, projected`;
+}
+
+function MovePanel({ m, svc, trust, state, own, plan, task, onPlan, onSkip, onUndo, onClose, cv }) {
   const ap = m.kind === 'draft' ? cvApproval(m.approval) : null;
   const canCut = own && m.kind === 'spare' && plan?.cutFrom != null;
   let primary = null;
   if (m.kind === 'draft') primary = <Button className={s.panelPrimary} iconRight="ArrowRight" onClick={() => { onClose(); cv.approve(m.approval); }}>Review and publish</Button>;
-  else if (canCut) primary = task ? <Chip tone="info" icon="CircleCheck">Approved. The steps are on Today.</Chip> : <Button className={s.panelPrimary} onClick={() => onPlan(m, { cut: true })}>Approve for next {dayName(svc.day)}</Button>;
-  else if (state === 'planned') primary = <Chip tone="info" icon="CircleCheck">Planned. Your live schedule is unchanged.</Chip>;
-  else primary = <Button className={s.panelPrimary} onClick={() => onPlan(m)}>Mark as planned</Button>;
+  else if (canCut) primary = task ? <Chip tone="good" icon="CircleCheck">Approved. The steps are on Today.</Chip> : <Button className={s.panelPrimary} onClick={() => onPlan(m, { cut: true })}>Approve for next {dayName(svc.day)}</Button>;
+  else if (state === 'planned') primary = <Chip tone="good" icon="CircleCheck">Plan recorded. Your live schedule is unchanged.</Chip>;
+  else primary = <Button className={s.panelPrimary} onClick={() => onPlan(m)}>Record plan</Button>;
   return (
-    <Panel over={m.tag} title={m.title} onClose={onClose} foot={(
+    <Panel over={`${STAGES[m.stage].label} · ${m.where}`} title={m.title} onClose={onClose} foot={(
       <>
         {primary}
         <div className={s.panelMore}>
@@ -184,18 +206,31 @@ function MovePanel({ m, svc, state, own, plan, task, onPlan, onSkip, onUndo, onC
       </>
     )}>
       <p className={s.blockText}>{m.body}</p>
-      {m.kind === 'candidate' && (
-        <div className={s.panelMoney}>
-          <span className={s.panelMoneyLabel}>{m.prevent ? 'Overtime pay avoided this week' : 'Potential, a week, if it works'}</span>
-          <span className={s.panelFig}>{cvMoney(m.value)}<span className={s.panelUnit}>{m.prevent ? ' this week' : ' a week'}</span></span>
-          <span className={s.panelClaim}><Claim k={m.claim} />{m.prevent ? 'A cost avoided is never counted as saved.' : m.lo < 0 ? `Uncertain: from losing ${cvMoney(-m.lo)} to gaining ${cvMoney(m.hi)}.` : `Likely between ${cvMoney(m.lo)} and ${cvMoney(m.hi)}. Not saved until a test verifies it.`}</span>
-        </div>
-      )}
+      <Block title="The change">
+        <Facts rows={[
+          ['Do this', m.title],
+          ['Affects', `${m.group} · ${m.where}`],
+          [m.kind === 'candidate' ? 'Projected impact' : m.cost != null && m.cost < 0 ? 'Projected impact' : 'Estimated cost', impactText(m) && <span className={s.factMoney}>{impactText(m)} <Claim k={m.kind === 'candidate' ? m.claim : 'est'} /></span>],
+          m.kind === 'candidate' && !m.prevent && ['Likely range', m.lo < 0 ? `From losing ${cvMoney(-m.lo)} to gaining ${cvMoney(m.hi)}` : `${cvMoney(m.lo)} to ${cvMoney(m.hi)} a week`],
+          ['Expected outcome', m.outcome],
+          ['Risk', m.risk],
+          m.minutes > 0 && ['Your time', `About ${m.minutes} minutes`],
+        ]} />
+      </Block>
+      <Block title="How we know">
+        <Facts rows={[
+          trust.confidence && ['Confidence', <Chip key="c" tone={trust.confidence === 'High' ? 'good' : trust.confidence === 'Medium' ? 'mute' : 'warn'}>{trust.confidence}</Chip>],
+          ['Based on', trust.basis],
+          ['Inputs', trust.inputs],
+          ['Data quality', trust.quality],
+          ['Last updated', trust.updated],
+          ['Measured or estimated', trust.observed],
+        ]} />
+      </Block>
       {(m.kind === 'cover' || m.kind === 'spare') && svc && (
         <>
           <Block title={`${svc.label}, servers by hour`}><CoverageChart svc={svc} compact /><ChartKey /></Block>
-          <Block title="The hours"><HoursTable svc={svc} /></Block>
-          <p className={s.caution}><Icon name="TriangleAlert" size={16} /><span>{m.kind === 'cover' ? 'No savings are claimed here: this protects service.' : 'The saving is unknown until the duties in that hour are checked.'} Confirm breaks, skills and availability before changing the schedule.</span></p>
+          <Block title="Hour by hour"><HoursTable svc={svc} /></Block>
         </>
       )}
       {ap && (
@@ -204,23 +239,35 @@ function MovePanel({ m, svc, state, own, plan, task, onPlan, onSkip, onUndo, onC
             <tbody>{ap.diff.map(([w, a, b]) => <tr key={w}><td>{w}</td><td className={s.was}>{a}</td><td><b>{b}</b></td></tr>)}</tbody></table>
         </Block>
       )}
-      {m.minutes > 0 && <p className={s.blockNote}>About {m.minutes} minutes of a manager’s time.</p>}
-      <p className={s.blockNote}>Advice only. Marking a move planned records your decision; it never publishes or changes a schedule.</p>
+      <p className={s.blockNote}>Recording a plan saves your decision. It never publishes or changes a schedule, and nothing counts as saved until a test verifies it.</p>
     </Panel>
   );
 }
 
-function CostPanel({ d, target, onClose }) {
+function CostPanel({ d, target, group, onClose }) {
   const lab = weeklySeries(d.room, 'labour').slice(-8);
   const net = weeklySeries(d.room, 'net').slice(-8);
   const share = lab.map((w, i) => ({ weekEnd: w.weekEnd, value: net[i]?.value ? w.value / net[i].value : 0 }));
+  const roles = costByRole(d.room.staff);
+  const top = roles.roles[0]?.cost || 1;
   return (
-    <Panel over={`Week ending ${lab.length ? fmtDay(lab.at(-1).weekEnd) : ''}`} title="Labor cost" onClose={onClose}>
+    <Panel over={`Week ending ${lab.length ? fmtDay(lab.at(-1).weekEnd) : ''} · All hourly labor`} title="Labor cost" onClose={onClose}>
       <div className={s.panelMoney}>
         <span className={s.panelMoneyLabel}>Hourly labor paid, this week</span>
         <span className={s.panelFig}>{cvMoney(Math.round(d.week.labour))}</span>
-        <span className={s.panelClaim}><Claim k="obs" />{pct1(d.week.labourRate)} of {cvMoney(Math.round(d.week.net))} net sales.{target ? ` Your target is ${pct1(target)}.` : ''}</span>
+        <span className={s.panelClaim}><Claim k="obs" />{pct1(d.week.labourRate)} of {cvMoney(Math.round(d.week.net))} net sales.{target ? ` Your target is ${pct1(target)}.` : group != null ? ` Your locations together run ${pct1(group)}.` : ''}</span>
       </div>
+      {roles.roles.length > 0 && (
+        <Block title="By role, this week">
+          <ul className={s.roles}>
+            {roles.roles.map((r) => (
+              <li key={r.role}><span className={s.roleName}>{r.role}<small>{r.foh ? 'Front of house' : 'Kitchen'} · {Math.round(r.hours)} h</small></span>
+                <span className={s.roleTrack}><i style={{ width: `${(r.cost / top) * 100}%` }} /></span><b>{cvMoney(Math.round(r.cost))}</b></li>
+            ))}
+          </ul>
+          <p className={s.blockNote}>Front of house {cvMoney(Math.round(roles.foh))} · Kitchen {cvMoney(Math.round(roles.boh))}. Salaried managers aren’t in hourly labor.</p>
+        </Block>
+      )}
       {lab.length > 1 && <Block title={`Labor cost, last ${lab.length} weeks`}><WeekBars series={lab} fmt={(v) => cvMoney(Math.round(v))} /></Block>}
       {share.length > 1 && <Block title={`Labor as a share of sales, last ${share.length} weeks`}><WeekBars series={share} fmt={pct1} /></Block>}
       {!target && <p className={s.blockNote}>No labor target is set for this location. Add one on Data inputs (Location profile) to see how far off it is.</p>}
@@ -233,6 +280,7 @@ function DataPanel({ feed, own, entries, today, weekFrom, weekTo, onSave, onRemo
   const [err, setErr] = React.useState(null);
   const tot = entryTotals(entries, weekFrom, weekTo);
   const live = feed?.state === 'healthy';
+  const off = feed?.state === 'off' || !feed;
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
   const submit = (e) => {
     e.preventDefault();
@@ -244,7 +292,7 @@ function DataPanel({ feed, own, entries, today, weekFrom, weekTo, onSave, onRemo
     <Panel over="Where the numbers come from" title="Update labor data" onClose={onClose}>
       <Block title="Schedule and clock-ins">
         <div className={s.feed}>
-          <Chip tone={live ? 'good' : feed?.state === 'off' || !feed ? 'mute' : 'warn'} icon={live ? 'CircleCheck' : feed?.state === 'off' || !feed ? 'Plug' : 'TriangleAlert'}>{live ? 'Connected' : feed?.state === 'off' || !feed ? 'Not connected' : 'Needs attention'}</Chip>
+          <Chip tone={live ? 'good' : off ? 'mute' : 'warn'} icon={live ? 'CircleCheck' : off ? 'Plug' : 'TriangleAlert'}>{live ? 'Connected' : off ? 'Not connected' : 'Needs attention'}</Chip>
           <span className={s.feedText}><b>7shifts</b>{feed?.last ? ` · ${feed.last}` : ''}</span>
           <button type="button" className={s.outBtn} onClick={() => cv.go('connect')}>{live ? 'Manage' : 'Connect'}<Icon name="ChevronRight" size={15} /></button>
         </div>
@@ -280,7 +328,20 @@ function DataPanel({ feed, own, entries, today, weekFrom, weekTo, onSave, onRemo
   );
 }
 
+function Empty({ title, text, cta, on }) {
+  return (
+    <div className={s.empty}>
+      <Icon name="CircleDashed" size={22} />
+      <b>{title}</b>
+      <span>{text}</span>
+      {cta && <button type="button" className={s.outBtn} onClick={on}>{cta}<Icon name="ChevronRight" size={15} /></button>}
+    </div>
+  );
+}
+
 /* ================================================================ the page */
+
+const servicesOf = (room) => (room.fromToast ? planServices(Object.fromEntries(DAYS.map((x) => [x, tonightPlan(room, x)]))) : sampleServices(room.labour));
 
 function CvLabour() {
   const cv = useCv();
@@ -290,50 +351,75 @@ function CvLabour() {
   const dense = useDense();
 
   const plans = own ? Object.fromEntries(DAYS.map((x) => [x, tonightPlan(room, x)])) : null;
-  const services = own ? planServices(plans) : sampleServices(room.labour);
-  const top = topIssue(services);
-  const [dayKey, setDayKey] = React.useState(null);
-  const svc = services.find((x) => x.key === dayKey) || top?.svc || services[0] || null;
-  const cov = svc ? coverage(svc) : null;
+  const services = servicesOf(room);
+  const week = weekDays(services);
+  const totals = weekTotals(week);
+  const summary = weekSummary(week);
+  const worst = summary.shortage || summary.excess || null;
+
+  const [view, setView] = useSaved('labour.view', cv.role === 'gm' ? 'gm' : 'owner', { person: true });
+  const [dayPick, setDayPick] = React.useState(null);
+  const sel = week.find((x) => x.day === dayPick) || worst || week[0];
+  const svc = sel.svc;
   const [hourSel, setHourSel] = React.useState(null);
   const hour = svc && hourSel != null ? svc.hours[hourSel] : null;
 
   const [saved, setSaved] = useSaved('labour.moves', {});
   const [entries, setEntries] = useSaved('labour.entries', []);
-  const [open, setOpen] = React.useState(null); // { kind: 'move' | 'cost' | 'data' | 'read', id? }
+  const [open, setOpen] = React.useState(null); // { kind: 'move' | 'cost' | 'data', id? }
   const [showAll, setShowAll] = React.useState(false);
-  const [more, setMore] = React.useState(false);
+  const [patterns, setPatterns] = React.useState(false);
+  const [mode, setMode] = React.useState('cps');
   const [cell, setCell] = React.useState(null);
 
-  const all = movesOf({ services, candidates: d.candidates, draft: own ? null : room.labour?.draft });
+  const wage = own ? plans?.[sel.day]?.wage ?? null : serverWage(room.staff);
+  const all = movesOf({ services, candidates: d.candidates, draft: own ? null : room.labour?.draft, wage });
   const split = splitMoves(all, saved);
-  const shown = showAll ? [...split.open, ...split.planned, ...split.skipped] : [...split.open, ...split.planned].slice(0, 3);
+  const live = [...split.open, ...split.planned];
+  const forDay = live.filter((m) => m.day === sel.day);
+  const rest = [...live.filter((m) => m.day !== sel.day), ...(showAll ? split.skipped : [])];
+  const restShown = showAll ? rest : rest.slice(0, Math.max(0, 3 - forDay.length));
   const openMove = open?.kind === 'move' ? all.find((m) => m.id === open.id) : null;
   const moveSvc = (m) => services.find((x) => x.key === m?.svc) || null;
 
   const feed = d.feeds.find((f) => f.name === '7shifts') || null;
   const held = !!feed && feed.state !== 'healthy' && feed.state !== 'off' && !own;
+  const rate = own ? plans?.[sel.day]?.rate ?? null : room.labour?.kpis?.rate ?? null;
+  const weeksFor = (m) => (own ? Math.min(...(plans?.[m.svc]?.hours || []).map((h) => h.weeks || 0), Infinity) : dense ? HOURLY_WEEKS : null);
+  const trust = (m) => { const w = weeksFor(m); return trustOf(m, { weeks: Number.isFinite(w) ? w : null, feed, rate, own }); };
+
   const target = d.profile?.laborTarget > 0 ? d.profile.laborTarget : null;
+  const rows = CV_GROUP?.rows || [];
+  const group = rows.length > 1 ? groupShare(rows.map((r) => ({ net: r.d.week.net, labour: r.d.week.labour }))) : null;
   const labWeeks = weeklySeries(room, 'labour');
   const weekTo = labWeeks.at(-1)?.weekEnd || CV_NOW.iso;
   const weekFrom = addDays(weekTo, -6);
   const period = `Week of ${fmtDay(weekFrom)} to ${fmtDay(weekTo)}`;
-
-  // Short and spare server-hours for the week: the sample's measured week, or a typical week from the room's own clock-ins.
-  const shortWk = own ? services.reduce((t, x) => t + coverage(x).short, 0) : room.labour?.kpis?.short ?? null;
-  const spareWk = own ? weeklySeries(room, 'idleServerHours').slice(-1)[0]?.value ?? null : room.labour?.kpis?.idle ?? null;
+  const roles = costByRole(room.staff);
 
   const proofs = own ? [] : d.proofs.filter((p) => p.lever === 'Labour');
   const tests = own ? (eng.windows || []).filter((w) => w.roomId === d.id && (w.lever === 'labour' || w.lever === 'overtime')) : [];
-  const banked = proofs.find((p) => p.outcome === 'verified' || p.outcome === 'limited') || null;
-  const bookedOwn = tests.filter((w) => w.status === 'verified').reduce((t, w) => t + w.bookedCents / 100, 0);
+  const results = [
+    ...proofs.map((p) => ({ id: p.id, title: p.title, stage: stageOf(p.outcome), note: p.outcome === 'limited' ? 'With limits' : p.outcome === 'testing' ? p.checkpoint || p.held : p.outcome === 'reversed' ? p.held : `Held ${p.held}`, fig: p.outcome === 'testing' ? null : p.bookable || 0, day: dayOfTitle(p.title) })),
+    ...tests.map((w) => ({ id: w.id, title: w.title, stage: w.status === 'verified' ? 'verified' : w.status === 'running' ? 'testing' : stageOf(w.status), note: w.status === 'running' ? `Day ${w.day} of 28` : '', fig: w.status === 'verified' ? Math.round(w.bookedCents / 100) : null, day: dayOfTitle(w.title) })),
+  ].sort((a, b) => (b.day === sel.day) - (a.day === sel.day));
+  const banked = results.find((r) => r.stage === 'verified' && r.fig > 0) || null;
 
-  const grid = own ? loadGridFromPlans(plans) : dense ? loadGridFromHeat(heat(dense.hours)) : null;
-  const gridSel = grid && grid.rows.length ? cell || peakCell(grid) : null;
+  const grids = {
+    cps: own ? loadGridFromPlans(plans) : dense ? loadGridFromHeat(heat(dense.hours)) : null,
+    gap: services.length ? gapGrid(services) : null,
+    sales: !own && dense ? salesGridFromHeat(heat(dense.hours)) : null,
+  };
+  const modes = Object.keys(MODES).filter((k) => grids[k]?.rows.length);
+  const gmode = modes.includes(mode) ? mode : modes[0];
+  const grid = gmode ? grids[gmode] : null;
+  const gfmt = (v, long) => (gmode === 'cps' ? `${v.toFixed(1)}${long ? ' covers per server-hour' : ''}` : gmode === 'sales' ? `$${v}${long ? ' of sales per server-hour' : ''}` : v === 0 ? (long ? 'on track' : '0') : long ? `${Math.abs(v)} ${v < 0 ? 'short' : 'spare'}` : `${v < 0 ? '−' : '+'}${Math.abs(v)}`);
+  const gsel = grid && cell && grid.rows[cell.ri]?.day === cell.day && grid.rows[cell.ri].cells[cell.ci] != null ? cell : null;
+  const weak = week.filter((x) => x.cov?.short).sort((a, b) => b.cov.short - a.cov.short).slice(0, 2);
 
-  const pickDay = (key) => { setDayKey(key); setHourSel(null); };
-  const toChart = (key) => { if (key) pickDay(key); document.getElementById('labor-hours')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
-  const mark = (m, st) => setSaved((cur) => { const next = { ...(cur || {}) }; if (st) next[m.id] = { s: st, at: new Date().toISOString() }; else delete next[m.id]; return next; }, `Labor: ${st ? (st === 'planned' ? 'planned' : 'not for us') : 'reopened'} "${m.title}"`);
+  const pickDay = (day) => { setDayPick(day); setHourSel(null); setCell(null); };
+  const toChart = () => document.getElementById('labor-hours')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const mark = (m, st) => setSaved((cur) => { const next = { ...(cur || {}) }; if (st) next[m.id] = { s: st, at: new Date().toISOString() }; else delete next[m.id]; return next; }, `Labor: ${st ? (st === 'planned' ? 'recorded a plan for' : 'not for us:') : 'reopened'} "${m.title}"`);
   const cutTask = (m) => { const p = plans?.[m.svc]; const id = p?.cutFrom != null ? `cut:${m.svc}:${p.cutFrom}` : null; return id ? { id, task: (eng.tasks || []).find((t) => t.roomId === d.id && t.approvalId === id && t.status !== 'cancelled') } : { id: null, task: null }; };
   const onPlan = async (m, { cut } = {}) => {
     if (cut) {
@@ -344,33 +430,247 @@ function CvLabour() {
       cv.toast('Approved. The steps for 7shifts are on Today.');
       return;
     }
-    mark(m, 'planned'); setOpen(null); cv.toast('Marked as planned. Your live schedule is unchanged.');
+    mark(m, 'planned'); setOpen(null); cv.toast('Plan recorded. Your live schedule is unchanged.');
   };
 
-  /* The hero: one message, one persimmon button. */
+  /* The hero follows the picked day and switches between five states. */
+  const dayMove = (kind) => all.find((m) => m.svc === svc?.key && m.kind === kind);
+  const lead = svc ? svc.label : dayName(sel.day);
   let hero;
-  const heroMove = top ? all.find((m) => m.svc === top.svc.key && (top.kind === 'short' ? m.kind === 'cover' : m.kind === 'spare')) : null;
   if (!services.length) {
-    hero = { badge: 'Get started', tone: 'mute', icon: 'CircleDashed', title: 'Add staff hours to see where coverage is off.', text: 'Hour-by-hour staffing needs servers on the floor and covers by the hour. Connect 7shifts, add time entries to your Toast upload, or enter the day by hand.', cta: 'Add labor data', onCta: () => setOpen({ kind: 'data' }) };
+    hero = { state: 'Missing data', tone: 'mute', icon: 'CircleDashed', title: 'Add staff hours to see where staffing missed demand.', text: 'This needs servers on the floor and covers by the hour. Connect 7shifts, add time entries to your Toast upload, or enter the day by hand.', cta: 'Add labor data', onCta: () => setOpen({ kind: 'data' }) };
   } else if (held) {
-    hero = { badge: 'Check the schedule first', tone: 'warn', icon: 'TriangleAlert', title: `Confirm the schedule before changing ${top ? top.svc.label : 'this week'}.`, text: `7shifts last updated ${feed.last}, so staffing suggestions are on hold. Reconnect it, or enter the hours by hand.`, cta: 'Update schedule data', onCta: () => setOpen({ kind: 'data' }), alt: top ? 'See the hours' : null, onAlt: () => toChart(top?.svc.key) };
-  } else if (top?.kind === 'short') {
-    hero = { badge: 'Your next best move · Service risk', tone: 'risk', icon: 'TriangleAlert', title: `Protect ${top.svc.label} before the rush.`, text: <>{top.svc.label} runs <b>{shortPhrase(top.cov.shortAt)}</b>. Add coverage at the peak before cutting any late hours.</>, cta: 'Review staffing fix', onCta: () => setOpen({ kind: 'move', id: heroMove.id }), alt: 'See the hours', onAlt: () => toChart(top.svc.key) };
-  } else if (top) {
-    hero = { badge: 'Your next best move', tone: 'info', icon: 'Eye', title: `Check ${top.svc.label}’s spare ${top.cov.spare === 1 ? 'hour' : 'hours'}.`, text: <>No hour is short. <b>{top.cov.spare} server-{top.cov.spare === 1 ? 'hour looks' : 'hours look'} spare</b> at {listOf(top.cov.spareAt.map((x) => x.label))}. Confirm duties before reducing.</>, cta: 'Review the hours', onCta: () => setOpen({ kind: 'move', id: heroMove.id }), alt: 'See the hours', onAlt: () => toChart(top.svc.key) };
+    hero = { state: 'Check the schedule first', tone: 'warn', icon: 'TriangleAlert', title: `Confirm the schedule before changing ${lead}.`, text: `7shifts last updated ${feed.last}, so staffing suggestions are on hold. Reconnect it, or enter the hours by hand.`, cta: 'Update schedule data', onCta: () => setOpen({ kind: 'data' }), alt: svc ? 'See the hours' : null, onAlt: toChart };
+  } else if (sel.status === 'missing') {
+    hero = { state: 'Missing data', tone: 'mute', icon: 'CircleDashed', title: `No hour-by-hour staffing for ${dayName(sel.day)} yet.`, text: 'Other days are ready. Add servers and covers by the hour for this day to see whether it’s short or overstaffed.', cta: 'Add labor data', onCta: () => setOpen({ kind: 'data' }) };
+  } else if (sel.status === 'short') {
+    const m = dayMove('cover');
+    hero = { state: 'Urgent staffing issue', tone: 'bad', icon: 'TriangleAlert', title: `You’re short ${sel.cov.shortAt.every((x) => x.by === sel.cov.shortAt[0].by) ? '' : 'up to '}${Math.max(...sel.cov.shortAt.map((x) => x.by))} ${Math.max(...sel.cov.shortAt.map((x) => x.by)) === 1 ? 'server' : 'servers'} at ${lead}.`, text: <>{lead} runs <b>{shortPhrase(sel.cov.shortAt)}</b>.</>, change: m.title, impact: impactText(m), cta: 'Review and record plan', onCta: () => setOpen({ kind: 'move', id: m.id }), alt: 'See the hours', onAlt: toChart, move: m };
+  } else if (sel.status === 'spare') {
+    const m = dayMove('spare');
+    hero = { state: 'Savings opportunity', tone: 'warn', icon: 'CircleAlert', title: `${lead} has ${hrs(sel.cov.spare)} more than it needed.`, text: <>No hour is short. <b>{sel.cov.spare} server-{sel.cov.spare === 1 ? 'hour looks' : 'hours look'} spare</b> at {listOf(sel.cov.spareAt.map((x) => x.label))}.</>, change: m.title, impact: impactText(m), cta: 'Review and record plan', onCta: () => setOpen({ kind: 'move', id: m.id }), alt: 'See the hours', onAlt: toChart, move: m };
+  } else if (banked) {
+    hero = { state: 'Result worth a look', tone: 'good', icon: 'BadgeCheck', title: `${lead} is on track, and a change is paying off.`, text: <>Every hour has the servers it needs. <b>{banked.title}</b> is verified at {cvMoney(banked.fig)} a week.</>, cta: 'See the evidence', onCta: () => cv.go('packet', { id: banked.id }), alt: 'See the hours', onAlt: toChart };
   } else {
-    hero = { badge: 'On track', tone: 'good', icon: 'CircleCheck', title: 'Coverage matches demand.', text: 'Every hour has the servers it needs, and none look spare.' };
+    hero = { state: 'On track', tone: 'good', icon: 'CircleCheck', title: `${lead} is on track.`, text: 'Every hour has the servers it needs, and none look spare. Nothing to change.', alt: 'See the hours', onAlt: toChart };
   }
-  const peak = top ? (() => { const i = top.svc.hours.findIndex((h) => (top.kind === 'short' ? h.sched < h.need : h.sched > h.need)); const a = Math.max(0, Math.min(i - 1, top.svc.hours.length - 4)); return { ...top.svc, hours: top.svc.hours.slice(a, a + 4) }; })() : null;
+  const heroTrust = hero.move ? trust(hero.move) : null;
+  const peak = svc && (sel.cov.short || sel.cov.spare) ? (() => { const i = svc.hours.findIndex((h) => (sel.cov.short ? h.sched < h.need : h.sched > h.need)); const a = Math.max(0, Math.min(i - 1, svc.hours.length - 4)); return { ...svc, hours: svc.hours.slice(a, a + 4) }; })() : svc;
 
+  const drivers = weak.map((x) => x.svc.label);
   const tiles = [
-    { k: 'spend', label: 'Labor cost', when: period, fig: cvMoney(Math.round(d.week.labour)), claim: 'obs', foot: 'Hourly labor paid', on: () => setOpen({ kind: 'cost' }) },
-    { k: 'share', label: 'Labor share of sales', when: period, fig: pct1(d.week.labourRate), claim: 'obs', foot: target ? `Target ${pct1(target)} · ${Math.abs((d.week.labourRate - target) * 100).toFixed(1)} pts ${d.week.labourRate > target ? 'over' : 'under'}` : 'No target set', on: () => setOpen({ kind: 'cost' }) },
-    { k: 'gaps', label: 'Coverage gaps, servers', when: own ? 'Typical week' : period, fig: shortWk == null ? null : `${shortWk} h`, unit: 'short', tone: shortWk > 0 ? 'down' : '', claim: 'mod', foot: spareWk == null ? 'Hours short of what covers needed' : `${spareWk} h possibly spare, in other hours`, on: () => toChart() },
-    banked
-      ? { k: 'book', label: 'Verified labor saving', when: `Since ${banked.since}`, fig: cvMoney(banked.bookable), unit: 'a week', tone: 'up', claim: 'book', foot: banked.outcome === 'limited' ? 'Verified, with limits' : `Verified · held ${banked.held}`, on: () => cv.go('packet', { id: banked.id }) }
-      : { k: 'book', label: 'Verified labor saving', when: 'To date', fig: bookedOwn ? cvMoney(Math.round(bookedOwn)) : null, unit: bookedOwn ? 'a week' : '', tone: bookedOwn ? 'up' : '', claim: bookedOwn ? 'book' : 'none', foot: bookedOwn ? 'From verified tests' : 'Nothing verified yet', on: () => cv.go('proof') },
+    { k: 'spend', label: 'Labor cost', scope: 'All hourly labor', when: period, fig: cvMoney(Math.round(d.week.labour)), claim: 'obs', lines: [roles.total ? `Front of house ${cvMoney(Math.round(roles.foh))} · Kitchen ${cvMoney(Math.round(roles.boh))}` : 'Hourly labor paid'], on: () => setOpen({ kind: 'cost' }) },
+    { k: 'share', label: 'Labor %', scope: 'All hourly labor', when: period, fig: pct1(d.week.labourRate), claim: 'obs', lines: [
+      target ? `Target ${pct1(target)} · ${Math.abs((d.week.labourRate - target) * 100).toFixed(1)} pts ${d.week.labourRate > target ? 'above' : 'below'} target` : group != null ? `Your locations together: ${pct1(group)} · ${Math.abs((d.week.labourRate - group) * 100).toFixed(1)} pts ${d.week.labourRate > group ? 'above' : 'below'}` : 'No target set',
+      !target && group != null ? 'No target set for this location' : null,
+      drivers.length ? `Main driver: ${listOf(drivers)}` : null,
+    ], tone: target && d.week.labourRate > target ? 'down' : '', on: () => setOpen({ kind: 'cost' }) },
+    { k: 'gaps', label: 'Hours that need coverage', scope: 'Servers', when: own ? 'Typical week' : period, fig: services.length ? `${totals.short} h` : null, tone: totals.short > 0 ? 'down' : '', claim: 'mod', lines: [services.length ? `${totals.spare} h spare, in other hours` : 'Needs servers and covers by the hour', summary.shortage ? `Worst: ${summary.shortage.svc.label}` : services.length ? 'No day is short' : null], on: () => { if (summary.shortage) pickDay(summary.shortage.day); toChart(); } },
+    { k: 'book', label: 'Verified savings', scope: 'Labor changes', when: 'This location', fig: banked ? cvMoney(banked.fig) : null, unit: banked ? 'a week' : '', tone: banked ? 'up' : '', claim: banked ? 'book' : 'none', lines: [banked ? banked.title : 'Nothing verified yet', banked ? banked.note : results.some((r) => r.stage === 'testing') ? `${results.filter((r) => r.stage === 'testing').length} in test` : 'Record a plan to start'], on: () => (banked ? cv.go('packet', { id: banked.id }) : cv.go('proof')) },
   ];
+
+  /* ---- blocks, ordered by view below */
+  const stripBlock = (
+    <section key="strip" className={s.week} aria-label="This week, day by day">
+      <div className={s.weekHead}><h2 className={s.sectionTitle}>This week</h2><span className={s.sectionSub}>{period} · Servers · Pick a day</span></div>
+      <div className={s.strip} role="tablist" aria-label="Day">
+        {week.map((x) => { const st = STATUS[x.status]; return (
+          <button key={x.day} type="button" role="tab" aria-selected={x.day === sel.day} className={`${s.dayCard} ${x.day === sel.day ? s.dayOn : ''}`} onClick={() => pickDay(x.day)}>
+            <span className={s.dayName}>{x.day}</span>
+            <span className={`${s.dayStatus} ${s[`st_${st.tone}`]}`}><Icon name={st.icon} size={15} />{st.label}</span>
+            <span className={s.dayNote}>{x.status === 'missing' ? 'No hourly data' : x.cov.short ? `${x.cov.short} h short` : x.cov.spare ? `${x.cov.spare} h spare` : 'Matches demand'}</span>
+          </button>
+        ); })}
+      </div>
+      <div className={s.summary}>
+        {[
+          ['Biggest shortage', summary.shortage, summary.shortage && `${hrs(summary.shortage.cov.short)} short`, 'No day is short', 'bad'],
+          ['Most spare hours', summary.excess, summary.excess && `${hrs(summary.excess.cov.spare)} spare`, 'No spare hours', 'warn'],
+          ['Best matched', summary.matched, summary.matched && (summary.matched.cov.spare ? `No short hours, ${summary.matched.cov.spare} spare` : 'Staffing matched demand'), 'No day fully matched', 'good'],
+        ].map(([k, x, note, none, tone]) => (
+          <button key={k} type="button" className={s.sumCell} disabled={!x} onClick={() => x && pickDay(x.day)}>
+            <span className={s.sumKey}>{k}</span>
+            <span className={`${s.sumVal} ${x ? s[`st_${tone}`] : ''}`}>{x ? x.svc.label : none}</span>
+            {x && <span className={s.sumNote}>{note}</span>}
+          </button>
+        ))}
+        <div className={s.sumCell}>
+          <span className={s.sumKey}>Missing data</span>
+          <span className={s.sumVal}>{summary.missing.length ? listOf(summary.missing.map(dayName)) : 'None'}</span>
+          <span className={s.sumNote}>{summary.missing.length ? 'No hourly staffing yet' : 'All 7 days have hourly staffing'}</span>
+        </div>
+      </div>
+    </section>
+  );
+
+  const heroBlock = (
+    <section key="hero" className={`${s.hero} ${s[`hero_${hero.tone}`]}`} aria-label={`${dayName(sel.day)}: what matters most`}>
+      <div className={s.heroMain}>
+        <div className={s.heroTop}><Chip tone={hero.tone} icon={hero.icon}>{hero.state}</Chip><span className={s.heroDay}>{dayName(sel.day)}{worst?.day === sel.day ? ' · Needs the most attention this week' : ''}</span></div>
+        <h2 className={s.heroTitle}>{hero.title}</h2>
+        <p className={s.heroText}>{hero.text}</p>
+        {hero.change && <p className={s.heroChange}><Icon name="ArrowRight" size={17} /><span><b>{hero.change}</b>{hero.impact ? ` · ${hero.impact}` : ''}</span></p>}
+        {(hero.cta || hero.alt) && (
+          <div className={s.heroActs}>
+            {hero.cta && <Button className={s.cta} iconRight="ArrowRight" onClick={hero.onCta}>{hero.cta}</Button>}
+            {hero.alt && <button type="button" className={s.seeWhy} onClick={hero.onAlt}>{hero.alt}<Icon name="ChevronRight" size={16} /></button>}
+          </div>
+        )}
+        {heroTrust && <span className={s.heroProof}><b>{heroTrust.confidence} confidence</b> · Based on {heroTrust.basis} · Data: {heroTrust.quality.toLowerCase()}</span>}
+      </div>
+      {peak && (
+        <div className={s.signal} aria-label={`${svc.label} staffing`}>
+          <div className={s.signalHead}><span className={s.signalTitle}>{svc.label} · Servers</span><span className={s.signalSub}>Scheduled against needed</span></div>
+          <CoverageChart svc={peak} compact />
+          <ChartKey />
+        </div>
+      )}
+    </section>
+  );
+
+  const tilesBlock = (
+    <section key="tiles" className={s.tiles} aria-label="Labor summary">
+      {tiles.map((t) => (
+        <button key={t.k} type="button" className={s.tile} onClick={t.on}>
+          <span className={s.tileLabel}>{t.label}</span>
+          <span className={s.tileWhen}>{t.scope} · {t.when}</span>
+          <span className={`${s.tileFig} ${t.tone ? s[t.tone] : ''} ${t.fig == null ? s.tileNone : ''}`}>{t.fig ?? '—'}{t.unit && t.fig != null && <small>{t.unit}</small>}</span>
+          <span className={s.tileFoot}><Claim k={t.claim} /></span>
+          {t.lines.filter(Boolean).map((l) => <span key={l} className={s.tileLine}>{l}</span>)}
+          <Icon name="ChevronRight" size={16} className={s.tileChev} />
+        </button>
+      ))}
+    </section>
+  );
+
+  const moveRow = (m) => { const st = saved?.[m.id]?.s; const t = trust(m); return (
+    <li key={m.id}>
+      <button type="button" className={`${s.move} ${st ? s.moveDone : ''}`} onClick={() => setOpen({ kind: 'move', id: m.id })}>
+        <span className={`${s.moveIcon} ${s[`mi_${m.tone}`]}`}><Icon name={st === 'planned' ? 'CircleCheck' : MOVE_ICON[m.tone]} size={18} /></span>
+        <span className={s.moveText}>
+          <span className={s.moveTitle}>{m.title}</span>
+          <span className={s.moveWorth}>{m.where} · {m.group}{impactText(m) ? ` · ${impactText(m)}` : ''}</span>
+          <span className={s.moveMeta}>{st === 'planned' ? <Chip tone="good" icon="CircleCheck">Plan recorded</Chip> : st === 'skipped' ? <Chip tone="mute">Not for us</Chip> : <Stage k={m.stage} />}{t.confidence && !st && <span>{t.confidence} confidence</span>}</span>
+        </span>
+        <Icon name="ChevronRight" size={18} className={s.chev} />
+      </button>
+    </li>
+  ); };
+
+  const workBlock = (
+    <div key="work" className={s.gridMain}>
+      <section className={s.card} id="labor-hours" aria-label="Staffing by hour">
+        <div className={s.cardHead}>
+          <div><h2 className={s.cardTitle}>{svc ? svc.label : dayName(sel.day)}: where staffing missed demand</h2><p className={s.cardSub}>Servers scheduled against what the covers needed. Pick an hour.</p></div>
+          <Chip tone="mute" icon="Users">Servers</Chip>
+        </div>
+        {!svc ? <Empty title={`No hour-by-hour staffing for ${dayName(sel.day)}`} text="Daily totals can’t show how many servers each hour needs. Add servers on the floor and covers by the hour." cta="Add labor data" on={() => setOpen({ kind: 'data' })} /> : (
+          <>
+            <CoverageChart svc={svc} sel={hourSel} onSel={setHourSel} />
+            <ChartKey />
+            <div className={s.cardFoot}>
+              <div>
+                <span className={s.sumStrong}>{hour ? `${hour.label}: ${hour.sched} scheduled, ${hour.need} needed${hour.covers != null ? `, ${hour.covers} covers` : ''}` : sel.cov.short || sel.cov.spare ? `${sel.cov.short ? `${hrs(sel.cov.short)} short` : ''}${sel.cov.short && sel.cov.spare ? ', ' : ''}${sel.cov.spare ? `${hrs(sel.cov.spare)} spare` : ''}` : 'Every hour matched demand'}</span>
+                <span className={s.sumSub}><Claim k="mod" />Scheduled and covers are observed. Needed is modeled from your pace{rate ? ` of ${rate.toFixed(2)} covers per server-hour` : ''}.</span>
+              </div>
+            </div>
+          </>
+        )}
+      </section>
+
+      <section className={s.card} aria-label="What to do">
+        <div className={s.cardHead}>
+          <div><h2 className={s.cardTitle}>What to do</h2><p className={s.cardSub}>{dayName(sel.day)} first, then the rest of the week.</p></div>
+          <Chip tone="mute">{split.open.length} open</Chip>
+        </div>
+        {held && <p className={s.caution}><Icon name="TriangleAlert" size={16} /><span>On hold until the schedule feed is current. You can still read each one.</span></p>}
+        {all.length === 0 ? <Empty title="No recommendation right now" text={services.length ? 'Staffing matched demand this week. New suggestions appear here when an hour runs short or spare.' : 'Suggestions need servers and covers by the hour.'} cta={services.length ? null : 'Add labor data'} on={() => setOpen({ kind: 'data' })} /> : (
+          <>
+            <h3 className={s.listHead}>{dayName(sel.day)}</h3>
+            {forDay.length ? <ul className={s.moves}>{forDay.map(moveRow)}</ul> : <p className={s.none}>{sel.status === 'missing' ? 'No hourly data for this day yet.' : 'Nothing to change on this day.'}</p>}
+            {restShown.length > 0 && <><h3 className={s.listHead}>Rest of the week</h3><ul className={s.moves}>{restShown.map(moveRow)}</ul></>}
+          </>
+        )}
+        <div className={s.cardFoot}>
+          <span className={s.sumSub}>Opportunities only. Nothing here changes a live schedule or counts as saved.</span>
+          {rest.length > restShown.length || showAll ? <button type="button" className={s.textLink} onClick={() => setShowAll((v) => !v)}>{showAll ? 'Show fewer' : `Show all ${all.length}`}<Icon name={showAll ? 'ChevronUp' : 'ChevronDown'} size={15} /></button> : null}
+        </div>
+      </section>
+    </div>
+  );
+
+  const resultsBlock = (
+    <section key="results" className={s.card} aria-label="Results of labor changes">
+      <div className={s.cardHead}>
+        <div><h2 className={s.cardTitle}>Did the changes work?</h2><p className={s.cardSub}>Only verified savings count. Everything else is still being proven.</p></div>
+      </div>
+      <ol className={s.stages} aria-label="How a change becomes a saving">
+        {['opportunity', 'testing', 'measured', 'verified'].map((k) => <li key={k}><Icon name={STAGES[k].icon} size={14} />{STAGES[k].label}</li>)}
+      </ol>
+      {results.length === 0 ? <Empty title="No changes made yet" text="Record a plan above, make the change, and a test compares it with matching services. Results show here with what was measured." /> : (
+        <ul className={s.results}>
+          {results.map((r) => (
+            <li key={r.id}><button type="button" className={s.result} onClick={() => cv.go('packet', { id: r.id })}>
+              <span className={s.resText}><span className={s.resTitle}>{r.title}</span><span className={s.moveMeta}><Stage k={r.stage} />{r.note && <span>{r.note}</span>}{r.day === sel.day && <span>· {dayName(sel.day)}</span>}</span></span>
+              <span className={`${s.resFig} ${r.stage === 'verified' && r.fig ? s.up : s.resNone}`}>{r.fig == null ? '—' : cvMoney(r.fig)}{r.fig ? <small>a week</small> : r.stage === 'reversed' ? <small>removed</small> : r.fig == null ? <small>not measured yet</small> : null}</span>
+              <Icon name="ChevronRight" size={18} className={s.chev} />
+            </button></li>
+          ))}
+        </ul>
+      )}
+      <div className={s.cardFoot}>
+        <span className={s.sumSub}>This location’s labor changes.</span>
+        <button type="button" className={s.textLink} onClick={() => cv.go('proof')}>Full history<Icon name="ChevronRight" size={15} /></button>
+      </div>
+    </section>
+  );
+
+  const locsBlock = rows.length > 1 ? (
+    <section key="locs" className={s.card} aria-label="Compare locations">
+      <div className={s.cardHead}><div><h2 className={s.cardTitle}>Compare locations</h2><p className={s.cardSub}>{period}. Pick a location to open it.</p></div></div>
+      <ul className={s.locs}>
+        {rows.map((r) => { const wk = weekDays(servicesOf(r.d.room)); const t = weekTotals(wk); const sm = weekSummary(wk); const on = r.id === d.id; return (
+          <li key={r.id}><button type="button" className={`${s.loc} ${on ? s.locOn : ''}`} onClick={() => cv.pickRoom(r.id)} aria-current={on ? 'true' : undefined}>
+            <span className={s.locName}>{r.name}{on && <small>Showing</small>}</span>
+            <span className={s.locFig}><b>{pct1(r.d.week.labourRate)}</b><small>Labor %</small></span>
+            <span className={s.locFig}><b>{cvMoney(Math.round(r.d.week.labour))}</b><small>Labor cost</small></span>
+            <span className={s.locFig}><b className={t.short ? s.down : ''}>{t.short} h</b><small>Short a server</small></span>
+            <span className={s.locNote}>{sm.shortage ? `Worst: ${sm.shortage.svc.label}` : sm.missing.length === 7 ? 'No hourly staffing yet' : 'No day is short'}</span>
+            <Icon name="ChevronRight" size={18} className={s.chev} />
+          </button></li>
+        ); })}
+      </ul>
+    </section>
+  ) : null;
+
+  const patternsBlock = (
+    <section key="patterns" className={s.card} aria-label="Patterns by day and hour">
+      <button type="button" className={s.fold} aria-expanded={patterns} onClick={() => setPatterns((v) => !v)}>
+        <span><span className={s.cardTitle}>Patterns across the week</span>
+          <span className={s.cardSub}>{weak.length ? `${listOf(weak.map((x) => x.svc.label))} ${weak.length === 1 ? 'is' : 'are'} where staffing most often falls short.` : services.length ? 'No window is short this week.' : 'Needs servers and covers by the hour.'}</span></span>
+        <span className={s.foldEnd}>{patterns ? 'Hide' : 'Show the grid'}<Icon name={patterns ? 'ChevronUp' : 'ChevronDown'} size={16} /></span>
+      </button>
+      {patterns && (!grid ? <Empty title="No hourly pattern yet" text="Add covers and servers by the hour for this location." cta="Add labor data" on={() => setOpen({ kind: 'data' })} /> : (
+        <>
+          <div className={s.seg} role="radiogroup" aria-label="What the grid shows">
+            {modes.map((k) => <button key={k} type="button" role="radio" aria-checked={k === gmode} className={s.segBtn} onClick={() => { setMode(k); setCell(null); }}>{MODES[k]}</button>)}
+          </div>
+          <Grid grid={grid} mode={gmode} fmt={gfmt} day={sel.day} sel={gsel} onSel={(c) => { setCell(c); if (c.day !== sel.day) { setDayPick(c.day); setHourSel(null); } }} />
+          <div className={s.scale}>
+            {gmode === 'gap' ? <><span className={s.key}><span><i className={s.kShort} />Short</span><span><i className={s.kSpare} />Spare</span></span></> : <><span>Lower</span><i /><span>Higher</span></>}
+            <span className={s.scaleNote}>{gmode === 'cps' ? 'A high number can mean a productive hour or a stretched one. Never cut from this alone.' : gmode === 'sales' ? 'Sales divided by servers on the floor.' : 'Servers scheduled minus servers needed.'}</span>
+          </div>
+          <div className={s.cardFoot}>
+            <span className={s.sumStrong}>{gsel ? `${dayName(gsel.day)} ${grid.hours[gsel.ci].label}: ${gfmt(grid.rows[gsel.ri].cells[gsel.ci], true)}` : `${dayName(sel.day)} is highlighted. Pick any cell.`}</span>
+            <span className={s.sumSub}>{gmode === 'gap' ? <Claim k="mod" /> : <Claim k="obs" />}{gmode === 'gap' ? (own ? 'Typical week' : period) : own ? 'From your clock-ins and covers' : `Average of the last ${HOURLY_WEEKS} weeks`}</span>
+          </div>
+        </>
+      ))}
+    </section>
+  );
+
+  const order = { gm: [workBlock, tilesBlock, resultsBlock], owner: [tilesBlock, resultsBlock, workBlock, locsBlock], ops: [locsBlock, tilesBlock, workBlock, resultsBlock] }[view] || [];
+  const handDays = entryTotals(entries, weekFrom, weekTo).days;
 
   return (
     <div className={`cv-page ${s.page}`}>
@@ -379,180 +679,31 @@ function CvLabour() {
           <h1 className={s.headline}>The right people, at the right hours.</h1>
           <span className={s.context}>{CV_ROOM.name} · {period}</span>
         </div>
-        <button type="button" className={s.outBtn} onClick={() => setOpen({ kind: 'data' })}><Icon name="Plus" size={16} />Update data</button>
+        <div className={s.headEnd}>
+          <div className={s.seg} role="radiogroup" aria-label="View">
+            {VIEWS.map(([k, l]) => <button key={k} type="button" role="radio" aria-checked={view === k} className={s.segBtn} onClick={() => setView(k)}>{l}</button>)}
+          </div>
+          <button type="button" className={s.outBtn} onClick={() => setOpen({ kind: 'data' })}><Icon name="Plus" size={16} />Update data</button>
+        </div>
       </header>
 
-      {/* ---- the next best move */}
-      <section className={`${s.hero} ${s[`hero_${hero.tone}`]}`} aria-label="Highest priority labor issue">
-        <div className={s.heroMain}>
-          <Chip tone={hero.tone === 'risk' ? 'bad' : hero.tone} icon={hero.icon}>{hero.badge}</Chip>
-          <h2 className={s.heroTitle}>{hero.title}</h2>
-          <p className={s.heroText}>{hero.text}</p>
-          {hero.cta && (
-            <div className={s.heroActs}>
-              <Button className={s.cta} iconRight="ArrowRight" onClick={hero.onCta}>{hero.cta}</Button>
-              {hero.alt && <button type="button" className={s.seeWhy} onClick={hero.onAlt}>{hero.alt}<Icon name="ChevronRight" size={16} /></button>}
-            </div>
-          )}
-          {top && !held && <span className={s.heroProof}><Claim k="mod" />From your covers per server-hour. Confirm breaks and availability before acting.</span>}
-        </div>
-        {peak && (
-          <div className={s.signal} aria-label={`${top.svc.label} peak staffing`}>
-            <div className={s.signalHead}><span className={s.signalTitle}>{top.svc.label} · Servers</span><span className={s.signalSub}>Scheduled against needed</span></div>
-            <CoverageChart svc={peak} compact />
-            <ChartKey />
-          </div>
-        )}
-      </section>
-
-      {/* ---- four numbers */}
-      <section className={s.tiles} aria-label="Labor summary">
-        {tiles.map((t) => (
-          <button key={t.k} type="button" className={s.tile} onClick={t.on}>
-            <span className={s.tileLabel}>{t.label}</span>
-            <span className={s.tileWhen}>{t.when}</span>
-            <span className={`${s.tileFig} ${t.tone ? s[t.tone] : ''} ${t.fig == null ? s.tileNone : ''}`}>{t.fig ?? '—'}{t.unit && t.fig != null && <small>{t.unit}</small>}</span>
-            <span className={s.tileFoot}><Claim k={t.claim} /><span>{t.foot}</span></span>
-            <Icon name="ChevronRight" size={16} className={s.tileChev} />
-          </button>
-        ))}
-      </section>
+      {stripBlock}
+      {heroBlock}
+      {order}
+      {patternsBlock}
 
       <p className={s.status}>
         <Icon name={held ? 'TriangleAlert' : 'Info'} size={16} className={held ? s.icWarn : undefined} />
-        <span>{own ? `From your Toast clock-ins and covers through ${room.fromToast.end}.` : 'Sample restaurant group.'} {feed ? `Schedules: 7shifts, ${feed.state === 'off' ? 'not connected' : feed.last}.` : ''} {entryTotals(entries, weekFrom, weekTo).days > 0 ? `${entryTotals(entries, weekFrom, weekTo).days} days entered by hand this week.` : ''}</span>
+        <span>{own ? `From your Toast clock-ins and covers through ${room.fromToast.end}.` : 'Sample restaurant group.'} {feed ? `Schedules: 7shifts, ${feed.state === 'off' ? 'not connected' : feed.last}.` : ''} {handDays > 0 ? `${handDays} days entered by hand this week.` : ''}</span>
         <button type="button" className={s.textLink} onClick={() => setOpen({ kind: 'data' })}>Where the numbers come from<Icon name="ChevronRight" size={15} /></button>
       </p>
 
-      {/* ---- 01 and 02 */}
-      <div className={s.gridMain}>
-        <section className={s.card} id="labor-hours" aria-label="Staffing coverage by hour">
-          <div className={s.cardHead}>
-            <div><h2 className={s.cardTitle}><span className={s.num}>01</span>Find the hours that need attention</h2><p className={s.cardSub}>Servers scheduled against what the covers needed. Pick a day, then an hour.</p></div>
-          </div>
-          {!svc ? <Empty title="No hour-by-hour staffing yet" text="Daily totals can’t show how many servers each hour needs. Add servers on the floor and covers by the hour." cta="Add labor data" on={() => setOpen({ kind: 'data' })} /> : (
-            <>
-              <div className={s.days} role="tablist" aria-label="Day">
-                {services.map((x) => { const c = coverage(x); return (
-                  <button key={x.key} type="button" role="tab" aria-selected={x.key === svc.key} className={`${s.day} ${x.key === svc.key ? s.dayOn : ''}`} onClick={() => pickDay(x.key)}>
-                    {x.day}{c.short > 0 && <i className={s.dotShort} aria-label={`${c.short} short`} />}
-                  </button>
-                ); })}
-              </div>
-              <CoverageChart svc={svc} sel={hourSel} onSel={setHourSel} />
-              <ChartKey />
-              <div className={s.cardFoot}>
-                <div>
-                  <span className={s.sumStrong}>{hour ? `${svc.label}, ${hour.label}: ${hour.sched} scheduled, ${hour.need} needed${hour.covers != null ? `, ${hour.covers} covers` : ''}` : `${svc.label}: ${cov.short} short server-${cov.short === 1 ? 'hour' : 'hours'}, ${cov.spare} possibly spare`}</span>
-                  <span className={s.sumSub}><Claim k="mod" />Needed is modeled from your measured covers per server-hour, with a safety margin.</span>
-                </div>
-              </div>
-            </>
-          )}
-        </section>
-
-        <section className={s.card} aria-label="Recommended labor changes">
-          <div className={s.cardHead}>
-            <div><h2 className={s.cardTitle}><span className={s.num}>02</span>The next best moves</h2><p className={s.cardSub}>Service risk first, then cost.</p></div>
-            <Chip tone="mute">{split.open.length} to review</Chip>
-          </div>
-          {held && <p className={s.caution}><Icon name="TriangleAlert" size={16} /><span>On hold until the schedule feed is current. You can still read each one.</span></p>}
-          {all.length === 0 ? <Empty title="No moves to suggest" text="Staffing suggestions need servers and covers by the hour." cta="Add labor data" on={() => setOpen({ kind: 'data' })} /> : (
-            <ul className={s.moves}>
-              {shown.map((m) => { const st = saved?.[m.id]?.s; return (
-                <li key={m.id}>
-                  <button type="button" className={`${s.move} ${s[`move_${m.tone}`]} ${st ? s.moveDone : ''}`} onClick={() => setOpen({ kind: 'move', id: m.id })}>
-                    <span className={s.moveIcon}><Icon name={st === 'planned' ? 'CircleCheck' : MOVE_ICON[m.tone]} size={18} /></span>
-                    <span className={s.moveText}>
-                      <span className={s.moveTitle}>{m.title}</span>
-                      <span className={s.moveWorth}>{st === 'planned' ? 'Planned · schedule unchanged' : st === 'skipped' ? 'Not for us' : m.kind === 'candidate' ? `${cvMoney(m.value)} ${m.prevent ? 'overtime avoided this week' : 'a week, potential'}` : m.kind === 'draft' ? 'Ready to review' : `${m.worth} · ${m.worthNote}`}</span>
-                    </span>
-                    <span className={s.moveEnd}>{!st && <Chip tone={m.tone === 'risk' ? 'bad' : m.tone === 'check' ? 'warn' : 'mute'}>{m.tag}</Chip>}<Icon name="ChevronRight" size={18} className={s.chev} /></span>
-                  </button>
-                </li>
-              ); })}
-            </ul>
-          )}
-          <div className={s.cardFoot}>
-            <span className={s.sumSub}>Advice only. Nothing here changes a live schedule.</span>
-            {all.length > shown.length || showAll ? <button type="button" className={s.textLink} onClick={() => setShowAll((v) => !v)}>{showAll ? 'Show fewer' : `Review all ${all.length}`}<Icon name={showAll ? 'ChevronUp' : 'ChevronDown'} size={15} /></button> : null}
-          </div>
-        </section>
-      </div>
-
-      <button type="button" className={s.moreToggle} aria-expanded={more} onClick={() => setMore((v) => !v)}>{more ? 'Hide patterns and results' : 'Show patterns and results'}<Icon name={more ? 'ChevronUp' : 'ChevronDown'} size={16} /></button>
-
-      {/* ---- 03 and 04 */}
-      <div className={`${s.gridBottom} ${more ? s.moreOpen : ''}`}>
-        <section className={s.card} aria-label="Service load by day and hour">
-          <div className={s.cardHead}>
-            <div><h2 className={s.cardTitle}><span className={s.num}>03</span>Spot the pattern</h2><p className={s.cardSub}>Covers per server-hour, by day and hour{own ? '' : ', averaged over the last 13 weeks'}. Pick any cell.</p></div>
-            <button type="button" className={s.outBtn} onClick={() => setOpen({ kind: 'read' })}>How to read</button>
-          </div>
-          {!grid || !grid.rows.length ? <Empty title="No hourly service load yet" text="Add covers and servers by the hour for this location." cta="Add labor data" on={() => setOpen({ kind: 'data' })} /> : (
-            <>
-              <LoadGrid grid={grid} sel={gridSel} onSel={setCell} />
-              <div className={s.scale}><span>Lower load</span><i /><span>Higher load</span><span className={s.scaleNote}>High load isn’t always understaffed</span></div>
-              <div className={s.cardFoot}>
-                <span className={s.sumStrong}>{dayName(grid.rows[gridSel.ri].day)} {grid.hours[gridSel.ci].label}: {grid.rows[gridSel.ri].cells[gridSel.ci].toFixed(1)} covers per server-hour</span>
-                {services.some((x) => x.day === grid.rows[gridSel.ri].day) && <button type="button" className={s.textLink} onClick={() => toChart(services.find((x) => x.day === grid.rows[gridSel.ri].day).key)}>See that day’s hours<Icon name="ChevronRight" size={15} /></button>}
-              </div>
-            </>
-          )}
-        </section>
-
-        <section className={s.card} aria-label="Results of labor changes">
-          <div className={s.cardHead}>
-            <div><h2 className={s.cardTitle}><span className={s.num}>04</span>Did the changes work?</h2><p className={s.cardSub}>Potential and verified stay separate.</p></div>
-          </div>
-          {proofs.length + tests.length === 0 ? <p className={s.none}>No labor change has been measured here yet. Once a change is made, a test compares it with matching services.</p> : (
-            <ul className={s.results}>
-              {proofs.map((p) => { const o = OUTCOME[p.outcome] || OUTCOME.testing; return (
-                <li key={p.id}><button type="button" className={s.result} onClick={() => cv.go('packet', { id: p.id })}>
-                  <span className={s.resText}><span className={s.resTitle}>{p.title}</span><Chip tone={o.tone} icon={o.icon}>{o.label}</Chip></span>
-                  <span className={`${s.resFig} ${p.bookable ? s.up : s.resNone}`}>{p.outcome === 'testing' ? '—' : cvMoney(p.bookable || 0)}{p.bookable ? <small>a week</small> : null}</span>
-                  <Icon name="ChevronRight" size={18} className={s.chev} />
-                </button></li>
-              ); })}
-              {tests.map((w) => { const o = OUTCOME[w.status] || OUTCOME.testing; return (
-                <li key={w.id}><button type="button" className={s.result} onClick={() => cv.go('packet', { id: w.id })}>
-                  <span className={s.resText}><span className={s.resTitle}>{w.title}</span><Chip tone={o.tone} icon={o.icon}>{w.status === 'running' ? `Day ${w.day} of 28` : o.label}</Chip></span>
-                  <span className={`${s.resFig} ${w.status === 'verified' ? s.up : s.resNone}`}>{w.status === 'verified' ? cvMoney(w.bookedCents / 100, { cents: true }) : '—'}</span>
-                  <Icon name="ChevronRight" size={18} className={s.chev} />
-                </button></li>
-              ); })}
-            </ul>
-          )}
-          <div className={s.cardFoot}>
-            <span className={s.sumSub}>Potential, then made, then measured, then verified.</span>
-            <button type="button" className={s.textLink} onClick={() => cv.go('proof')}>Full history<Icon name="ChevronRight" size={15} /></button>
-          </div>
-        </section>
-      </div>
-
-      {openMove && <MovePanel m={openMove} svc={moveSvc(openMove)} state={saved?.[openMove.id]?.s} own={own} plan={plans?.[openMove.svc]} task={cutTask(openMove).task} cv={cv}
+      {openMove && <MovePanel m={openMove} svc={moveSvc(openMove)} trust={trust(openMove)} state={saved?.[openMove.id]?.s} own={own} plan={plans?.[openMove.svc]} task={cutTask(openMove).task} cv={cv}
         onPlan={onPlan} onSkip={(m) => { mark(m, 'skipped'); setOpen(null); }} onUndo={(m) => mark(m, null)} onClose={() => setOpen(null)} />}
-      {open?.kind === 'cost' && <CostPanel d={d} target={target} onClose={() => setOpen(null)} />}
+      {open?.kind === 'cost' && <CostPanel d={d} target={target} group={group} onClose={() => setOpen(null)} />}
       {open?.kind === 'data' && <DataPanel feed={feed} own={own} entries={entries || []} today={CV_NOW.iso} weekFrom={weekFrom} weekTo={weekTo} cv={cv} onClose={() => setOpen(null)}
         onSave={(e) => { setEntries((cur) => withEntry(cur, e), `Labor: entered ${e.date} by hand`); cv.toast(`Saved ${fmtDay(e.date)}, entered by hand.`); }}
         onRemove={(date) => setEntries((cur) => (cur || []).filter((x) => x.date !== date), `Labor: removed hand entry for ${date}`)} />}
-      {open?.kind === 'read' && (
-        <Panel over="How to read" title="Covers per server-hour" onClose={() => setOpen(null)}>
-          <p className={s.blockText}>Covers served in an hour, divided by the servers on the floor. A high number can mean a productive hour or a stretched one. A low number can mean side work, or more servers than the hour needed.</p>
-          <p className={s.caution}><Icon name="TriangleAlert" size={16} /><span>Never cut staffing from this number alone. Check it against the hours in step 01, guest experience and what each role has to do.</span></p>
-        </Panel>
-      )}
-    </div>
-  );
-}
-
-function Empty({ title, text, cta, on }) {
-  return (
-    <div className={s.empty}>
-      <Icon name="CircleDashed" size={22} />
-      <b>{title}</b>
-      <span>{text}</span>
-      <button type="button" className={s.outBtn} onClick={on}>{cta}<Icon name="ChevronRight" size={15} /></button>
     </div>
   );
 }

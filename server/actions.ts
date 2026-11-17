@@ -60,6 +60,8 @@ export const ACTION_KEYS = {
   'meeting.schedule': { scope: 'room', schema: meetingSchemas.schedule },
   /** Labor: days entered by hand (cost and hours), for when no schedule or payroll feed is connected or one is down. One entry per date. */
   'labour.entries': { scope: 'room', schema: z.array(z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), cost: z.number().min(0).max(200_000).optional(), hours: z.number().min(0).max(5000).optional(), sched: z.number().min(0).max(5000).optional() })).max(120) },
+  /** Labor: which view one person opens the page in (GM, owner or operations). Never changes a figure. */
+  'labour.view': { scope: 'person', schema: z.enum(['gm', 'owner', 'ops']) },
   /** Labor: what the operator said about each suggested move (planned or not for us). Advice only: never changes a schedule. */
   'labour.moves': { scope: 'room', schema: z.record(id, z.object({ s: z.enum(['planned', 'skipped']), at: isoDate })) },
 } as const;
