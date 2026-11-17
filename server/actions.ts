@@ -58,6 +58,10 @@ export const ACTION_KEYS = {
   pricing: { scope: 'group', schema: z.object({ perRoomMonthlyCents: z.number().int().min(0).max(1_000_000), feePct: z.number().min(0).max(50) }) },
   /** Weekly meeting: the room's slot (day of week, 0 = Sunday, local time, length) and who usually attends. */
   'meeting.schedule': { scope: 'room', schema: meetingSchemas.schedule },
+  /** Labor: days entered by hand (cost and hours), for when no schedule or payroll feed is connected or one is down. One entry per date. */
+  'labour.entries': { scope: 'room', schema: z.array(z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), cost: z.number().min(0).max(200_000).optional(), hours: z.number().min(0).max(5000).optional(), sched: z.number().min(0).max(5000).optional() })).max(120) },
+  /** Labor: what the operator said about each suggested move (planned or not for us). Advice only: never changes a schedule. */
+  'labour.moves': { scope: 'room', schema: z.record(id, z.object({ s: z.enum(['planned', 'skipped']), at: isoDate })) },
 } as const;
 
 export type ActionKey = keyof typeof ACTION_KEYS;
