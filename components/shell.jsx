@@ -6,8 +6,9 @@ import * as React from 'react';
 
 import { CV_NAV, CV_PAGES, CV_ROLES, GROUP_PAGES, pageFromPath, pathFor } from '../lib/pages';
 import { Button, Icon } from './kit';
-import { ApprovalModal, Claim, cvApproval, CV_CLAIM, CV_D, CV_LOCS, CV_NOW, CvCtx, DerivDrawer, Pill } from './screens/core';
+import { ApprovalModal, Claim, cvApproval, CV_CLAIM, CV_D, CV_LOCS, CvCtx, DerivDrawer, Pill } from './screens/core';
 import { engine, useEngine } from './engine';
+import { useClock } from './clock';
 import { CV_PAGE_DEPS, CvAsk } from './screens/extra';
 import { useTodayCounts } from './screens/pages/today.badge';
 import './shell.css';
@@ -124,6 +125,16 @@ function LegendPop({ onClose }) {
   );
 }
 
+/** The date and time, from the same running clock the page uses. */
+function TopClock() {
+  const clock = useClock({ own: !!CV_D.room?.fromToast, tz: CV_D.room?.tz });
+  return (
+    <span className="sub cv-clock">
+      <span>{clock.label}</span><span className="cv-clock-dot" aria-hidden="true">·</span><time className="cv-clock-time" aria-live="off">{clock.time}</time><SampleTag />
+    </span>
+  );
+}
+
 function TopBar({ page, loc, onLoc, role, onRole, go, onMenu, onAsk, tools }) {
   const [pop, setPop] = React.useState(null);
   const ref = React.useRef(null);
@@ -143,7 +154,7 @@ function TopBar({ page, loc, onLoc, role, onRole, go, onMenu, onAsk, tools }) {
       </button>
       <div className="col" style={{ lineHeight: 1.25, minWidth: 0 }}>
         <h1>{CV_PAGES[page].title}</h1>
-        <span className="sub">{CV_NOW.label}<SampleTag /></span>
+        <TopClock />
       </div>
       <div className="spacer" />
       {tools && deps && (

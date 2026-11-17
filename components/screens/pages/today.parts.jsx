@@ -5,12 +5,12 @@ import * as React from 'react';
 import { Button, Icon } from '../../kit';
 import { assigneeLabel, cardState, isActive, queueView, todayCards, worthOf, unlocksOf } from '../../../lib/data/page/today';
 import { areaOf, comingUp } from '../../../lib/data/page/today-brief';
-import { CV_D, CV_DS, CV_GROUP, Claim, cvMoney } from '../core';
+import { CV_D, CV_DS, CV_GROUP, CV_NOW, Claim, cvMoney } from '../core';
 import { ACCRUAL_START, deriveRoom, serviceTimes } from '../../../lib/data/model';
 import { Panel } from './today.review';
 import { dayLabel, shortMoney } from './today.last';
 import { MAX_METRICS, METRICS, SCENARIOS, WIDGETS } from './today.layout';
-import { THEMES, tokensFor } from './today.themes';
+import { FONTS, THEMES, tokensFor } from './today.themes';
 import { AgeBar, HoursBar, MarkBar, PaceCurve, RefundBars, Spark, StaffBar } from './today.viz';
 import s from './today.module.css';
 
@@ -226,9 +226,9 @@ export function tileData({ d, dense, sv, flags, now, live = null }) {
   if (t.tonight) return t;
   t.tonight = sv
     ? {
-      label: 'Dinner pace', when: 'Tonight, so far', live: true, fig: `${sv.pace >= 0 ? '+' : '−'}${Math.abs(sv.pace)}%`, cmp: `${sv.so} covers vs ${sv.usual} usual by ${now?.time || 'now'}`, delta: sv.pace / 100,
+      label: 'Dinner pace', when: 'Tonight, so far', live: true, fig: `${sv.pace >= 0 ? '+' : '−'}${Math.abs(sv.pace)}%`, cmp: `${sv.so} covers vs ${sv.usual} usual by ${CV_NOW.time}`, delta: sv.pace / 100,
       viz: <PaceCurve comp={sv.comp} actual={sv.actual} times={serviceTimes(sv.comp.length)} />, claim: 'obs',
-      facts: [['Covers so far', `${sv.so}${now?.time ? ` by ${now.time}` : ''}`], [`A usual ${String(sv.day).split(' ')[0]}`, `${sv.usual} by the same time`], ['Pace so far', `${Math.abs(sv.pace)}% ${sv.pace >= 0 ? 'over' : 'under'} a usual ${String(sv.day).split(' ')[0]}`], ...(sv.tiles || []).map(([k, v, g]) => [k, `${v} (${g})`]), ['Source', src('live')]],
+      facts: [['Covers so far', `${sv.so} by ${CV_NOW.time} (the sample’s last count)`], [`A usual ${String(sv.day).split(' ')[0]}`, `${sv.usual} by the same time`], ['Pace so far', `${Math.abs(sv.pace)}% ${sv.pace >= 0 ? 'over' : 'under'} a usual ${String(sv.day).split(' ')[0]}`], ...(sv.tiles || []).map(([k, v, g]) => [k, `${v} (${g})`]), ['Source', src('live')]],
       go: 'service',
     }
     : { ...t.covers };
@@ -813,6 +813,24 @@ export { shortMoney };
 const TRIAL = [['original', 'Original'], ...Object.entries(THEMES).map(([id, t]) => [id, t.label])];
 
 /** The experimental palette switch: a segmented control on wide screens, a menu on small ones. */
+/** The font trial: each option shows its name in its own typeface. Tools only. */
+export function FontPicker({ font, onPick }) {
+  return (
+    <div className={s.trial} title="Font trial. Changes the type on Today and the top bar; nothing else.">
+      <span className={s.trialLbl}><Icon name="Type" size={14} /><span className={s.srOnly}>Font trial</span></span>
+      <div className={s.seg} role="radiogroup" aria-label="Font trial">
+        {Object.entries(FONTS).map(([id, f]) => (
+          <button key={id} type="button" role="radio" aria-checked={font === id} className={s.segBtn} title={f.note} onClick={() => onPick(id)}
+            style={{ fontFamily: f.sans || "'IBM Plex Sans', sans-serif" }}>{f.label}</button>
+        ))}
+      </div>
+      <select className={s.trialSelect} aria-label="Font trial" value={font} onChange={(e) => onPick(e.target.value)}>
+        {Object.entries(FONTS).map(([id, f]) => <option key={id} value={id}>{f.label}</option>)}
+      </select>
+    </div>
+  );
+}
+
 export function ThemePicker({ theme, onPick, onCompare }) {
   const tip = 'Experimental color trial. Changes the colors on Today only; the data and layout stay the same.';
   return (

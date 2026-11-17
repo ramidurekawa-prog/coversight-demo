@@ -12,14 +12,15 @@ import { TasksPanel } from '../tasks';
 import { cvApproval, useCv, CV_D, CV_GROUP, CV_NOW } from '../core';
 import { useDense } from '../dense-ui';
 import { reportTodayView } from './today.badge';
+import { useClock } from '../../clock';
 import { Yesterday } from './today.last';
 import { applyScenario, useLayout } from './today.layout';
 import {
   ActionCard, ActivityStrip, comingSoon, ComparePanel, CustomizePanel, dueFor, FeedsPanel, frameFor, handledOf, HandledPanel, IssueRow, Locations, Receipt, ResultsPanel,
-  ScenarioBar, Status, ThemePicker, TilePanel, Tiles, tileData,
+  FontPicker, ScenarioBar, Status, ThemePicker, TilePanel, Tiles, tileData,
 } from './today.parts';
 import { ReviewPanel } from './today.review';
-import { useTodayTheme } from './today.themes';
+import { useTodayFont, useTodayTheme } from './today.themes';
 import s from './today.module.css';
 
 /* ================================================================ Today
@@ -181,7 +182,6 @@ function cautionFor(q, d, now) {
   return `Verify first. "Scheduled" is the ${t.delayed.name} schedule as of ${t.delayed.last}; "forecast need" is what usual covers call for${t.before ? ` at ${t.before}` : ''}. Neither is who is actually on the floor. Check that before you approve.`;
 }
 
-const longDate = (iso) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', timeZone: 'UTC' });
 const shortDay = (iso) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
 
 /** What's been decided, folded into one line until asked for. */
@@ -254,6 +254,7 @@ function CvToday() {
   const [handledOpen, setHandledOpen] = React.useState(false);
   const [comparing, setComparing] = React.useState(false);
   const { theme, pick: pickTheme } = useTodayTheme(tools);
+  const { font, pick: pickFont } = useTodayFont(tools);
   const dense = useDense();
   React.useEffect(() => { if (!tools) setScenario('live'); }, [tools]);
 
@@ -276,9 +277,9 @@ function CvToday() {
   const waiting = left.filter((c) => c.blocked);
   const byId = (id) => cards.find((c) => c.id === id);
 
-  const now = own
-    ? { label: longDate(today), time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: tz }).toLowerCase() }
-    : CV_NOW;
+  // The same running clock as the top bar, so every date and time on screen agrees.
+  const clock = useClock({ own, tz });
+  const now = { label: clock.label, time: clock.time };
   const period = servicePeriod(clockMinutes(now.time));
   const live = useLive(own);
   const sv = tonight(d, now, live.data);
@@ -391,7 +392,7 @@ function CvToday() {
       {offline && <p className={s.offline} role="status"><Icon name="TriangleAlert" size={13} />Can’t reach the server. Showing the last saved state.</p>}
 
       <Status brief={brief} explain={explain} period={period} now={now} sum={sum} onFeeds={() => setFeedsOpen(true)} onCustomize={() => setCustomizing(true)}
-        trial={tools ? <ThemePicker theme={theme} onPick={pickTheme} onCompare={() => setComparing(true)} /> : null} />
+        trial={tools ? <><ThemePicker theme={theme} onPick={pickTheme} onCompare={() => setComparing(true)} /><FontPicker font={font} onPick={pickFont} /></> : null} />
       <Tiles ids={layout.metrics} tiles={tiles} onOpen={setTileOpen} />
 
       {receipt && <Receipt key={receipt.at} r={receipt} onClose={() => setReceipt(null)} onUndo={receipt.undo ? () => undo(receipt.undo) : undefined} />}

@@ -29,11 +29,17 @@
 @media (max-width: 640px) {
   .iconbtn.cv-quiet.cv-hide-sm { display: none; }
   .topbar { gap: 8px; padding-left: 12px; padding-right: 12px; }
-  .cv-top .sub { display: none; }
+  .cv-top .sub.cv-clock > span:first-child, .cv-top .cv-clock-dot { display: none; }
+  .cv-top h1 { font-size: 21px; }
 }
 .cv-health { white-space: nowrap; }
-/* Today lines its content up with the top bar: both stop at the same width. */
-.content:has([data-page="today"]) .topbar { max-width: 1240px; }
+/* The top bar runs the whole width of the top line on every page (Ramidu, 2026-11-17). */
+/* One running clock in the top bar: the date, then the time, both readable at a glance. */
+.cv-top h1 { font-size: 26px; line-height: 1.2; }
+.cv-top .sub.cv-clock { gap: 8px; flex-wrap: nowrap; white-space: nowrap; font-size: 16px; color: var(--fg-2); }
+.cv-clock-time { font-weight: 700; color: var(--fg-1); font-variant-numeric: tabular-nums; }
+.cv-clock-dot { color: var(--fg-3); }
+.cv-top .cv-sampletag { font-size: 12.5px; }
 /* Visible tooltips for icon-only buttons in the top bar. */
 .cv-quiet[data-tip] { position: relative; }
 .cv-quiet[data-tip]:hover::after, .cv-quiet[data-tip]:focus-visible::after {
@@ -43,3 +49,5 @@
 }
 /* Sidebar: a fade where the list scrolls, so a cut-off item reads as "more below". */
 .sidebar .sb-scroll { mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent); -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent); scrollbar-width: thin; scrollbar-color: var(--side-line) transparent; }
+@media (max-width: 640px) { .cv-top .sub.cv-clock { font-size: 14px; } }
+@media (min-width: 1100px) { .cv-top > .col { flex-shrink: 0; } }

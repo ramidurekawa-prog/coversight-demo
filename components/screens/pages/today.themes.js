@@ -133,3 +133,46 @@ export function useTodayTheme(tools = false) {
   }, []);
   return { theme, pick };
 }
+
+/*
+ * Font trial (Ramidu, 2026-11-17): a few typefaces to compare on the real
+ * page, behind ?tools=1 like the colors. IBM Plex is the current type and
+ * stays the default until Ramidu picks. Each option sets the text font and
+ * the figures font; figures always use tabular digits so columns line up.
+ * Applied while Today is on screen (the top bar included).
+ */
+const stack = (f) => `'${f}', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif`;
+export const FONTS = {
+  plex: { label: 'IBM Plex', note: 'Current. Engineered and precise; figures in Plex Mono', sans: null, figs: null },
+  jakarta: { label: 'Plus Jakarta Sans', note: 'Warm and modern, soft geometric shapes', sans: stack('Plus Jakarta Sans'), figs: stack('Plus Jakarta Sans') },
+  inter: { label: 'Inter', note: 'Neutral and very legible at small sizes', sans: stack('Inter'), figs: stack('Inter') },
+  manrope: { label: 'Manrope', note: 'Premium, open and rounded; strong big numbers', sans: stack('Manrope'), figs: stack('Manrope') },
+  dmsans: { label: 'DM Sans', note: 'Friendly and compact, like a good menu', sans: stack('DM Sans'), figs: stack('DM Sans') },
+};
+export const DEFAULT_FONT = 'plex';
+const FONT_KEY = 'cv-today-font';
+
+/** Today's font trial: the current type unless a different one is picked with the tools on. */
+export function useTodayFont(tools = false) {
+  const [font, setFont] = React.useState(DEFAULT_FONT);
+  React.useEffect(() => {
+    let v = DEFAULT_FONT;
+    if (tools) { try { const x = window.localStorage.getItem(FONT_KEY); if (x && FONTS[x]) v = x; } catch { /* default */ } }
+    setFont(v);
+  }, [tools]);
+  React.useEffect(() => {
+    const f = FONTS[font];
+    const el = document.documentElement;
+    if (!f?.sans) return undefined;
+    el.style.setProperty('--font-sans', f.sans);
+    el.style.setProperty('--font-wordmark', f.sans);
+    el.style.setProperty('--font-mono', f.figs);
+    return () => { ['--font-sans', '--font-wordmark', '--font-mono'].forEach((k) => el.style.removeProperty(k)); };
+  }, [font]);
+  const pick = React.useCallback((id) => {
+    const next = FONTS[id] ? id : DEFAULT_FONT;
+    setFont(next);
+    try { window.localStorage.setItem(FONT_KEY, next); } catch { /* applied, not kept */ }
+  }, []);
+  return { font, pick };
+}

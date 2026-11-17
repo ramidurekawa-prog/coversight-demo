@@ -159,6 +159,7 @@ import {
   UserCheck,
   ArrowUpRight,
   Palette,
+  Type,
   ArrowDownRight,
   ChevronRight,
 } from 'lucide-react';
@@ -318,6 +319,7 @@ const ICONS = {
   UserCheck,
   ArrowUpRight,
   Palette,
+  Type,
   ArrowDownRight,
   ChevronRight,
 };
