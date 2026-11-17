@@ -21,7 +21,7 @@ import type { Db } from '../db/client';
 import { auditLog, inputs, testWindows, users } from '../db/schema';
 import { notify } from '../notify';
 import { InputError, commitInput, loadBase, loadInputs, undoInput } from '../org';
-import { AuthError, type Viewer } from '../session';
+import { AuthError, roomLevel, type Viewer } from '../session';
 
 type V = Pick<Viewer, 'orgId' | 'userId' | 'role' | 'rooms'>;
 type Json = Record<string, unknown>;
@@ -218,7 +218,7 @@ export async function inputHistory(db: Db, v: V, raw: Record<string, string | un
       };
     }),
     more: rows.length > limit,
-    canReset: v.role !== 'gm',
+    canReset: !roomLevel(v.role),
   };
 }
 

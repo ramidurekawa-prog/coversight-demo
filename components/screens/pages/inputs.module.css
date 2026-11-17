@@ -163,3 +163,123 @@
 .moveBars { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
 .moveBars span { display: block; height: 6px; }
 .moveBars i { display: block; height: 100%; border-radius: 0 4px 4px 0; min-width: 4px; }
+
+/* ================================================================ Today's style (Persimmon & Ink, Manrope)
+ * Same layout as before; only type, boxes, colors, charts, buttons and states
+ * follow the Today page (components/screens/pages/today.module.css).
+ * Persimmon = the one action; green = verified/good; red = critical only;
+ * amber = caution; navy = structure. Type: 36 / 25 / 19 / 17 / 15 / 13.5 px. */
+.page {
+  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px;
+  --card-r: 12px; --btn-r: 10px;
+  --soft: 0 0 0 1px var(--border), 0 1px 2px rgba(23, 37, 54, 0.04);
+  --soft-hover: 0 0 0 1px var(--border-strong), 0 6px 18px -12px rgba(20, 28, 40, 0.25);
+  width: 100%; max-width: 1120px; margin: 0 auto; padding: 32px 32px 80px; gap: 22px;
+  font-size: 16px; color: var(--fg-1);
+}
+@media (max-width: 700px) { .page { padding: 20px 16px 64px; } }
+.page :where(b, .big, .fixBig, .moveBig, .barVal) { font-variant-numeric: tabular-nums; }
+
+/* hierarchy */
+.page :global(.cv-head .cv-over) { font-size: 13.5px; font-weight: 600; letter-spacing: 0.06em; color: var(--fg-2); }
+.page :global(.cv-head .cv-q) { margin: 0; font-size: 36px; font-weight: 600; line-height: 1.12; letter-spacing: -0.03em; color: var(--fg-1); }
+.page :global(.cv-head .cv-sub) { margin: 0; font-size: 17px; line-height: 1.5; color: var(--fg-2); }
+.page :global(.cv-h4) { font-size: 19px; font-weight: 600; line-height: 1.3; letter-spacing: -0.01em; color: var(--fg-1); }
+.page :global(.cv-small) { font-size: 15px; }
+.page :global(.cv-xs) { font-size: 13.5px; }
+.page :global(.cv-over) { font-size: 13.5px; font-weight: 600; letter-spacing: 0.04em; color: var(--fg-2); }
+
+/* boxes: soft surfaces instead of outlines */
+.page :global(.cv-card) { border: none; border-radius: var(--card-r); box-shadow: var(--soft); padding: 20px 24px; gap: 16px; }
+.page :global(.cv-callout) { border: none; border-radius: 10px; font-size: 15px; color: var(--fg-1); }
+.page :global(.cv-callout:not(.warn):not(.bad):not(.good):not(.info)) { background: var(--surface-sunken); }
+.page :global(.cv-callout.warn) { background: color-mix(in srgb, var(--warning-600) 9%, transparent); }
+.page :global(.cv-callout.good) { background: color-mix(in srgb, var(--success-600) 8%, transparent); }
+.page :global(.cv-q-ico) { border-radius: 8px; }
+.page :global(.cv-q-ico.warn) { background: color-mix(in srgb, var(--warning-600) 11%, transparent); }
+.page :global(.cv-q-ico.bad) { background: color-mix(in srgb, var(--error-600) 10%, transparent); }
+
+/* state chips: icon + word, tinted, no outline */
+.page :global(.cv-pill) { border: none; border-radius: 6px; height: 24px; padding: 0 8px 0 7px; font-size: 13.5px; font-weight: 600; background: var(--surface-sunken); }
+.page :global(.cv-pill.good) { background: color-mix(in srgb, var(--success-600) 12%, transparent); color: var(--success-700, var(--success-600)); }
+.page :global(.cv-pill.warn) { background: color-mix(in srgb, var(--warning-600) 11%, transparent); color: var(--warning-700); }
+.page :global(.cv-pill.bad) { background: color-mix(in srgb, var(--error-600) 10%, transparent); color: var(--error-600); }
+.page :global(.cv-pill.info) { background: color-mix(in srgb, var(--fg-1) 7%, transparent); }
+.page :global(.cv-pill.info svg) { color: var(--fg-1); }
+
+/* buttons: one persimmon primary; the rest quiet; clear hover, press and focus */
+.page :global(.btn) { border-radius: var(--btn-r); font-weight: 600; transition: background var(--dur-fast), box-shadow var(--dur-fast), transform 80ms; }
+.page :global(.btn:active:not(:disabled)) { transform: translateY(1px); }
+.page :global(.btn:focus-visible) { outline: none; box-shadow: var(--ring); }
+.page :global(.btn-primary) { box-shadow: 0 1px 0 rgba(23, 37, 54, 0.08), 0 6px 16px -8px color-mix(in srgb, var(--primary) 70%, transparent); }
+.page :global(.btn-primary:hover:not(:disabled)) { box-shadow: 0 1px 0 rgba(23, 37, 54, 0.08), 0 10px 22px -10px color-mix(in srgb, var(--primary) 80%, transparent); }
+.page :global(.btn-secondary) { border: none; box-shadow: 0 0 0 1px var(--border-strong); background: var(--surface); }
+.page :global(.btn-secondary:hover:not(:disabled)) { background: var(--surface-sunken); }
+.page :global(.btn:disabled) { opacity: 0.55; cursor: default; }
+
+/* the four headline numbers, as Today's tiles */
+.page .stat { border: none; border-radius: var(--card-r); box-shadow: var(--soft); padding: 18px 20px 16px; gap: 8px; }
+.page .statWarn, .page .statBad { background: var(--surface); }
+.page .statWarn .big { color: var(--warning-700); }
+.page .statBad .big { color: var(--warning-700); }
+.page .statLabel { font-size: 15px; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--fg-1); }
+.page .big { font-size: 36px; font-weight: 600; line-height: 1; letter-spacing: -0.03em; margin-top: 4px; }
+.page .big small { font-size: 16px; font-weight: 500; color: var(--fg-2); }
+.page .statSub { font-size: 15px; font-weight: 500; color: var(--fg-2); }
+
+/* fix-next cards: soft, the first one carries the persimmon edge */
+.page .fix { border: none; border-radius: var(--card-r); box-shadow: var(--soft); padding: 16px 18px; gap: 10px; position: relative; overflow: hidden; transition: box-shadow var(--dur-base, 160ms); }
+.page .fix:hover { box-shadow: var(--soft-hover); }
+.page .fixTop { box-shadow: var(--soft); }
+.page .fixTop::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--accent); }
+.page .fixRank { font-size: 13.5px; background: var(--surface-sunken); color: var(--fg-2); }
+.page .fixTitle { font-size: 17px; }
+.page .fixBig { font-size: 25px; font-weight: 600; letter-spacing: -0.02em; }
+.page .fixBig small { font-size: 15px; color: var(--fg-2); }
+.page .whyBtn { font-size: 15px; font-weight: 500; color: var(--fg-2); min-height: 32px; padding: 0 8px; border-radius: 8px; display: inline-flex; align-items: center; }
+.page .whyBtn:hover { color: var(--fg-1); background: var(--surface-sunken); }
+.page .whyBox { font-size: 14px; line-height: 1.5; }
+
+/* charts: navy marks, caution amber for what's held back, text in ink */
+.page .ringBig { font-weight: 600; font-size: 28px; letter-spacing: -0.02em; }
+.page .ringSub { font-size: 12px; font-weight: 500; fill: var(--fg-2); }
+.page .legendBtn { font-size: 15px; min-height: 36px; border-radius: 8px; color: var(--fg-2); }
+.page .legendBtn b { font-weight: 600; }
+.page .barsLegend, .page .barsFoot { font-size: 13.5px; color: var(--fg-2); }
+.page .barRow { border-radius: 8px; padding: 9px 8px; }
+.page .barName { font-size: 15px; color: var(--fg-1); font-weight: 500; }
+.page .barTrack { height: 12px; background: var(--surface-sunken); border-radius: 6px; }
+.page .barSeg { border-radius: 0 6px 6px 0; }
+.page .barVal { font-size: 16px; }
+.page .tip { background: var(--fg-1); color: var(--surface); border-radius: 8px; font-size: 13.5px; padding: 8px 12px; }
+
+/* the seven kinds, as Today's soft tiles */
+.page .tile { border: none; border-radius: var(--card-r); box-shadow: var(--soft); padding: 16px 14px 14px; gap: 6px; transition: box-shadow var(--dur-base, 160ms); }
+.page .tile:hover { background: var(--surface); box-shadow: var(--soft-hover); }
+.page .tile.on { background: var(--surface); box-shadow: 0 0 0 2px var(--fg-1); }
+.page .tile b { font-size: 15px; }
+.page .tileState { font-size: 13.5px; }
+.page .tileWhen { font-size: 13.5px; color: var(--fg-2); }
+
+/* import flow */
+.page .count, .page .move { border: none; border-radius: 10px; box-shadow: var(--soft); }
+.page .count b { font-size: 25px; font-weight: 600; letter-spacing: -0.02em; font-family: var(--font-sans); }
+.page .count span { font-size: 13.5px; color: var(--fg-2); }
+.page .count.warn { background: color-mix(in srgb, var(--warning-600) 8%, var(--surface)); }
+.page .count.bad { background: color-mix(in srgb, var(--error-600) 8%, var(--surface)); }
+.page .moveBig { font-size: 25px; font-weight: 600; letter-spacing: -0.02em; }
+.page .moveLabel, .page .moveDelta { font-size: 13.5px; }
+.page .confirmBox, .page .verifyBox { border: none; border-radius: 10px; font-size: 15px; }
+.page .confirmBox { background: color-mix(in srgb, var(--warning-600) 9%, transparent); }
+.page .verifyBox { background: color-mix(in srgb, var(--success-600) 8%, transparent); }
+.page .entryTitle { font-size: 16px; }
+.page .entryMeta, .page .entrySum { font-size: 13.5px; }
+.page .select { border-radius: 8px; font-size: 15px; height: 36px; }
+
+/* sidebar while the Persimmon & Ink palette is on (same as Today) */
+:global(html[data-today-theme='persimmon'] .sidebar .cv-navgroup) { margin-top: 14px; font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.7; }
+:global(html[data-today-theme='persimmon'] .sidebar .navitem) { min-height: 36px; font-size: 16px; }
+:global(html[data-today-theme='persimmon'] .sidebar .navitem.active) { color: var(--side-active-fg); font-weight: 600; }
+:global(html[data-today-theme='persimmon'] .sidebar .navitem.active::before) { width: 3px; height: 18px; left: 0; background: var(--cv-side-mark, var(--side-active-fg)); }
+:global(html[data-today-theme='persimmon'] .sidebar .navitem.active svg) { color: var(--cv-side-mark, var(--side-active-fg)); }
+:global(html[data-today-theme='persimmon'] .sidebar .navitem .count) { font-family: var(--font-sans); font-size: 12.5px; font-weight: 600; padding: 0 6px; background: rgba(255, 255, 255, 0.1); color: var(--side-active-fg); }

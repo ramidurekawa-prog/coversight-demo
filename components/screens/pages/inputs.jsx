@@ -15,6 +15,7 @@ import { Editor } from './inputs-editor';
 import { History } from './inputs-history';
 import { LinkedSheets } from './inputs-links';
 import { useHistory, useLinks } from './inputs-data';
+import { useTodayTheme } from './today.themes';
 import s from './inputs.module.css';
 
 /* Data inputs: the manual ingestion layer. First, where each kind of this
@@ -50,6 +51,7 @@ function ToastExports() {
 
 function CvInputs() {
   const eng = useEngine();
+  useTodayTheme(false); // Today's Persimmon & Ink palette while this page is on screen
   const server = eng.mode === 'server';
   const sample = !server || !!eng.org?.sample;
   const [kind, setKind] = React.useState('profile');
@@ -76,16 +78,16 @@ function CvInputs() {
   const stake = stakes(CV_D, CV_DS.rooms[CV_D.id]);
 
   return (
-    <div className="cv-page wide">
+    <div className={`cv-page wide ${s.page}`} data-page="inputs">
       <PageHead over={`Data inputs · ${CV_ROOM.name}`} q="Your data, at a glance"
         sub="The more of it is yours, the sharper every number in Coversight."
         right={<>{sample && <Pill tone="warn" icon="FlaskConical">Sample group</Pill>}<Pill tone={server ? 'good' : 'neutral'} icon={server ? 'Cloud' : 'HardDrive'}>{server ? 'Saved to your account' : 'Saved in this browser only'}</Pill></>} />
-      {sample && <Callout icon="FlaskConical">Sample restaurant group. Anything you enter replaces the sample for that kind and is labelled as yours.</Callout>}
+      {sample && <Callout icon="FlaskConical">Sample restaurant group. Anything you enter replaces the sample for that kind and is labeled as yours.</Callout>}
       <Hero rows={rows} stakes={stake} items={items} />
       <div className={s.split}>
         <section className="cv-card" aria-labelledby="inputs-next">
           <span className="cv-h4" id="inputs-next">Fix next</span>
-          <FixNext items={items} server={server} onOpen={open} onLink={focusLink} />
+          <FixNext items={items} server={server} onOpen={open} onLink={focusLink} quiet={editing} />
         </section>
         <section className="cv-card" aria-labelledby="inputs-cover">
           <span className="cv-h4" id="inputs-cover">Where your data comes from</span>
@@ -110,7 +112,7 @@ function CvInputs() {
       {server && <LinkedSheets links={links} setLinks={setLinks} />}
       <History server={server} onChanged={roomHistory.reload} />
       <ToastExports />
-      <span className="cv-xs cv-faint" style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}><Icon name="ShieldCheck" size={13} />Your data is labelled wherever it&apos;s used, and it never re-prices a verified saving.</span>
+      <span className="cv-xs cv-faint" style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}><Icon name="ShieldCheck" size={13} />Your data is labeled wherever it&apos;s used, and it never re-prices a verified saving.</span>
     </div>
   );
 }

@@ -112,7 +112,7 @@ describe('shared rules', () => {
     const changed = a.moves.filter((m: { changed: boolean }) => m.changed).map((m: { label: string; before: string; after: string }) => `${m.label}: ${m.before} → ${m.after}`).join('; ');
     expect(commitSummary(S, {}, 'oakland', 'recipes', rows)).toBe(changed);
     expect(a.diff).toMatchObject({ matched: 1, updated: 1, added: 0 });
-    expect(a.moves.some((m: { label: string }) => /Contribution after food and labour/.test(m.label))).toBe(true);
+    expect(a.moves.some((m: { label: string }) => /Contribution after food and labor/.test(m.label))).toBe(true);
   });
 
   it('missing data ranks first, and the warning clears once it is entered (blocked finding re-evaluated)', () => {

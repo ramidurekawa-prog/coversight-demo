@@ -23,7 +23,7 @@ const LANES = [
 ];
 const FEEDS = [
   ['Sales, orders and covers', ['api', 'export']],
-  ['Labour hours, wages, overtime', ['api', 'export']],
+  ['Labor hours, wages, overtime', ['api', 'export']],
   ['Menu prices and plates sold', ['api', 'export', 'file', 'paste', 'link', 'type']],
   ['Plate costs', ['file', 'paste', 'link', 'photo', 'type']],
   ['Invoice lines', ['file', 'paste', 'link', 'photo', 'type']],
@@ -191,7 +191,7 @@ export function BringIn({ onReview, setLinks = () => {} }) {
       {paste != null && (
         <div className="cv-col" style={{ gap: 6 }}>
           <textarea className="input" rows={6} value={paste} onChange={(e) => setPaste(e.target.value)} placeholder={'Copy the cells (with the header row) in Excel or Google Sheets and paste here.\nItem\tOn hand\tUnit\nSalmon fillet\t14\tlb'} aria-label="Pasted rows" style={{ height: 'auto', padding: 10, fontFamily: 'var(--font-mono)', fontSize: 12, whiteSpace: 'pre' }} />
-          <span><Button size="sm" icon="ScanSearch" disabled={!paste.trim()} onClick={() => onPasteText(paste)}>Read the paste</Button></span>
+          <span><Button size="sm" variant="secondary" icon="ScanSearch" disabled={!paste.trim()} onClick={() => onPasteText(paste)}>Read the paste</Button></span>
         </div>
       )}
 
@@ -210,7 +210,7 @@ export function BringIn({ onReview, setLinks = () => {} }) {
                     <td>{(() => { const src = found.toast.map((t) => t.source); const zip = src[0].split(' › ')[0]; return src.length > 1 && src.every((x) => x.startsWith(`${zip} › `)) ? `${zip} · ${src.length} files` : src.join(', '); })()}</td>
                     <td><span className="cv-row" style={{ gap: 6 }}><Icon name="PlugZap" size={14} />Toast export: {found.toast.map((t) => TOAST_FILES[t.kind].file.replace('.csv', '')).join(' + ')}</span></td>
                     <td className="r cv-num">{found.toast.reduce((s, t) => s + t.rows.length, 0).toLocaleString('en-US')}</td>
-                    <td className="r"><Button size="sm" icon="Check" onClick={loadToast}>Load into {CV_ROOM.short}</Button></td>
+                    <td className="r"><Button size="sm" variant="secondary" icon="Check" onClick={loadToast}>Load into {CV_ROOM.short}</Button></td>
                   </tr>
                 )}
                 {found.toastDone && <tr><td colSpan={4}><span className="cv-small cv-up"><Icon name="CircleCheck" size={14} /> Toast data loaded: {found.toastDone.weeksCovered} weeks to {found.toastDone.end}.</span></td></tr>}
@@ -237,7 +237,7 @@ export function BringIn({ onReview, setLinks = () => {} }) {
           {found.errors.map((e, i) => <Callout key={i} tone="warn" icon="TriangleAlert"><b>{e.name}</b>: {e.msg}</Callout>)}
           {server && found.viaLink && (found.manual.length > 0 || found.unknown.length > 0) && (
             <div className="cv-row" style={{ gap: 8, flexWrap: 'wrap' }}>
-              <Button size="sm" icon="Link2" disabled={!!busy} onClick={keepLinked}>{busy === 'keep' ? 'Linking…' : `Keep linked to ${CV_ROOM.short}`}</Button>
+              <Button size="sm" variant="secondary" icon="Link2" disabled={!!busy} onClick={keepLinked}>{busy === 'keep' ? 'Linking…' : `Keep linked to ${CV_ROOM.short}`}</Button>
               <span className="cv-xs cv-faint">Read again every morning. A tab that passes every check is loaded; one that doesn&apos;t is flagged and nothing changes.</span>
             </div>
           )}

@@ -15,13 +15,13 @@ import s from './inputs.module.css';
 
 const usd = (v) => `$${Math.round(v).toLocaleString('en-US')}`;
 
-/* Status of a kind's data, in the system's status colours (always with icon and label). */
+/* Status of a kind's data, in the system's status colors (always with icon and label). */
 export const STATE = {
-  hand: { label: 'Yours', color: 'var(--success-500)', icon: 'CircleCheck' },
-  linked: { label: 'Linked', color: 'var(--info-500)', icon: 'Link2' },
-  stale: { label: 'Stale', color: 'var(--warning-500)', icon: 'TriangleAlert' },
-  sample: { label: 'Sample', color: 'var(--neutral-300)', icon: 'CircleDashed' },
-  none: { label: 'Missing', color: 'var(--neutral-600)', icon: 'CircleX' },
+  hand: { label: 'Yours', color: 'var(--success-600)', icon: 'CircleCheck' },
+  linked: { label: 'Linked', color: 'var(--fg-1)', icon: 'Link2' },
+  stale: { label: 'Stale', color: 'var(--warning-600)', icon: 'TriangleAlert' },
+  sample: { label: 'Sample', color: 'var(--border-strong)', icon: 'CircleDashed' },
+  none: { label: 'Missing', color: 'var(--fg-3)', icon: 'CircleX' },
 };
 const ORDER = ['hand', 'linked', 'stale', 'sample', 'none'];
 
@@ -95,8 +95,8 @@ export function StakeBars({ stakes, onPick }) {
   return (
     <div className={s.bars}>
       <div className={s.barsLegend} aria-hidden="true">
-        <span><i style={{ background: 'var(--error-500)' }} />On hold: data missing</span>
-        <span><i style={{ background: 'var(--accent)' }} />Ready to act on</span>
+        <span><i style={{ background: 'var(--warning-600)' }} />On hold: data missing</span>
+        <span><i style={{ background: 'var(--fg-1)' }} />Ready to act on</span>
       </div>
       {rows.map((k) => {
         const ready = k.value - k.blocked;
@@ -106,8 +106,8 @@ export function StakeBars({ stakes, onPick }) {
             onPointerEnter={() => setTip(k.kind)} onPointerLeave={() => setTip(null)} onFocus={() => setTip(k.kind)} onBlur={() => setTip(null)}>
             <span className={s.barName}><Icon name={SCHEMAS[k.kind].icon} size={14} />{SCHEMAS[k.kind].title}</span>
             <span className={s.barTrack}>
-              {k.blocked > 0 && <span className={s.barSeg} style={{ width: `${(k.blocked / max) * 100}%`, background: 'var(--error-500)' }} />}
-              {ready > 0 && <span className={s.barSeg} style={{ width: `${(ready / max) * 100}%`, background: 'var(--accent)' }} />}
+              {k.blocked > 0 && <span className={s.barSeg} style={{ width: `${(k.blocked / max) * 100}%`, background: 'var(--warning-600)' }} />}
+              {ready > 0 && <span className={s.barSeg} style={{ width: `${(ready / max) * 100}%`, background: 'var(--fg-1)' }} />}
               {tip === k.kind && (
                 <span className={s.tip} role="tooltip">
                   <b>{usd(k.value)}/wk</b> potential opportunity
@@ -126,7 +126,7 @@ export function StakeBars({ stakes, onPick }) {
 }
 
 /* ------------------------------------------------------------------ next fixes */
-export function FixNext({ items, onOpen, onLink, server }) {
+export function FixNext({ items, onOpen, onLink, server, quiet = false }) {
   const [why, setWhy] = React.useState(null);
   if (!items.length) {
     return (
@@ -137,11 +137,12 @@ export function FixNext({ items, onOpen, onLink, server }) {
     <div className={s.fixes}>
       {items.slice(0, 3).map((it, i) => {
         const m = METHODS[it.method];
+        const v = i === 0 && !quiet ? 'primary' : 'secondary';
         const action = it.method === 'toast'
-          ? <Link className="btn btn-primary btn-sm" href="/connect"><Icon name="PlugZap" size={15} />Connect Toast</Link>
+          ? <Link className={`btn btn-${v} btn-sm`} href="/connect"><Icon name="PlugZap" size={15} />Connect Toast</Link>
           : it.method === 'link' && server
-            ? <Button size="sm" icon="Link2" onClick={() => onLink(it.kind)}>Link a sheet</Button>
-            : <Button size="sm" icon={it.method === 'type' ? 'PencilLine' : 'Upload'} onClick={() => onOpen(it.kind, it.method === 'type' ? 'grid' : 'csv')}>{it.method === 'type' ? 'Enter it' : 'Upload it'}</Button>;
+            ? <Button size="sm" variant={v} icon="Link2" onClick={() => onLink(it.kind)}>Link a sheet</Button>
+            : <Button size="sm" variant={v} icon={it.method === 'type' ? 'PencilLine' : 'Upload'} onClick={() => onOpen(it.kind, it.method === 'type' ? 'grid' : 'csv')}>{it.method === 'type' ? 'Enter it' : 'Upload it'}</Button>;
         const open = why === it.kind;
         return (
           <article key={it.kind} className={`${s.fix} ${i === 0 ? s.fixTop : ''}`} aria-labelledby={`fix-${it.kind}`}>

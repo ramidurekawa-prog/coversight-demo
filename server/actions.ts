@@ -1,23 +1,29 @@
 // Operator decisions, saved per org. Each key has a schema and a scope: a room
 // key belongs to one room (a GM can write only their rooms); a group key
-// belongs to the whole group (owner or admin only). Entries are append-only:
+// belongs to the whole group (owner or admin only); a person key belongs to
+// the one signed-in person (stored under room 'user:<id>', returned only to them
+// as the ME bucket). Entries are append-only:
 // the newest per room and key is the current value.
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, notLike, or } from 'drizzle-orm';
 import { z } from 'zod';
 
 import type { Db } from './db/client';
 import { meetingSchemas } from './page/meeting';
 import { actions, auditLog, rooms } from './db/schema';
 import { InputError } from './org';
-import { AuthError, type Viewer } from './session';
+import { AuthError, roomLevel, type Viewer } from './session';
 
 const id = z.string().min(1).max(120);
 const isoDate = z.string().max(40);
 const flags = z.record(id, isoDate);
 
+const layoutRole = z.object({ metrics: z.array(z.string().max(20)).max(6), widgets: z.array(z.string().max(20)).max(6) });
+
 export const ACTION_KEYS = {
-  /** Today's work queue: cards done or declined (with when, and why declined), and snoozed (until which day). Written by /api/page/today. */
-  queue: { scope: 'room', schema: z.object({ done: flags, refused: flags, snoozed: flags.optional(), meta: z.record(id, z.object({ reason: z.enum(['not_relevant', 'handled', 'disagree', 'not_now']).optional(), worth: z.number().min(0).max(1e7).optional() })).optional() }).refine((q) => Object.keys(q.done).length + Object.keys(q.refused).length + Object.keys(q.snoozed ?? {}).length <= 300, 'too many cards') },
+  /** Today's layout for one person, per role they view it as: which numbers and extras show. Never changes a figure. */
+  'today.layout': { scope: 'person', schema: z.object({ owner: layoutRole.optional(), gm: layoutRole.optional(), floor: layoutRole.optional() }) },
+  /** Today's work queue: cards done or declined (with when, and why declined), snoozed (until which day) and assigned (to which role). Written by /api/page/today. */
+  queue: { scope: 'room', schema: z.object({ done: flags, refused: flags, snoozed: flags.optional(), assigned: z.record(id, z.object({ to: z.union([z.enum(['gm', 'kitchen', 'bar', 'owner']), z.string().regex(/^user:[\w-]{1,80}$/)]), at: isoDate, name: z.string().max(80).optional(), from: z.string().max(80).optional(), ack: z.object({ at: isoDate, by: z.string().max(80).optional() }).optional() })).optional(), meta: z.record(id, z.object({ reason: z.enum(['not_relevant', 'handled', 'disagree', 'not_now']).optional(), worth: z.number().min(0).max(1e7).optional() })).optional() }).refine((q) => Object.keys(q.done).length + Object.keys(q.refused).length + Object.keys(q.snoozed ?? {}).length + Object.keys(q.assigned ?? {}).length <= 300, 'too many cards') },
   /** Tonight's one labour suggestion on the Service screen. */
   service: { scope: 'room', schema: z.enum(['ask', 'yes', 'no']) },
   /** Approvals written back, by approval id. */
@@ -57,10 +63,16 @@ export const ACTION_KEYS = {
 export type ActionKey = keyof typeof ACTION_KEYS;
 const MAX_BYTES = 20_000;
 export const GROUP = '';
+/** The client's bucket for the viewer's own person-scoped keys. */
+export const ME = '@me';
 
 /** Current values: { [roomId | '']: { [key]: value } }, limited to the viewer's rooms. */
-export async function loadActions(db: Db, orgId: string, roomScope: string[] | null = null) {
-  const where = roomScope ? and(eq(actions.orgId, orgId), inArray(actions.roomId, [GROUP, ...roomScope])) : eq(actions.orgId, orgId);
+export async function loadActions(db: Db, orgId: string, roomScope: string[] | null = null, userId: string | null = null) {
+  // Person rows are the viewer's own only; agents and jobs (no userId) never see them.
+  const own = userId ? or(notLike(actions.roomId, 'user:%'), eq(actions.roomId, `user:${userId}`)) : notLike(actions.roomId, 'user:%');
+  const where = roomScope
+    ? and(eq(actions.orgId, orgId), inArray(actions.roomId, [GROUP, ...roomScope, ...(userId ? [`user:${userId}`] : [])]))
+    : and(eq(actions.orgId, orgId), own);
   const rows = await db
     .selectDistinctOn([actions.roomId, actions.key], { roomId: actions.roomId, key: actions.key, value: actions.value })
     .from(actions)
@@ -69,7 +81,7 @@ export async function loadActions(db: Db, orgId: string, roomScope: string[] | n
   const out: Record<string, Record<string, unknown>> = {};
   for (const r of rows) {
     if (!(r.key in ACTION_KEYS)) continue;
-    (out[r.roomId] ??= {})[r.key] = r.value;
+    (out[r.roomId.startsWith('user:') ? ME : r.roomId] ??= {})[r.key] = r.value;
   }
   return out;
 }
@@ -81,9 +93,9 @@ export async function saveAction(
 ) {
   if (typeof key !== 'string' || !(key in ACTION_KEYS)) throw new InputError(`unknown action '${String(key)}'`);
   const spec = ACTION_KEYS[key as ActionKey];
-  const room = spec.scope === 'group' ? GROUP : roomId;
+  const room = spec.scope === 'group' ? GROUP : spec.scope === 'person' ? `user:${v.userId}` : roomId;
   if (typeof room !== 'string') throw new InputError('roomId is required');
-  if (spec.scope === 'group' && v.role === 'gm') throw new AuthError(403, 'Only an owner or admin can change this.');
+  if (spec.scope === 'group' && roomLevel(v.role)) throw new AuthError(403, 'Only an owner or admin can change this.');
   if (spec.scope === 'room') {
     if (v.rooms && !v.rooms.includes(room)) throw new AuthError(403, 'That room is not one of yours.');
     const [r] = await db.select({ id: rooms.id }).from(rooms).where(and(eq(rooms.orgId, v.orgId), eq(rooms.id, room)));

@@ -165,7 +165,7 @@ function MoveTile({ m }) {
       {b != null && af != null && (
         <span className={s.moveBars} aria-hidden="true">
           <span title={`Now ${m.before}`}><i style={{ width: `${(Math.abs(b) / max) * 100}%`, background: 'var(--neutral-300)' }} /></span>
-          <span title={`After ${m.after}`}><i style={{ width: `${(Math.abs(af) / max) * 100}%`, background: 'var(--accent)' }} /></span>
+          <span title={`After ${m.after}`}><i style={{ width: `${(Math.abs(af) / max) * 100}%`, background: 'var(--fg-1)' }} /></span>
         </span>
       )}
     </div>
