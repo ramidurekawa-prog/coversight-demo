@@ -421,3 +421,12 @@ describe('tonight’s pace', () => {
     for (const r of Object.values(SEED.rooms)) expect((r as { service: Record<string, unknown> }).service).not.toHaveProperty('pace');
   });
 });
+
+describe('tonight on a room’s own data', () => {
+  it('shows no live pace: the sample’s covers never stand in for a real room', async () => {
+    const { tonight } = await import('../lib/data/page/today-brief.js');
+    const d = deriveRoom(SEED, 'oakland');
+    expect(tonight(d, NOW)).not.toBeNull();
+    expect(tonight({ ...d, room: { ...d.room, fromToast: { end: '2026-10-25' } } }, NOW)).toBeNull();
+  });
+});
