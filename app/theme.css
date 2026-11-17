@@ -8,9 +8,10 @@
    ============================================================================= */
 
 :root {
-  --font-sans: 'IBM Plex Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  --font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
-  --font-wordmark: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  /* Manrope everywhere (Ramidu, 2026-11-17), figures included, with tabular digits (.cv-fig, .cv-num). */
+  --font-sans: 'Manrope', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'Manrope', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-wordmark: 'Manrope', ui-sans-serif, system-ui, sans-serif;
 
   /* Brass replaces the teal ramp everywhere components reference it. */
   --teal-50: #F7F0DC;  --teal-100: #EFE2BC; --teal-200: #E3CD8F; --teal-300: #D4B562; --teal-400: #C29E3F;

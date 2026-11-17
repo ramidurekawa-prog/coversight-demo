@@ -8,7 +8,13 @@ import { getDb, type Db } from './db/client';
 import { memberships } from './db/schema';
 import { createSampleOrg } from './org';
 
-export type Viewer = { userId: string; anonymous: boolean; orgId: string; role: 'owner' | 'gm' | 'admin'; rooms: string[] | null };
+export type Role = 'owner' | 'gm' | 'admin' | 'floor';
+export type Viewer = { userId: string; anonymous: boolean; orgId: string; role: Role; rooms: string[] | null };
+/** Owners and admins see and run the whole group; a GM or floor manager only their rooms. */
+export const groupWide = (role: string) => role === 'owner' || role === 'admin';
+/** A room-level role (GM or floor manager): limited to their rooms, no group settings. */
+export const roomLevel = (role: string) => !groupWide(role);
+export const roleName = (role: string) => ({ owner: 'owner', gm: 'GM', admin: 'admin', floor: 'floor manager' } as Record<string, string>)[role] ?? role;
 
 export class AuthError extends Error {
   constructor(public status: 401 | 403, message: string) {

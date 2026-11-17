@@ -6,8 +6,8 @@ import * as React from 'react';
 import { authClient } from '../../../lib/client/auth';
 
 /* An invite link: what it's for, then join (signed in) or sign in first. */
-type Peek = { org: string; role: 'owner' | 'gm' | 'admin'; rooms: string[] | null };
-const ROLE = { owner: 'an owner', admin: 'an admin (every room)', gm: 'a GM' };
+type Peek = { org: string; role: 'owner' | 'gm' | 'admin' | 'floor'; rooms: string[] | null };
+const ROLE = { owner: 'an owner', admin: 'an admin (every room)', gm: 'a GM', floor: 'a floor manager' };
 
 export default function JoinPage() {
   const { token } = useParams<{ token: string }>();
@@ -36,7 +36,7 @@ export default function JoinPage() {
         <div className="cv-col" style={{ gap: 4 }}>
           <span className="cv-over">Coversight</span>
           <h1 className="cv-h3" style={{ margin: 0 }}>{peek ? `Join ${peek.org}` : 'Invite'}</h1>
-          {peek && <span className="cv-small cv-muted">You’re invited as {ROLE[peek.role]}{peek.role === 'gm' && peek.rooms ? ` for ${peek.rooms.length} room${peek.rooms.length === 1 ? '' : 's'}` : ''}.</span>}
+          {peek && <span className="cv-small cv-muted">You’re invited as {ROLE[peek.role]}{peek.role !== 'owner' && peek.role !== 'admin' && peek.rooms ? ` for ${peek.rooms.length} room${peek.rooms.length === 1 ? '' : 's'}` : ''}.</span>}
         </div>
         {err && <p className="cv-small" role="alert" style={{ margin: 0 }}>{err}</p>}
         {peek && who === null && (
