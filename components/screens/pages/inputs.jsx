@@ -1,12 +1,13 @@
 'use client';
 
 import * as React from 'react';
+import Link from 'next/link';
 
 import { Button, Icon } from '../../kit';
 import { CV_D, CV_DS, CV_ROOM, PageHead, Pill } from '../core';
 import { useEngine } from '../../engine';
 import { KINDS } from '../../../lib/data/ingest';
-import { SCHEMAS, attention, blockedWhy, dependsOn, stakes } from '../../../lib/data/page/inputs';
+import { SCHEMAS, attention, blockedWhy, dependsOn, pageState, stakes } from '../../../lib/data/page/inputs';
 import { Connections, CoverageMatrix, FixNext, Summary } from './inputs-visual';
 import { ToastImport } from '../toast-import';
 import { BringIn } from '../bring-in';
@@ -71,34 +72,35 @@ function CvInputs() {
   const own = !!CV_D.room?.fromToast;
   const systems = [
     ...CV_D.feeds.filter((f) => !f.input || f.input === 'toast').map((f) => ({
-      id: f.name, name: f.name, icon: 'PlugZap', supplies: f.what, state: f.state, last: f.last, note: f.note, ok: f.state === 'healthy', sample: !own,
-      refresh: f.name === 'Toast' ? 'Every night once Toast is connected, or whenever you upload new exports' : 'Managed on Sources',
+      id: f.name, name: f.name, icon: 'PlugZap', required: f.name === 'Toast', supplies: f.what, state: f.state, last: f.last, note: f.note, ok: f.state === 'healthy', sample: !own,
+      refresh: f.name === 'Toast' ? 'Every night once Toast is connected, or whenever you upload new exports' : 'On its own once connected',
       href: f.name === 'Toast' ? '/connect' : '/sources',
     })),
     ...links.filter((l) => l.roomId === CV_D.id).map((l) => ({
       id: l.id, name: `${host(l.url)} sheet`, icon: 'Link2', supplies: l.picks.map((p) => SCHEMAS[p.kind]?.title ?? p.kind).join(', '),
       state: !l.pulledAt ? 'off' : l.lastError ? 'partial' : 'healthy', last: l.pulledAt ? `Read ${when(l.pulledAt)}` : 'Not read yet', note: l.lastError || null,
-      ok: !!l.pulledAt && !l.lastError, sample: false, refresh: 'Every morning at 1:30 am Pacific, or when you press Read it now', link: l, failed: l.lastResult?.failed || [],
+      ok: !!l.pulledAt && !l.lastError, sample: false, required: true, refresh: 'Every morning at 1:30 am Pacific, or when you press Read it now', link: l, failed: l.lastResult?.failed || [],
     })),
   ];
-  const onHold = stake.reduce((x, k) => x + k.blocked, 0);
-  const headline = !items.length ? 'Your data is working' : `${items.length} thing${items.length === 1 ? '' : 's'} to fix before your data is fully working`;
-  const sub = !items.length ? 'Nothing is missing or out of date. Coversight keeps watching every source.'
-    : `Start with ${items[0].title.toLowerCase()}: about ${items[0].minutes} minutes${onHold > 0 ? `, and it frees up findings that are on hold` : ''}.`;
+  const ownKinds = rows.filter((r) => r.src.key === 'hand' || r.src.key === 'linked').length;
+  const head = pageState({ sample, items, own: ownKinds, connected: systems.filter((x) => !x.sample && x.state !== 'off').length });
 
   return (
     <div className={`cv-page wide ${s.page}`} data-page="inputs">
-      <PageHead over={`Data & Connections · ${CV_ROOM.name}`} q={headline} sub={sub}
+      <PageHead over={`Data & Connections · ${CV_ROOM.name}`} q={head.headline} sub={head.sub}
         right={<>
-          <Pill tone={server ? 'good' : 'neutral'} icon={server ? 'Cloud' : 'HardDrive'}>{server ? 'Saved to your account' : 'Saved in this browser only'}</Pill>
+          <Pill tone={server ? 'good' : 'neutral'} icon={server ? 'Cloud' : 'HardDrive'}>{server ? 'Saved to your account' : 'Demo: saved in this browser only'}</Pill>
           <Button size="sm" variant={items.length || editing ? 'secondary' : 'primary'} icon="Plus" onClick={() => add()}>Add data</Button>
         </>} />
       {sample && (
-        <button type="button" className={s.sampleBar} onClick={() => setPanel({ type: 'sample' })}>
+        <div className={s.sampleBar} role="note">
           <Icon name="FlaskConical" size={18} />
-          <span><b>Sample data.</b> This is a made-up restaurant group, so every figure here is an example, not your restaurant&apos;s result.</span>
-          <span className={s.sampleGo}>How to use your own<Icon name="ChevronRight" size={15} className={s.chev} /></span>
-        </button>
+          <span className={s.sampleText}><b>You&apos;re viewing a sample restaurant.</b> Every figure here is an example, not your restaurant&apos;s result.</span>
+          <span className={s.sampleActs}>
+            <Button size="sm" variant="ghost" onClick={() => setPanel({ type: 'sample' })}>How the sample works</Button>
+            <Link className={`btn btn-sm ${s.inkBtn}`} href="/connect"><Icon name="PlugZap" size={15} />Connect your restaurant</Link>
+          </span>
+        </div>
       )}
       <Summary systems={systems} rows={rows} items={items}
         onConnections={() => scrollTo('inputs-conns')} onReadiness={() => setPanel({ type: 'ready' })} onIssues={() => scrollTo('inputs-next')} />
@@ -116,25 +118,35 @@ function CvInputs() {
           <div className="cv-card-head">
             <div className="cv-col" style={{ gap: 2 }}>
               <span className="cv-h4" id="inputs-conns-h">Connections</span>
-              <span className="cv-xs cv-faint">The systems your data comes from</span>
+              <span className="cv-xs cv-faint">{sample ? 'The sample restaurant’s systems' : 'The systems your data comes from'}</span>
             </div>
           </div>
-          <Connections systems={systems} sample={sample} busy={linkBusy} onReadNow={readNow}
+          <Connections systems={systems} busy={linkBusy} onReadNow={readNow}
             onSettings={(l) => setPanel({ type: 'link', link: l })} onToastExports={() => setPanel({ type: 'toast' })} />
         </section>
         <section className="cv-card" aria-labelledby="inputs-cover-h">
           <div className="cv-card-head">
             <div className="cv-col" style={{ gap: 2 }}>
               <span className="cv-h4" id="inputs-cover-h">Data coverage</span>
-              <span className="cv-xs cv-faint">What Coversight needs, and whether it can be trusted</span>
+              <span className="cv-xs cv-faint">Each kind of data, and whether it&apos;s ready to use</span>
             </div>
           </div>
-          <CoverageMatrix rows={rows} kind={editing ? kind : null} onPick={(k) => setPanel({ type: 'kind', kind: k })} />
+          <CoverageMatrix rows={rows} items={items} sample={sample} kind={editing ? kind : null} onPick={(k) => setPanel({ type: 'kind', kind: k })} />
         </section>
       </div>
 
       <div id="inputs-history-card" style={{ scrollMarginTop: 16 }}><History server={server} onChanged={roomHistory.reload} kindFilter={histKind} /></div>
-      <span className="cv-xs cv-faint" style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}><Icon name="ShieldCheck" size={13} />Your data is labeled wherever it&apos;s used, and it never re-prices a verified saving.</span>
+      <div className={s.trust} aria-label={server ? 'How your data is kept' : 'About this demo'}>
+        {server ? <>
+          <span><Icon name="Cloud" size={15} />Saved to your account for your whole team</span>
+          <span><Icon name="Users" size={15} />Owners see every location; a manager sees only their own</span>
+          <span><Icon name="History" size={15} />Every change is recorded and can be undone</span>
+          <span><Icon name="ShieldCheck" size={15} />New data never re-prices a verified saving</span>
+        </> : <>
+          <span><Icon name="HardDrive" size={15} />Demo only: what you enter here stays in this browser and isn&apos;t shared</span>
+          <span><Icon name="Cloud" size={15} />A real account saves to your restaurant&apos;s account, with a login for each teammate</span>
+        </>}
+      </div>
 
       {editing && (
         <SidePanel workspace over={CV_ROOM.short} title={seed ? 'Import a file' : 'Edit data'} onClose={closeEditor}>

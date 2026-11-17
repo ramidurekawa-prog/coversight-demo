@@ -11,7 +11,7 @@ import Link from 'next/link';
 
 import { Button, Icon } from '../../kit';
 import { CV_D, CV_DS, CV_ROOM, Claim, Pill } from '../core';
-import { CALC, METHODS, NEEDS, SCHEMAS, STEP_ORDER } from '../../../lib/data/page/inputs';
+import { CALC, METHODS, NEEDS, READY, SCHEMAS, STEP_ORDER, kindStatus } from '../../../lib/data/page/inputs';
 import { templateRows } from '../../../lib/data/ingest';
 import { STATE, SampleTag } from './inputs-visual';
 import s from './inputs.module.css';
@@ -72,7 +72,7 @@ export function KindPanel({ row, item, stake, last, link, server, sample, onEdit
   return (
     <SidePanel over={`${CV_ROOM.short} · data`} title={schema.title} onClose={onClose} wide
       foot={<>
-        <Button className={s.panelPrimary} icon={entry ? 'PencilLine' : 'Plus'} onClick={() => onEdit(kind)}>{entry ? 'Update this data' : 'Enter your own'}</Button>
+        <Button className={s.panelPrimary} icon={entry ? 'PencilLine' : 'Plus'} onClick={() => onEdit(kind)}>{entry ? `Update ${schema.title.toLowerCase()}` : `Enter ${schema.title.toLowerCase()}`}</Button>
         <div className={s.panelMore}>
           {method === 'toast' && <Link className="btn btn-secondary btn-sm" href="/connect"><Icon name="PlugZap" size={15} />Connect Toast</Link>}
           {method === 'link' && server && <Button size="sm" variant="secondary" icon="Link2" onClick={() => onLink(kind)}>Link a sheet</Button>}
@@ -80,6 +80,7 @@ export function KindPanel({ row, item, stake, last, link, server, sample, onEdit
         </div>
       </>}>
       <div className={s.panelStatus}>
+        <Pill tone={READY[kindStatus(row, item)].tone} icon={READY[kindStatus(row, item)].icon}>{READY[kindStatus(row, item)].label}</Pill>
         <span className={s.chipState}><i style={{ background: st.color }} /><Icon name={st.icon} size={14} />{src.label}</span>
         {item?.blocked?.length > 0 && <Pill tone="warn" icon="Ban">{item.blocked.length} finding{item.blocked.length === 1 ? '' : 's'} on hold</Pill>}
       </div>
@@ -147,22 +148,24 @@ export function KindPanel({ row, item, stake, last, link, server, sample, onEdit
 
 /* ------------------------------------------------------------------ readiness by kind and reason */
 export function ReadinessPanel({ rows, items, onPick, onClose }) {
-  const own = rows.filter((r) => r.src.key === 'hand' || r.src.key === 'linked').length;
+  const status = (r) => kindStatus(r, items.find((x) => x.kind === r.kind));
+  const ready = rows.filter((r) => status(r) === 'ready').length;
   return (
-    <SidePanel over={CV_ROOM.short} title={`Data readiness: ${own} of ${rows.length} kinds are yours`} onClose={onClose}>
-      <p className={s.blockText}>A kind is ready when it&apos;s your own data and current. Anything else runs on sample data scaled to your sales, and the figures that use it say so.</p>
+    <SidePanel over={CV_ROOM.short} title={`Data readiness: ${ready} of ${rows.length} ready to use`} onClose={onClose}>
+      <p className={s.blockText}>A kind of data is ready when it&apos;s recent, complete, passed its checks and nothing that uses it is on hold. Anything else is listed under Fix next.</p>
       <ul className={s.readyList}>
         {STEP_ORDER.map((k) => {
           const r = rows.find((x) => x.kind === k);
           const it = items.find((x) => x.kind === k);
-          const st = STATE[r.src.key] || STATE.sample;
-          const reason = it ? it.missing : r.entry ? `${r.entry.n.toLocaleString('en-US')} rows, ${r.entry.date}.` : r.feed ? `Sample feed, last ${r.feed.last}.` : 'Sample data until you enter it.';
+          const st = READY[status(r)];
+          const own = r.src.key === 'hand' || r.src.key === 'linked';
+          const reason = it ? it.missing : r.entry ? `Your data: ${r.entry.n.toLocaleString('en-US')} rows, ${r.entry.date}.` : r.feed ? `Sample data, last updated ${r.feed.last}.` : 'Sample data until you enter your own.';
           return (
             <li key={k}>
-              <button type="button" className={s.readyRow} onClick={() => onPick(k)}>
+              <button type="button" className={s.readyRow} onClick={() => onPick(k)} aria-label={`${r.schema.title}: ${st.label}${own ? '' : ', sample data'}. ${reason} Show details.`}>
                 <Icon name={r.schema.icon} size={18} />
                 <span className={s.readyText}><b>{r.schema.title}</b><span>{reason}</span></span>
-                <span className={s.chipState}><i style={{ background: st.color }} /><Icon name={st.icon} size={13} />{st.label}</span>
+                <Pill tone={st.tone} icon={st.icon}>{st.label}</Pill>
                 <Icon name="ChevronRight" size={16} className={s.chev} />
               </button>
             </li>
@@ -173,7 +176,6 @@ export function ReadinessPanel({ rows, items, onPick, onClose }) {
   );
 }
 
-/* ------------------------------------------------------------------ a financial capability: data needed and the calculation */
 export function CapabilityPanel({ kind, stake, findings, sample, onEdit, onClose }) {
   const schema = SCHEMAS[kind];
   const need = schema.columns.filter((c) => c.required);

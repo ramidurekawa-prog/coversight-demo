@@ -38,18 +38,29 @@ export function History({ server, onChanged, kindFilter = '' }) {
   };
   const reset = () => { engine.reset(); setConfirm(false); cv.toast('Back to the sample data. Every hand-entered row is cleared, and the history keeps a record.'); };
 
+  // Nothing to show and no filter in play: one quiet line, not a card.
+  if (!hist.entries.length && !hist.loading && !hist.error && !kind && scope === 'room') {
+    return (
+      <div className={s.quietLine}>
+        <Icon name="History" size={16} />
+        <span><b>Recent activity.</b> Nothing yet at {CV_ROOM.short}. Imports, edits and connection changes will be listed here.</span>
+        {many && <Button size="sm" variant="ghost" onClick={() => setScope('all')}>See all locations</Button>}
+      </div>
+    );
+  }
+
   return (
     <section className="cv-card" aria-labelledby="inputs-history">
       <div className="cv-card-head">
         <div className="cv-col" style={{ gap: 4 }}>
           <span className="cv-h4" id="inputs-history">Recent activity</span>
-          <span className="cv-small cv-muted">Who changed what. Undo the latest one per kind.</span>
+          <span className="cv-small cv-muted">The latest changes to your data.</span>
         </div>
         <div className={s.filters}>
           {many && (
             <select className={s.select} value={scope} onChange={(e) => setScope(e.target.value)} aria-label="Which rooms">
               <option value="room">{CV_ROOM.short} only</option>
-              <option value="all">All your rooms</option>
+              <option value="all">All your locations</option>
             </select>
           )}
           <select className={s.select} value={kind} onChange={(e) => setKind(e.target.value)} aria-label="Which kind of data">
@@ -102,12 +113,12 @@ export function History({ server, onChanged, kindFilter = '' }) {
           })}
         </div>
       )}
-      {!all && hist.entries.length > 3 && <span><Button size="sm" variant="ghost" icon="ChevronDown" onClick={() => setAll(true)}>Show all activity</Button></span>}
+      {!all && hist.entries.length > 3 && <span><Button size="sm" variant="ghost" icon="ChevronDown" onClick={() => setAll(true)}>View history</Button></span>}
       {all && (hist.more || hist.loading) && <span><Button size="sm" variant="ghost" icon="ChevronDown" disabled={hist.loading} onClick={hist.loadMore}>{hist.loading ? 'Loading…' : 'Show older'}</Button></span>}
 
       {hist.canReset && (
         <div className="cv-row" style={{ gap: 8, borderTop: '1px solid var(--border)', paddingTop: 12, justifyContent: 'space-between' }}>
-          <span className="cv-xs cv-faint">{server ? 'Saved to your account and kept for every teammate.' : 'Saved in this browser only.'}</span>
+          <span className="cv-xs cv-faint">{server ? 'Saved to your account and kept for every teammate.' : 'Demo: saved in this browser only.'}</span>
           {confirm ? (
             <span className="cv-row" style={{ gap: 8 }}>
               <span className="cv-small">Clear every hand-entered row in every room?</span>

@@ -7,7 +7,7 @@ import { auditLog, inputs, linkedSources, memberships, notifications, testWindow
 import { addLink } from '../server/links';
 import { createSampleOrg, loadBase, loadInputs } from '../server/org';
 import { commitChecked, inputHistory, scopedInputs, undoChecked } from '../server/page/inputs';
-import { analyze, attention, checkRows, cleanOpts, commitSummary, currentIds, extraChecks, fingerprint, mappingReview, mergeRows, parseDay, safeCSV, sourceOf } from '../lib/data/page/inputs.js';
+import { analyze, attention, checkRows, cleanOpts, commitSummary, currentIds, extraChecks, fingerprint, mappingReview, mergeRows, pageState, actionLabel, kindStatus, parseDay, safeCSV, sourceOf } from '../lib/data/page/inputs.js';
 import { applyInputs } from '../lib/data/apply.js';
 import { mapColumns } from '../lib/data/ingest.js';
 import { deriveRoom } from '../lib/data/model.js';
@@ -113,6 +113,24 @@ describe('shared rules', () => {
     expect(commitSummary(S, {}, 'oakland', 'recipes', rows)).toBe(changed);
     expect(a.diff).toMatchObject({ matched: 1, updated: 1, added: 0 });
     expect(a.moves.some((m: { label: string }) => /Contribution after food and labor/.test(m.label))).toBe(true);
+  });
+
+  it('the headline follows the restaurant\'s state, and readiness agrees with what needs fixing', () => {
+    const ds = applyInputs(S, {});
+    const d = deriveRoom(ds, 'oakland');
+    const items = attention(d, ds.rooms.oakland);
+    expect(pageState({ sample: true, items }).headline).toMatch(/^See how Coversight/);
+    expect(pageState({ sample: false, items, own: 0, connected: 0 }).state).toBe('new');
+    expect(pageState({ sample: false, items, own: 1, connected: 1 }).headline).toBe(`${items.length} data issues need your attention.`);
+    const missing = items.filter((i: { feed: { state: string } | null }) => i.feed?.state === 'off');
+    expect(pageState({ sample: false, items: missing, own: 1, connected: 1 }).headline).toMatch(/missing input/);
+    expect(pageState({ sample: false, items: [], own: 1, connected: 1 }).headline).toBe('Your restaurant data is up to date.');
+    // A kind is ready exactly when it has no attention item.
+    for (const it of items) expect(kindStatus({ feed: it.feed }, it)).not.toBe('ready');
+    expect(kindStatus({ feed: { state: 'healthy' } }, undefined)).toBe('ready');
+    expect(actionLabel('recipes', 'upload')).toBe('Upload recipes');
+    expect(actionLabel('waste', 'type')).toBe('Log waste');
+    expect(actionLabel('counts', 'upload')).toBe('Upload inventory count');
   });
 
   it('missing data ranks first, and the warning clears once it is entered (blocked finding re-evaluated)', () => {

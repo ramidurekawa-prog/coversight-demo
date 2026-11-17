@@ -12,7 +12,7 @@ import Link from 'next/link';
 
 import { Button, Icon } from '../../kit';
 import { CV_ROOM, Claim, Pill } from '../core';
-import { METHODS, NEEDS, SCHEMAS, STEP_ORDER } from '../../../lib/data/page/inputs';
+import { AFFECTS, METHODS, NEEDS, READY, SCHEMAS, STEP_ORDER, actionLabel, kindStatus } from '../../../lib/data/page/inputs';
 import s from './inputs.module.css';
 
 const usd = (v) => `$${Math.round(v).toLocaleString('en-US')}`;
@@ -30,125 +30,152 @@ export const STATE = {
 export const SampleTag = () => <Pill icon="FlaskConical">Sample</Pill>;
 
 /* ------------------------------------------------------------------ is my data working: three numbers */
+/** A system counts when it's set up, or when this restaurant's findings need it. An optional one that was never connected isn't a failure. */
+export const applies = (x) => x.state !== 'off' || x.required;
+
 export function Summary({ systems, rows, items, onConnections, onReadiness, onIssues }) {
-  const live = systems.filter((x) => x.ok).length;
-  const own = rows.filter((r) => r.src.key === 'hand' || r.src.key === 'linked').length;
-  const card = (label, big, small, sub, tone, onClick, aria) => (
-    <button type="button" className={`${s.stat} ${s.statBtn} ${tone ? s[tone] : ''}`} onClick={onClick} aria-label={aria}>
+  const used = systems.filter(applies);
+  const live = used.filter((x) => x.ok).length;
+  const ready = rows.filter((r) => kindStatus(r, items.find((x) => x.kind === r.kind)) === 'ready').length;
+  const card = (label, big, small, sub, tone, icon, onClick, aria) => (
+    <button type="button" className={`${s.stat} ${s.statBtn}`} onClick={onClick} aria-label={aria}>
       <span className={s.statLabel}>{label}<Icon name="ChevronRight" size={16} className={s.chev} /></span>
       <b className={s.big}>{big}<small>{small}</small></b>
-      <span className={s.statSub}>{sub}</span>
+      <span className={`${s.statSub} ${s[tone]}`}><Icon name={icon} size={15} />{sub}</span>
     </button>
   );
+  const connOk = live === used.length;
   return (
     <div className={`${s.hero} ${s.hero3}`} role="group" aria-label="Is my data working">
-      {card('Connection health', live, `/${systems.length}`, live === systems.length ? 'every source is current' : 'sources current', live < systems.length ? 'statWarn' : '', onConnections, `Connection health: ${live} of ${systems.length} sources are current. Show connections.`)}
-      {card('Data readiness', own, `/${rows.length}`, 'kinds are your own data', '', onReadiness, `Data readiness: ${own} of ${rows.length} kinds are your own data. Show readiness by kind.`)}
-      {card('Unresolved issues', items.length, '', items.length ? 'need fixing' : 'nothing to fix', items.length ? 'statWarn' : '', onIssues, `${items.length} unresolved issue${items.length === 1 ? '' : 's'}. Go to what to fix next.`)}
+      {card('Connections', live, `/${used.length}`, connOk ? 'Healthy' : `${used.length - live} need${used.length - live === 1 ? 's' : ''} a look`, connOk ? 'subGood' : 'subWarn', connOk ? 'CircleCheck' : 'TriangleAlert', onConnections,
+        `Connections: ${live} of ${used.length} systems you use are sending current data. Show connections.`)}
+      {card('Data readiness', ready, `/${rows.length}`, 'Ready to use', ready === rows.length ? 'subGood' : 'subPlain', ready === rows.length ? 'CircleCheck' : 'Database', onReadiness,
+        `Data readiness: ${ready} of ${rows.length} kinds of data are current, complete and checked. Show readiness by kind.`)}
+      {card('Needs attention', items.length, '', items.length ? 'Action needed' : 'Nothing to fix', items.length ? 'subWarn' : 'subGood', items.length ? 'TriangleAlert' : 'CircleCheck', onIssues,
+        `${items.length} thing${items.length === 1 ? '' : 's'} need attention. Go to what to fix next.`)}
     </div>
   );
 }
 
 /* ------------------------------------------------------------------ fix next: the main action area */
+const stateOf = (it) => (it.feed?.state === 'off' ? 'Not started' : it.feed?.state === 'partial' ? 'Incomplete' : it.feed?.state === 'stale' ? 'Out of date' : 'Needs data');
+const effort = (it) => `About ${it.minutes} min${it.method === 'type' ? '' : it.method === 'toast' ? ' to connect' : ' if you already keep this in a file'}`;
+
+function FixAction({ it, primary, big, server, onOpen, onLink }) {
+  const v = primary ? 'primary' : 'secondary';
+  const size = big ? undefined : 'sm';
+  const label = actionLabel(it.kind, it.method === 'link' && !server ? 'upload' : it.method);
+  if (it.method === 'toast') return <Link className={`btn btn-${v} ${big ? '' : 'btn-sm'}`} href="/connect"><Icon name="PlugZap" size={15} />{label}</Link>;
+  if (it.method === 'link' && server) return <Button size={size} variant={v} icon="Link2" onClick={() => onLink(it.kind)}>{label}</Button>;
+  return <Button size={size} variant={v} icon={it.method === 'type' ? 'PencilLine' : 'Upload'} onClick={() => onOpen(it.kind, it.method === 'type' ? 'grid' : 'csv')}>{label}</Button>;
+}
+
 export function FixNext({ items, onOpen, onLink, onUnlocks, server, sample, quiet = false }) {
   const [why, setWhy] = React.useState(null);
   const [more, setMore] = React.useState(false);
   if (!items.length) {
     return (
-      <div className={s.allGood}><Icon name="CircleCheck" size={22} color="var(--success-600)" /><div><b>Your data is working</b><span>Every finding at {CV_ROOM.short} has the data it needs.</span></div></div>
+      <div className={s.allGood}><Icon name="CircleCheck" size={22} color="var(--success-600)" /><div><b>Nothing to fix</b><span>Every finding at {CV_ROOM.short} has the data it needs.</span></div></div>
     );
   }
-  const shown = more ? items : items.slice(0, 3);
+  const [top, ...rest] = items;
+  const shown = more ? rest : rest.slice(0, 2);
+  const Why = ({ it }) => (
+    <div className={s.whyBox} id={`why-${it.kind}`}>
+      <p>{it.missing} {it.why}</p>
+      <p><b>Fastest way:</b> {METHODS[it.method].label}. {METHODS[it.method].how}</p>
+      <div className="cv-row" style={{ gap: 8 }}>
+        <Button size="sm" variant="ghost" icon="Calculator" onClick={() => onUnlocks(it.kind)}>See the data needed and the calculation</Button>
+        {it.method !== 'type' && <Button size="sm" variant="ghost" icon="PencilLine" onClick={() => onOpen(it.kind, 'grid')}>Type it in instead</Button>}
+      </div>
+    </div>
+  );
+  const whyBtn = (it) => <button type="button" className={s.whyBtn} aria-expanded={why === it.kind} aria-controls={`why-${it.kind}`} onClick={() => setWhy(why === it.kind ? null : it.kind)}>Why this matters<Icon name={why === it.kind ? 'ChevronUp' : 'ChevronDown'} size={15} /></button>;
   return (
     <>
-      <div className={s.fixes}>
-        {shown.map((it, i) => {
-          const m = METHODS[it.method];
-          const v = i === 0 && !quiet ? 'primary' : 'secondary';
-          const action = it.method === 'toast'
-            ? <Link className={`btn btn-${v} btn-sm`} href="/connect"><Icon name="PlugZap" size={15} />Connect Toast</Link>
-            : it.method === 'link' && server
-              ? <Button size="sm" variant={v} icon="Link2" onClick={() => onLink(it.kind)}>Link a sheet</Button>
-              : <Button size="sm" variant={v} icon={it.method === 'type' ? 'PencilLine' : 'Upload'} onClick={() => onOpen(it.kind, it.method === 'type' ? 'grid' : 'csv')}>{it.method === 'type' ? 'Enter it' : 'Upload it'}</Button>;
-          const open = why === it.kind;
-          const status = it.blocked.length ? `${it.blocked.length} finding${it.blocked.length === 1 ? '' : 's'} on hold` : it.feed?.state === 'off' ? 'Missing' : it.feed?.state === 'partial' ? 'Incomplete' : 'Out of date';
-          return (
-            <article key={it.kind} className={`${s.fix} ${i === 0 ? s.fixTop : ''}`} aria-labelledby={`fix-${it.kind}`}>
-              <div className={s.fixHead}>
-                <span className={`cv-q-ico ${it.blocked.length ? 'bad' : 'warn'}`}><Icon name={SCHEMAS[it.kind].icon} size={18} /></span>
-                <Pill icon="Clock">~{it.minutes} min</Pill>
-              </div>
-              <b id={`fix-${it.kind}`} className={s.fixTitle}>{it.title}</b>
-              <span className={s.fixBig}>{status}</span>
-              <button type="button" className={s.fixUnlock} onClick={() => onUnlocks(it.kind)}>
-                <span><b>Fixing it unlocks:</b> {NEEDS[it.kind].unlocks.replace(/\.$/, '').toLowerCase()}</span>
-                <Icon name="ChevronRight" size={15} className={s.chev} />
-              </button>
-              {it.exposure > 0 && (
-                <span className={s.fixMeta}>{usd(it.exposure)}/wk on hold <Claim k="est" />{sample && <SampleTag />}</span>
-              )}
-              <div className={s.fixAct}>
-                {action}
-                <button type="button" className={s.whyBtn} aria-expanded={open} onClick={() => setWhy(open ? null : it.kind)}>Why?</button>
-              </div>
-              {open && (
-                <div className={s.whyBox}>
-                  <p>{it.missing}</p>
-                  <p><b>Why it matters:</b> {it.why}</p>
-                  <p><b>Fastest way:</b> {m.label}. {m.how}</p>
-                  {it.method !== 'type' && <Button size="sm" variant="ghost" onClick={() => onOpen(it.kind, 'grid')}>Type it in instead</Button>}
+      <article className={s.fixTop} aria-labelledby={`fix-${top.kind}`}>
+        <div className={s.fixTopMain}>
+          <span className={s.fixKicker}><Icon name={SCHEMAS[top.kind].icon} size={16} />{stateOf(top)}{top.blocked.length > 0 && ` · ${top.blocked.length} finding${top.blocked.length === 1 ? '' : 's'} on hold`}</span>
+          <b id={`fix-${top.kind}`} className={s.fixTopTitle}>{top.title}</b>
+          <p className={s.fixBenefit}>Unlocks {NEEDS[top.kind].unlocks.replace(/\.$/, '').toLowerCase()}.</p>
+          {top.exposure > 0 && <span className={s.fixMeta}>{usd(top.exposure)}/wk potential on hold <Claim k="est" />{sample && <SampleTag />}</span>}
+        </div>
+        <div className={s.fixTopAct}>
+          <FixAction it={top} primary={!quiet} big server={server} onOpen={onOpen} onLink={onLink} />
+          <span className={s.fixEffort}>{effort(top)}</span>
+          {whyBtn(top)}
+        </div>
+        {why === top.kind && <Why it={top} />}
+      </article>
+      {shown.length > 0 && (
+        <div className={s.fixRest}>
+          {shown.map((it) => (
+            <article key={it.kind} className={s.fixRow} aria-labelledby={`fix-${it.kind}`}>
+              <div className={s.fixRowLine}>
+                <Icon name={SCHEMAS[it.kind].icon} size={18} className={s.fixRowIco} />
+                <div className={s.fixRowText}>
+                  <b id={`fix-${it.kind}`}>{it.title}</b>
+                  <span>{stateOf(it)} · unlocks {NEEDS[it.kind].unlocks.replace(/\.$/, '').toLowerCase()}</span>
                 </div>
-              )}
+                {whyBtn(it)}
+                <FixAction it={it} server={server} onOpen={onOpen} onLink={onLink} />
+              </div>
+              {why === it.kind && <Why it={it} />}
             </article>
-          );
-        })}
-      </div>
-      {items.length > 3 && <span><Button size="sm" variant="ghost" icon={more ? 'ChevronUp' : 'ChevronDown'} aria-expanded={more} onClick={() => setMore(!more)}>{more ? 'Show fewer' : `Show ${items.length - 3} more`}</Button></span>}
+          ))}
+        </div>
+      )}
+      {rest.length > 2 && <span><Button size="sm" variant="ghost" icon={more ? 'ChevronUp' : 'ChevronDown'} aria-expanded={more} onClick={() => setMore(!more)}>{more ? 'Show fewer' : `Show ${rest.length - 2} more`}</Button></span>}
     </>
   );
 }
 
 /* ------------------------------------------------------------------ connections: the systems data comes from */
 const SYS = {
-  healthy: { label: 'Current', tone: 'good', icon: 'CircleCheck' },
+  healthy: { label: 'Up to date', tone: 'good', icon: 'CircleCheck' },
   partial: { label: 'Incomplete', tone: 'warn', icon: 'TriangleAlert' },
   stale: { label: 'Out of date', tone: 'warn', icon: 'TriangleAlert' },
   off: { label: 'Not connected', tone: 'neutral', icon: 'CircleDashed' },
 };
+/** An expired sign-in needs reconnecting; a refresh wouldn't help. */
+const needsReconnect = (x) => x.state !== 'healthy' && /token|expired|authori[sz]|sign.?in|password|revoked/i.test(x.note || '');
 
-export function Connections({ systems, sample, onToastExports, onSettings, onReadNow, busy }) {
+export function Connections({ systems, onToastExports, onSettings, onReadNow, busy }) {
   const [open, setOpen] = React.useState(null);
   return (
     <div className={s.conns}>
       {systems.map((x) => {
         const st = SYS[x.state] || SYS.off;
         const on = open === x.id;
+        const bad = x.state === 'stale' || x.state === 'partial';
+        const reconnect = needsReconnect(x);
         return (
           <div key={x.id} className={s.entryWrap}>
-            <div className={s.connRow}>
-              <button type="button" className={s.entryBtn} aria-expanded={on} aria-controls={`conn-${x.id}`} onClick={() => setOpen(on ? null : x.id)}>
-                <span className={s.connName}><Icon name={x.icon} size={16} />{x.name}{x.sample && sample && <SampleTag />}</span>
-                <span className={s.entryMeta}>{x.supplies}</span>
-              </button>
+            <button type="button" className={s.connRow} aria-expanded={on} aria-controls={`conn-${x.id}`} onClick={() => setOpen(on ? null : x.id)}>
+              <span className={s.connMain}>
+                <span className={s.connName}><Icon name={x.icon} size={16} />{x.name}</span>
+                <span className={s.entryMeta}>{x.state === 'off' ? x.supplies : `${x.supplies} · last update ${x.last}`}</span>
+              </span>
               <Pill tone={st.tone} icon={st.icon}>{st.label}</Pill>
               <Icon name={on ? 'ChevronUp' : 'ChevronDown'} size={16} className={s.chev} />
-            </div>
+            </button>
             {on && (
-              <dl className={s.histDetail} id={`conn-${x.id}`}>
-                <dt>Last data</dt><dd>{x.last}</dd>
-                <dt>Recent</dt><dd>{x.state === 'healthy' || x.state === 'partial' ? 'Yes' : x.state === 'stale' ? 'No, it’s out of date' : 'Nothing has come in'}</dd>
-                <dt>Complete</dt><dd>{x.state === 'healthy' ? 'Yes' : x.state === 'partial' ? 'No, part of it is missing' : x.state === 'off' ? 'Nothing has come in' : 'As of the last read'}</dd>
-                <dt>Refresh</dt><dd>{x.refresh}</dd>
-                {x.note && <><dt>Note</dt><dd>{x.note}</dd></>}
-                {x.failed?.length > 0 && <><dt>Flagged</dt><dd>{x.failed.map((f) => `${f.source.split(' · ').pop()}: ${f.why}`).join(' ')}</dd></>}
-                <dt>Controls</dt>
-                <dd className="cv-row" style={{ gap: 8 }}>
-                  {x.link && <Button size="sm" variant="secondary" icon="RefreshCw" disabled={!!busy} onClick={() => onReadNow(x.link)}>{busy === `pull:${x.link.id}` ? 'Reading…' : 'Read it now'}</Button>}
+              <div className={s.connDetail} id={`conn-${x.id}`}>
+                {bad && x.note && <p className={s.caution}><Icon name="TriangleAlert" size={16} />{x.note}</p>}
+                <dl className={s.histDetail}>
+                  <dt>{x.state === 'off' ? 'Status' : 'Last update'}</dt><dd>{x.state === 'off' ? 'Nothing has come in yet' : x.last}</dd>
+                  <dt>Affects</dt><dd>{x.supplies}</dd>
+                  <dt>Updates</dt><dd>{x.refresh}</dd>
+                  {!bad && x.note && <><dt>Note</dt><dd>{x.note}</dd></>}
+                  {x.failed?.length > 0 && <><dt>Flagged</dt><dd>{x.failed.map((f) => `${f.source.split(' · ').pop()}: ${f.why}`).join(' ')}</dd></>}
+                </dl>
+                <div className="cv-row" style={{ gap: 8 }}>
+                  {x.link && <Button size="sm" variant="secondary" icon="RefreshCw" disabled={!!busy} onClick={() => onReadNow(x.link)}>{busy === `pull:${x.link.id}` ? 'Reading…' : 'Refresh now'}</Button>}
                   {x.link && <Button size="sm" variant="ghost" icon="Settings" onClick={() => onSettings(x.link)}>Settings</Button>}
-                  {x.href && <Link className="btn btn-secondary btn-sm" href={x.href}><Icon name="PlugZap" size={15} />{x.state === 'off' ? 'Connect' : 'Manage'}</Link>}
+                  {x.href && <Link className="btn btn-secondary btn-sm" href={x.href}><Icon name={reconnect ? 'RefreshCw' : 'PlugZap'} size={15} />{x.state === 'off' ? `Connect ${x.name}` : reconnect ? `Reconnect ${x.name}` : bad ? 'Check connection details' : 'Manage connection'}</Link>}
                   {x.id === 'Toast' && <Button size="sm" variant="ghost" icon="FileArchive" onClick={onToastExports}>Upload Toast exports instead</Button>}
-                </dd>
-              </dl>
+                </div>
+              </div>
             )}
           </div>
         );
@@ -157,37 +184,23 @@ export function Connections({ systems, sample, onToastExports, onSettings, onRea
   );
 }
 
-/* ------------------------------------------------------------------ coverage: the kinds of data, as a compact matrix */
-const Mark = ({ v }) => (v === true
-  ? <span className={s.mark}><Icon name="Check" size={14} color="var(--success-600)" /><span className="sr-only">Yes</span></span>
-  : v === false
-    ? <span className={s.mark}><Icon name="TriangleAlert" size={14} color="var(--warning-600)" /><span className="sr-only">No</span></span>
-    : <span className={`${s.mark} ${s.markNone}`}>–<span className="sr-only">Not yet</span></span>);
-
-export function CoverageMatrix({ rows, kind, onPick }) {
+/* ------------------------------------------------------------------ coverage: one status per kind of data */
+export function CoverageMatrix({ rows, items, kind, sample, onPick }) {
   return (
     <div className={s.matrix} role="table" aria-label={`Data coverage for ${CV_ROOM.short}`}>
       <div className={`${s.mRow} ${s.mHead}`} role="row">
-        <span role="columnheader">Data</span><span role="columnheader">Comes from</span>
-        <span role="columnheader" className={s.mC}>Recent</span><span role="columnheader" className={s.mC}>Complete</span><span role="columnheader" className={s.mC}>Checked</span><span />
+        <span role="columnheader">Data</span><span role="columnheader">Status</span><span role="columnheader">What it affects</span><span />
       </div>
       {STEP_ORDER.map((k) => {
         const r = rows.find((x) => x.kind === k);
-        const st = STATE[r.src.key] || STATE.sample;
-        const fs = r.feed?.state;
-        // Sample data never earns a check mark: only your own data can be recent, complete and checked.
-        const recent = r.entry ? true : fs === 'stale' ? false : null;
-        const complete = r.entry ? true : fs === 'partial' ? false : null;
-        const checked = r.entry ? r.last?.verified !== false : null;
-        const from = r.src.key === 'linked' ? 'Linked sheet' : r.entry ? 'Entered here' : fs === 'off' ? 'Nothing yet' : 'Sample';
+        const st = READY[kindStatus(r, items.find((x) => x.kind === k))];
+        const own = r.src.key === 'hand' || r.src.key === 'linked';
         return (
           <button key={k} type="button" role="row" className={`${s.mRow} ${k === kind ? s.on : ''}`} onClick={() => onPick(k)}
-            aria-label={`${r.schema.title}: ${from}. Recent ${recent === true ? 'yes' : recent === false ? 'no' : 'not yet'}, complete ${complete === true ? 'yes' : complete === false ? 'no' : 'not yet'}, checked ${checked ? 'yes' : 'not yet'}. Show a preview.`}>
+            aria-label={`${r.schema.title}: ${st.label}${!own && sample ? ', sample data' : ''}. Affects ${AFFECTS[k].toLowerCase()}. Show details.`}>
             <span className={s.mName} role="cell"><Icon name={r.schema.icon} size={16} />{r.schema.title}</span>
-            <span className={s.mFrom} role="cell"><i style={{ background: st.color }} />{from}</span>
-            <span className={s.mC} role="cell"><Mark v={recent} /></span>
-            <span className={s.mC} role="cell"><Mark v={complete} /></span>
-            <span className={s.mC} role="cell"><Mark v={checked} /></span>
+            <span className={s.mStatus} role="cell"><Pill tone={st.tone} icon={st.icon}>{st.label}</Pill>{!own && sample && st.tone === 'good' && <span className={s.mNote}>sample</span>}</span>
+            <span className={s.mFrom} role="cell">{AFFECTS[k]}</span>
             <Icon name="ChevronRight" size={15} className={s.chev} />
           </button>
         );
