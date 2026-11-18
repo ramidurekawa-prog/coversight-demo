@@ -6,7 +6,7 @@ import { Icon, Button } from '../../kit';
 import { engine, useEngine, useSaved } from '../../engine';
 import { useCv, cvMoney, CV_D, CV_ROOM, CV_NOW, Claim, Money, Pill, PageHead } from '../core';
 import { DenseService } from '../dense-sections';
-import { servicePace } from '../../../lib/data/model';
+import { covercastRoom, livePace, liveTuning, quarterCurve, shiftPulseDay } from '../../../lib/data/forecast/index.js';
 import {
   addDays, bandSpread, clockLabel, clockMinutes, cutApprovalId, dayOfDate, dayOutlook, fencesOf, hhmm, hourRows, isCutFor, localNow,
   manualNight, MEALS, mealOf, MIN_CALIBRATED, pacing, serviceRecap, servicePlan, slotRows, SLOT_MIN, toCsv,
@@ -118,6 +118,29 @@ function useLive(roomId, enabled) {
   return live;
 }
 
+/**
+ * Covercast for this room: from the server when there is one (the same call
+ * the server's checks use), else computed here from the room's data. Null
+ * until it's ready, or when there isn't enough history: the page then runs on
+ * the old rules and says so.
+ */
+function useCovercast(room, roomId, useServer) {
+  const [srv, setSrv] = React.useState(/** @type {any} */ (null));
+  React.useEffect(() => {
+    if (!useServer) return undefined;
+    let stop = false;
+    setSrv(null);
+    call(`/api/forecast?room=${encodeURIComponent(roomId)}&days=14`).then((b) => { if (!stop) setSrv(b.forecast?.ready ? b.forecast : false); }).catch(() => { if (!stop) setSrv(false); });
+    return () => { stop = true; };
+  }, [roomId, useServer]);
+  const local = React.useMemo(() => {
+    if (useServer) return null;
+    try { const f = covercastRoom(room, { accuracy: false }); return f.ready ? f : null; } catch { return null; }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomId, useServer]);
+  return useServer ? (srv || null) : local;
+}
+
 /* ================================================================ one shape for every live source */
 
 /** A live service from Toast, in the page's one shape. */
@@ -128,21 +151,27 @@ function fromToast(r) {
     factor: c.factor, spread: c.spread, calibrated: !!c.band?.calibrated, nights: n.weeks, so: c.so, cmp: c.cmp, pace: c.pace,
     remaining: c.remaining, range: c.range, serversNow: c.serversNow, needTop: c.needTop, needMid: c.needMid, mode: c.mode,
     at: c.at, value: c.value, checks: c.checks, why: c.why, checkAt: c.checkAt, stale: n.stale, dataThrough: n.dataThrough,
-    execution: n.execution, fetchedAt: r.fetchedAt,
+    execution: n.execution, fetchedAt: r.fetchedAt, engine: n.engine ?? null,
   };
 }
 
 /** The sample's fixed dinner scene, in the same shape. Its figures are the seed's, labelled as a sample. */
-function fromSample(sv) {
-  const sp = servicePace(sv);
-  const spread = sv.mode === 'wait' ? 0.2 : bandSpread(sv.now, sv.comp.length) * 0.65;
-  const p = pacing({ comp: sv.comp, actual: sv.actual, now: sv.now, spread });
+function fromSample(sv, cc, date) {
+  // The scene's own call (cut, wait, quiet) stands; the pace and the likely finish are Covercast's when it has the day.
+  const start = 17 * 60;
+  const win = { start, end: start + sv.comp.length * SLOT_MIN };
+  const ccDay = cc?.covers?.days?.find((d) => d.iso === date) ?? null;
+  const curve = ccDay ? quarterCurve(ccDay, win) : null;
+  const useCc = !!curve && curve.some((x) => x > 0);
+  const comp = useCc ? curve : sv.comp;
+  const p = useCc
+    ? livePace({ curve, actual: sv.actual, now: sv.now, service: 'dinner', start, tuned: liveTuning(cc.shiftPulse, 'dinner', start + sv.now * SLOT_MIN) })
+    : pacing({ comp: sv.comp, actual: sv.actual, now: sv.now, spread: sv.mode === 'wait' ? 0.2 : bandSpread(sv.now, sv.comp.length) * 0.65 });
   const tile = sv.tiles.find((t) => t[0] === 'Servers on');
   const on = tile ? +tile[1] : null;
   const need = tile ? +((tile[2] || '').match(/\d+/)?.[0] ?? 0) : null;
-  const start = 17 * 60;
   return {
-    source: 'sample', comp: sv.comp, actual: sv.actual, start, end: start + sv.comp.length * SLOT_MIN, ...p, factor: sp?.factor ?? p.factor,
+    source: 'sample', comp, actual: sv.actual, start, end: win.end, ...p, engine: useCc ? 'Covercast' : null,
     calibrated: true, nights: 4, serversNow: on, needTop: need, needMid: need, mode: sv.mode === 'cut' ? 'cut' : sv.mode === 'wait' ? 'wait' : 'quiet',
     at: sv.mode === 'cut' ? start + 12 * SLOT_MIN : null, value: sv.mode === 'cut' ? sv.value : null, why: null, checkAt: sv.mode === 'wait' ? 19 * 60 + 45 : null,
     stale: false, dataThrough: null, execution: null, fetchedAt: null, approval: sv.approval,
@@ -189,7 +218,7 @@ function answerFor({ meal, plan, L, manual, isToday, nowMin, day, fences, own })
   const planned = (kicker) => planCut != null
     ? { tone: 'act', kicker, title: `Plan: 1 server can go home at ${clockLabel(planCut)}`, why: `On each of your last ${plan.weeks} ${Day}s, every hour from then had a spare server, even the busiest week.`, next: 'Look at the room first. Approving puts the 7shifts step on Today; nothing changes in 7shifts until someone does it.', cut: isToday ? { at: planCut, servers: Math.round(plan.hours.find((h) => h.hour === plan.cutFrom).servers), source: 'plan' } : null }
     : short ? { tone: 'warn', kicker, short: true, title: `Add ${short.need - Math.round(short.servers)} server${short.need - Math.round(short.servers) === 1 ? '' : 's'} for the ${clockLabel(short.hour * 60)} rush`, why: `Usually ${Math.round(short.servers)} on, and the busiest recent ${Day} needed ${short.need} at that hour.` }
-    : { tone: 'good', kicker, blocked: !!plan.blocked, title: plan.blocked ? 'Keep everyone on' : `Keep ${Math.round(peak.servers)} servers on for the ${clockLabel(peak.hour * 60)} peak`, why: plan.blocked ? plan.blocked.text : `Usually ${usual} covers. Every hour on recent ${Day}s used all its servers.` };
+    : { tone: 'good', kicker, blocked: !!plan.blocked, title: plan.blocked ? 'Keep everyone on' : `Keep ${Math.round(peak.servers)} servers on for the ${clockLabel(peak.hour * 60)} peak`, why: plan.blocked ? plan.blocked.text : plan.engine ? `Covercast expects ${usual} covers, and every hour needs the servers usually on.` : `Usually ${usual} covers. Every hour on recent ${Day}s used all its servers.` };
 
   if (!plan && !L && !manual) return { tone: 'neutral', kicker: `${M.label} · no data yet`, title: `No ${M.label.toLowerCase()} history yet`, why: own ? `Needs Toast orders and time entries for ${M.label.toLowerCase()} on ${Day}s.` : `The sample group only has dinner. Pick Dinner to see the sample night.`, empty: own };
   if (!isToday) return planned(`${NAMES.brief} · ${M.label}, ${Day}`);
@@ -321,14 +350,16 @@ function CvService() {
   const day = dayOfDate(date);
   const nowMin = clock.minutes;
 
-  const plans = { lunch: servicePlan(CV_D.room, day, fencesSaved, 'lunch'), dinner: servicePlan(CV_D.room, day, fencesSaved, 'dinner') };
+  const cc = useCovercast(CV_D.room, CV_D.id, server);
+  const sp = cc ? shiftPulseDay(cc, date) : null;
+  const plans = { lunch: servicePlan(CV_D.room, day, fencesSaved, 'lunch', sp?.lunch ?? null), dinner: servicePlan(CV_D.room, day, fencesSaved, 'dinner', sp?.dinner ?? null) };
   const outlook = dayOutlook(plans);
 
   // Live per service (today only).
   const liveFor = (m) => {
     if (!isToday) return null;
     if (!own) {
-      if (m === 'dinner') return CV_D.room.service ? fromSample(CV_D.room.service) : null;
+      if (m === 'dinner') return CV_D.room.service ? fromSample(CV_D.room.service, cc, date) : null;
       const lt = CV_D.room.levers?.lunchToday;
       return lt && lt.day === day && plans.lunch ? fromSampleLunch(lt, plans.lunch) : null;
     }
@@ -416,7 +447,7 @@ function CvService() {
   // The source line: what this is, and how fresh. Typed counts never read as live.
   const ago = (iso) => { const m = Math.round((Date.now() - Date.parse(iso)) / 6e4); return m <= 1 ? 'just now' : `${m} min ago`; };
   const weeks = plan?.weeks ?? plans.lunch?.weeks ?? plans.dinner?.weeks;
-  const source = !isToday ? { dot: '', text: `Plan for ${niceDate(date)} · ${weeks ? `from your last ${weeks} ${dayOf(day)}s` : 'no history yet'} · not a live count` }
+  const source = !isToday ? { dot: '', text: plan?.engine ? `Covercast plan for ${niceDate(date)} · not a live count` : `Plan for ${niceDate(date)} · ${weeks ? `from your last ${weeks} ${dayOf(day)}s` : 'no history yet'} · not a live count` }
     : L?.source === 'toast' ? { dot: L.stale ? '' : s.live, text: `Live from Toast · orders through ${L.dataThrough != null ? clockLabel(L.dataThrough) : '—'} · updated ${ago(L.fetchedAt)}` }
       : L?.source === 'sample' ? { dot: '', text: 'Sample night · a fixed scene, not live data' }
         : manual ? { dot: s.typed, text: `Your count · typed for ${clockLabel(clockMinutes(manual.at))} · not a live feed` }
@@ -443,7 +474,7 @@ function CvService() {
     }
     if (mn) return { big: mn.covers, unit: 'guests, your count', foot: `for ${clockLabel(clockMinutes(mn.at))}${mn.typical ? ` · usual by then ${mn.typical}` : ''}`, state: state === 'Done' ? 'Done' : 'Typed', tone: 'typed' };
     if (!p) return { big: null, unit: 'no history', foot: isToday && own && state !== 'Later' ? 'Type your count to track it' : `No ${Mm.label.toLowerCase()} data for ${dayOf(day)}s`, state: null, tone: '' };
-    return { big: o.usual, unit: 'usual covers', foot: `busiest recent week ${o.busiest}`, state, tone: state === 'Now' ? 'now' : '' };
+    return { big: o.usual, unit: p.engine ? 'covers forecast' : 'usual covers', foot: p.engine ? `likely up to ${o.busiest}` : `busiest recent week ${o.busiest}`, state, tone: state === 'Now' ? 'now' : '' };
   };
   const lc = mealCard('lunch'), dc = mealCard('dinner');
   const both = lc.big != null && dc.big != null;
@@ -515,8 +546,8 @@ function CvService() {
     ['Short server-hours', rows.reduce((t, r) => t + r.short, 0)],
     ['Peak needed', Math.max(...rows.map((r) => r.need))],
   ] : [
-    ['Usual covers', rows.reduce((t, r) => t + r.usual, 0)],
-    ['Busiest week', rows.reduce((t, r) => t + r.busiest, 0)],
+    [plan.engine ? 'Covers forecast' : 'Usual covers', rows.reduce((t, r) => t + r.usual, 0)],
+    [plan.engine ? 'Likely up to' : 'Busiest week', rows.reduce((t, r) => t + r.busiest, 0)],
     ['Peak servers needed', Math.max(...rows.map((r) => r.need))],
   ]) : [];
 
@@ -581,7 +612,7 @@ function CvService() {
     problem: { head: `Short at the ${clockLabel(rows.reduce((a, b) => (b.short > a.short ? b : a)).hour * 60)} rush`, big: `${rows.reduce((t, r) => t + r.short, 0)} short server-hour${rows.reduce((t, r) => t + r.short, 0) === 1 ? '' : 's'}`, foot: `on the busiest recent ${dayOf(day)}: slower tables, stretched servers` },
     fix: { label: NAMES.brief, head: 'Schedule for the busiest likely day', big: `${peakNeed} servers`, foot: `at the peak, at your own ${Math.round(plan.rate)} guests per server an hour` },
   } : !L && !manual && plan && spareHrs > 0 ? {
-    problem: { head: `Idle labor on a usual ${dayOf(day)}`, big: `${spareHrs} server-hour${spareHrs === 1 ? '' : 's'}`, foot: wage ? `about ${cvMoney(spareHrs * wage)} with nothing to do` : 'with nothing to do', est: !!wage },
+    problem: { head: plan.engine ? `Idle labor in the ${dayOf(day)} plan` : `Idle labor on a usual ${dayOf(day)}`, big: `${spareHrs} server-hour${spareHrs === 1 ? '' : 's'}`, foot: wage ? `about ${cvMoney(spareHrs * wage)} with nothing to do` : 'with nothing to do', est: !!wage },
     fix: { label: NAMES.brief, head: `Schedule for the ${clockLabel(rows.find((r) => r.need === peakNeed).hour * 60)} peak`, big: `${peakNeed} server${peakNeed === 1 ? '' : 's'}`, foot: plan.blocked ? `needed at the peak · your own rule keeps ${meal === 'dinner' ? fences.minDinner : fences.minAny} on` : 'needed at the peak, even in the busiest recent week' },
   } : null;
 
@@ -603,6 +634,15 @@ function CvService() {
         : { icon: 'Armchair', label: 'Table turn', ...later('turn', own ? 'Comes with Toast table data' : 'Sample: dinner only', null) },
     ];
   })();
+
+  // Covercast's own account of the forecast: what moved it, and where its range comes from.
+  const drivers = (plan?.engine?.drivers?.items || []).filter((x) => x.source !== 'none' && x.label).map((x) => x.label);
+  const ccNote = !(plan?.engine || L?.engine) ? null : [
+    plan?.engine ? `${M.label} ${clockLabel(plan.hours[0].hour * 60)}–${clockLabel((plan.hours.at(-1).hour + 1) * 60)}: ${plan.hours.reduce((t, h) => t + h.covers, 0)} covers, likely ${plan.hours.reduce((t, h) => t + (h.low ?? h.covers), 0)}–${plan.hours.reduce((t, h) => t + h.peak, 0)}` : null,
+    ...drivers.slice(0, 2),
+    L?.engine && L.trust != null ? `live pace trusted ${L.trust}% so far` : null,
+    plan?.engine?.rangeFrom === 'service' ? `range measured on your own past ${M.label.toLowerCase()}s` : null,
+  ].filter(Boolean).join(' · ');
 
   return (
     <div className="cv-page">
@@ -711,11 +751,14 @@ function CvService() {
       <div>
         <section className={`cv-card ${s.panel}`}>
           <div className={s.panelHead}>
-            <h3 className="cv-h4">{chartTitle}</h3>
+            <div className={s.chartHead}>
+              <h3 className="cv-h4">{chartTitle}</h3>
+              {ccNote && <p className={s.ccLine}><span className={s.ccTag}><Icon name="Activity" size={13} />Covercast</span>{ccNote}</p>}
+            </div>
             <Seg label="What to show" value={tab} onChange={(k) => setView({ tab: k })} options={[['forecast', 'Forecast', 'TrendingUp'], ['staffing', 'Staffing', 'Users'], ['performance', 'Performance', 'Gauge']]} wide />
           </div>
           {tab === 'forecast' && L ? <GuestsChart L={L} sel={sel != null && sel >= SLOT_FLOOR ? sel : null} onSel={setSel} staffAt={staffAt} usual={`Usual ${dayOf(day)}`} />
-            : rows.length ? <HourChart rows={rows} mode={tab === 'forecast' ? 'covers' : tab === 'staffing' ? 'staff' : 'perf'} sel={selHour} onSel={setSel} cutFrom={plan?.cutFrom} rate={plan?.rate ?? null} nowHour={nowHour} />
+            : rows.length ? <HourChart cc={!!plan?.engine} rows={rows} mode={tab === 'forecast' ? 'covers' : tab === 'staffing' ? 'staff' : 'perf'} sel={selHour} onSel={setSel} cutFrom={plan?.cutFrom} rate={plan?.rate ?? null} nowHour={nowHour} />
               : <Note icon="Clock">No {M.label.toLowerCase()} history for {dayOf(day)}s yet.{showManual ? ' Type your count in the card above.' : ''}</Note>}
           {stats.length > 0 && <div className={s.stats}>{stats.map(([k, v]) => <div key={k} className={s.stat}><span>{k}</span><b>{v}</b></div>)}</div>}
           {pick == null ? null : (() => {

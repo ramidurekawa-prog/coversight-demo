@@ -11,7 +11,9 @@ import { and, desc, eq, gte, inArray, lt } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { cutApprovalId, clockLabel, DAYS, DEFAULT_TZ, hhmm, isCutFor, LIVE_CADENCE_MIN, liveNight, localNow, MEALS, mealOf, servicePlan, SLOT_MIN } from '../../lib/data/page/service.js';
+import { liveTuning, shiftPulseDay } from '../../lib/data/forecast/index.js';
 import { mapToastDay } from '../../lib/data/toast-api.js';
+import { loadForecast } from '../forecast';
 import { loadDataset } from '../dataset';
 import type { Db } from '../db/client';
 import { actions, posDays, rooms, tasks, toastConnections } from '../db/schema';
@@ -38,7 +40,21 @@ export const LIVE_TTL_MS = 120_000;
 const COMPARABLE_WEEKS = 4;
 const cache = new Map<string, { at: number; value: Live }>();
 const pulls = new Map<string, { at: number; date: string; m: { orders: Rows; time: Rows } }>();
-export function clearServiceCache() { cache.clear(); pulls.clear(); }
+export function clearServiceCache() { cache.clear(); pulls.clear(); casts.clear(); }
+
+/** Covercast per room, kept 10 minutes: it's the slow part, and it only moves with the nightly sync or a new signal. */
+const CAST_TTL_MS = 600_000;
+const casts = new Map<string, { at: number; date: string; f: any }>();
+/** Today's Covercast for a room, or null (not enough history, or it failed: the old rules then run, never a made-up number). */
+async function covercastFor(db: Db, v: V, roomId: string, date: string, now: Date, fetchImpl: Fetch) {
+  const k = `${v.orgId}:${roomId}`;
+  const c = casts.get(k);
+  if (c && now.getTime() - c.at < CAST_TTL_MS && c.date === date) return c.f;
+  let f = null;
+  try { const r = await loadForecast(db, v, roomId, { now, fetchImpl, days: 2 }); f = r.forecast?.ready ? r.forecast : null; } catch { f = null; }
+  casts.set(k, { at: now.getTime(), date, f });
+  return f;
+}
 
 const addDays = (iso: string, n: number) => new Date(Date.parse(`${iso}T12:00:00Z`) + n * 864e5).toISOString().slice(0, 10);
 
@@ -57,10 +73,11 @@ async function fencesFor(db: Db, orgId: string, roomId: string) {
 }
 
 /** The plan's inputs for a room: its covers per server-hour and blended wage, from the same dataset the browser reads. */
-async function planFor(db: Db, orgId: string, roomId: string, day: string, fences: unknown, meal: Meal) {
+async function planFor(db: Db, orgId: string, roomId: string, day: string, fences: unknown, meal: Meal, cc: any = null, date: string | null = null) {
   const loaded = await loadDataset(db, orgId);
   const room = loaded?.ds.rooms[roomId];
-  return room ? servicePlan(room, day, fences, meal) : null;
+  const sp = cc && date ? shiftPulseDay(cc, date) : null;
+  return room ? servicePlan(room, day, fences, meal, sp?.[meal] ?? null) : null;
 }
 
 /** Tonight's approved cut for a room, if any: its time and the servers on before it (from the task's own steps). */
@@ -116,9 +133,12 @@ export async function liveService(db: Db, v: V, roomIdRaw: unknown, { now = new 
       pulls.set(pk, { at: now.getTime(), date, m });
     }
     const fences = await fencesFor(db, v.orgId, roomId);
-    const plan = await planFor(db, v.orgId, roomId, day, fences, meal);
+    const cc = await covercastFor(db, v, roomId, date, now, fetchImpl);
+    const plan = await planFor(db, v.orgId, roomId, day, fences, meal, cc, date);
     const cut = await tonightCut(db, v.orgId, roomId, date);
-    const night = liveNight({ today: { day: date, orders: m.orders, time: m.time }, comparable, nowMin, rate: plan?.rate ?? null, wage: plan?.wage ?? null, fences, cut: cut && mealOf(Math.floor(cut.at / 60)) === meal ? cut : null, meal });
+    const ccDay = cc?.covers?.days?.find((d: { iso: string }) => d.iso === date) ?? null;
+    const covercast = ccDay ? { day: ccDay, tuned: liveTuning(cc.shiftPulse, meal, nowMin) } : null;
+    const night = liveNight({ today: { day: date, orders: m.orders, time: m.time }, comparable, nowMin, rate: plan?.rate ?? null, wage: plan?.wage ?? null, fences, cut: cut && mealOf(Math.floor(cut.at / 60)) === meal ? cut : null, meal, covercast });
     value = night ? { live: true, ...head, night, fetchedAt: now.toISOString(), cadenceMin: LIVE_CADENCE_MIN } : { live: false, ...head, why: 'no-history' };
   } catch (e) {
     const message = e instanceof SyncError ? e.message : 'Couldn’t reach Toast just now. The plan from your recent weeks still holds.';
@@ -177,7 +197,8 @@ export async function refuseCut(db: Db, v: V, input: { roomId: string; date: str
     return { live, title: `${live.day} ${live.date}: release one server from ${clockLabel(want)} to close`, servers: call.serversNow! };
   }
   const fences = await fencesFor(db, v.orgId, input.roomId);
-  const plan = await planFor(db, v.orgId, input.roomId, live.day, fences, meal);
+  const cc = await covercastFor(db, v, input.roomId, live.date, opts.now ?? new Date(), opts.fetchImpl ?? (fetch as Fetch));
+  const plan = await planFor(db, v.orgId, input.roomId, live.day, fences, meal, cc, live.date);
   if (!plan) throw new InputError(`Not enough ${live.day} ${MEALS[meal].label.toLowerCase()}s with servers on the floor to plan it.`);
   if (plan.cutFrom == null) throw new InputError(plan.blocked?.text ?? `Every hour to close has used its servers on recent ${live.day}s.`);
   if (hhmm(plan.cutFrom * 60) !== input.at) throw new InputError('Tonight’s plan moved since this was shown. Look again before approving.');

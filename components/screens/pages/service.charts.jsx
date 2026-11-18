@@ -118,7 +118,7 @@ export function GuestsChart({ L, sel, onSel, staffAt, usual }) {
  *  perf:   guests per server each hour against the room's own average.
  * @param {{ rows: any[], mode: 'covers' | 'staff' | 'perf', sel: number | null, onSel: (hour: number) => void, cutFrom?: number | null, rate?: number | null, nowHour?: number | null, live?: Record<number, number> | null }} p
  */
-export function HourChart({ rows, mode, sel, onSel, cutFrom = null, rate = null, nowHour = null, live = null }) {
+export function HourChart({ rows, mode, sel, onSel, cutFrom = null, rate = null, nowHour = null, live = null, cc = false }) {
   const [ref, W] = useWidth();
   const H = W < 560 ? 230 : 270, P = { l: 40, r: 16, t: 26, b: 34 };
   const val = (r) => (mode === 'covers' ? r.usual : mode === 'staff' ? Math.round(r.servers) : r.perServer ?? 0);
@@ -164,8 +164,8 @@ export function HourChart({ rows, mode, sel, onSel, cutFrom = null, rate = null,
         })}
       </svg>
       <div className="cv-legend">
-        {mode === 'covers' && <><span><i className={s.swBar} />Usual covers</span><span><i className={s.swPeak} />Busiest recent week</span>{live && <span><i className={s.swDot} />Tonight</span>}</>}
-        {mode === 'staff' && <><span><i className={s.swBar} />Servers usually on</span><span><i className={s.swNeed} />Needed (busiest week)</span><span><i className={s.swSpare} />Spare</span><span><i className={s.swShort} />Short</span></>}
+        {mode === 'covers' && <><span><i className={s.swBar} />{cc ? 'Covercast forecast' : 'Usual covers'}</span><span><i className={s.swPeak} />{cc ? 'Top of the likely range' : 'Busiest recent week'}</span>{live && <span><i className={s.swDot} />Tonight</span>}</>}
+        {mode === 'staff' && <><span><i className={s.swBar} />Servers usually on</span><span><i className={s.swNeed} />{cc ? 'Needed (Covercast)' : 'Needed (busiest week)'}</span><span><i className={s.swSpare} />Spare</span><span><i className={s.swShort} />Short</span></>}
         {mode === 'perf' && <><span><i className={s.swBar} />Guests per server</span>{rate != null && <span><i className={s.swNeed} />Your average</span>}</>}
       </div>
     </div>

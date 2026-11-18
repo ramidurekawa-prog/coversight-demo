@@ -291,3 +291,9 @@
 .v_warn .vitalLabel svg { color: var(--warning-600); }
 .v_ok { border-top-color: var(--accent); }
 @media (max-width: 760px) { .vitals { grid-template-columns: repeat(2, minmax(0, 1fr)); } .vitalBig { font-size: 26px; } }
+
+/* ---- Covercast, the forecast underneath ------------------------------------------ */
+.chartHead { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.ccLine { margin: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13.5px; color: var(--fg-2); }
+.ccTag { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 99px; background: #172536; color: #fff; font-size: 12px; font-weight: 800; letter-spacing: 0.04em; }
+.ccTag svg { color: var(--primary); }

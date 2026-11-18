@@ -196,6 +196,21 @@ describe('manualNight (no live feed)', () => {
 });
 
 describe('lunch, dinner and the full day', () => {
+  it('runs the plan on Covercast when it has the day: its covers, range and servers, the floor history kept', () => {
+    const cc = { covers: 70, low: 60, high: 80, rangeFrom: 'service', drivers: { items: [] }, hours: [11, 12, 13, 14].map((hour) => ({ hour, covers: 10, low: 8, high: 12, serversPlan: 1 })) };
+    const p = servicePlan(room, 'Tue', null, 'lunch', cc);
+    expect(p.engine.name).toBe('Covercast');
+    expect(p.hours.map((h) => [h.covers, h.peak, h.low, h.need, h.servers])).toEqual(Array(4).fill([10, 12, 8, 1, 3]));
+    expect(servicePlan(room, 'Tue', null, 'lunch').engine).toBeNull();
+  });
+  it('paces a live service on Covercast’s curve when given one', () => {
+    const win = { start: 17 * 60, end: 18 * 60, slots: 4 };
+    const old = serviceCall({ comp: [5, 5, 5, 5], actual: [4, 4], now: 2, win, serversNow: 3, rate: 10, fences: null });
+    const cc = serviceCall({ comp: [5, 5, 5, 5], actual: [4, 4], now: 2, win, serversNow: 3, rate: 10, fences: null, covercast: { service: 'dinner', tuned: { kappa: 0.4, q: [0.9, 1.1] } } });
+    expect(cc.band.from).toBe('Covercast');
+    expect(Math.abs(cc.pace)).toBeLessThan(Math.abs(old.pace));
+    expect(cc.trust).toBeGreaterThan(0);
+  });
   it('looks back on a finished service: idle server-hours from its own counts', () => {
     const plan = { rate: 10, hours: [{ hour: 11, covers: 8, servers: 3 }, { hour: 12, covers: 20, servers: 3 }] };
     const r = serviceRecap({ plan, slots: [2, 2, 2, 2, 5, 5, 5, 5], start: 11 * 60, servers: 3, wage: 20 });
