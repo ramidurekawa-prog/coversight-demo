@@ -607,7 +607,7 @@ function CvService() {
   return (
     <div className="cv-page">
       <div className={s.lead}>
-        <PageHead over={`${NAMES.page} · ${CV_ROOM.name} · ${dayOf(day)}${isToday ? ` · ${clockLabel(nowMin)}` : ` · ${niceDate(date)}`}`} q={PROMISE[role]} />
+        <PageHead over={`${CV_ROOM.name} · ${dayOf(day)}${isToday ? ` · ${clockLabel(nowMin)}` : ` · ${niceDate(date)}`}`} q={PROMISE[role]} />
         <div className={s.when}>
           {tools && <Seg label="View as" value={role} onChange={(k) => setView({ role: k })} options={ROLES} />}
           <Seg label="Which day" value={view.when === 'today' || view.when === 'tomorrow' ? view.when : 'date'} onChange={(k) => setView({ when: k })} options={[['today', 'Today'], ['tomorrow', 'Tomorrow']]} />
