@@ -5,3 +5,6 @@ next-env.d.ts
 *.tsbuildinfo
 .DS_Store
 .vercel
+
+# Covercast benchmark scratch output
+scripts/.covercast-bench*.json

@@ -78,6 +78,14 @@ here ships to customers.
   commit data or confirm mappings: a person's accept in `server/agents/service.ts`
   does that, as that person. `tests/crew-scenarios.test.js` grades the crew on
   scenarios; add one when an agent learns something new.
+- **Forecasting (Covercast):** `lib/data/forecast/` (pure) forecasts covers and
+  sales by day, week, service, hour and 15 minutes, with a measured 80% range;
+  `server/forecast.ts` + `GET /api/forecast?room=`. Pages that show a forecast
+  or "forecast need" read it from here, never their own average. Hand-entered
+  signals use the `forecast.signals` action key; feeds (weather, events,
+  reservations) live in `server/forecast-feeds.ts` and switch on with a key.
+  `tests/forecast.test.ts` checks it beats the usual-night method on the
+  sample; `node scripts/covercast-report.mjs` prints the full accuracy report.
 - **Groups and people:** `server/team.ts`. A person can belong to several
   groups; the `cv-org` cookie picks the one in view (`viewerFor` only honours
   it for their own memberships). Invite tokens are stored hashed. Never
