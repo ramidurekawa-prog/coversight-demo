@@ -4,6 +4,7 @@ import * as React from 'react';
 
 import { agentAnswer, agentFor, agentRead, agentTeam } from '../lib/ai/agents';
 import { agentRecord, noticedSig, sousBoard, sousMoves, sousRemember } from '../lib/ai/moves';
+import { lineCheck } from '../lib/ai/playbook';
 import { SOUS, firstSentence, sousBrief, sousCites, sousFacts, sousNoticed, sousRole, sousSuggest, sousToday } from '../lib/ai/sous';
 import { money } from '../lib/data/model';
 import { CV_PAGES } from '../lib/pages';
@@ -64,7 +65,7 @@ export function SousButton({ onClick }) {
 }
 
 const TONE_ICON = { warn: 'TriangleAlert', good: 'BadgeCheck', info: 'Info' };
-const ACT = { email: { cta: 'Draft the email', icon: 'Mail' }, approve: { cta: 'Review and approve', icon: 'Check' } };
+const ACT = { email: { cta: 'Draft the email', icon: 'Mail' }, approve: { cta: 'Review and approve', icon: 'Check' }, check: { cta: 'See the fix', icon: 'Wrench' } };
 /** What the button for a move says. */
 const ctaFor = (move) => ACT[move.act.kind]?.cta || `Open ${(CV_PAGES[move.act.page === 'finding' ? 'plan' : move.act.page]?.title || 'it').replace(/^The /, 'the ')}`;
 
@@ -173,6 +174,59 @@ function Fold({ icon, title, n, open, onToggle, children }) {
   );
 }
 
+const CHECK_ICON = { found: 'TriangleAlert', needs: 'CircleDashed', clear: 'CircleCheck' };
+const CHECK_WORD = { found: 'To fix', needs: 'Needs data', clear: 'Clear' };
+
+/**
+ * A specialist's line check: everything a consultant in this area would look
+ * at, run on this room. Things to fix are listed; what is clear and what still
+ * needs data stay behind one click each. Opening a check shows what was found,
+ * the fix, and the rule it rests on.
+ */
+function LineCheck({ book, name, openId, setOpenId, onGo, boxRef }) {
+  const [all, setAll] = React.useState(false);
+  const shown = all ? book.checks : book.checks.filter((c) => c.status === 'found' || c.id === openId);
+  const hidden = book.checks.length - shown.length;
+  return (
+    <section className="cv-check" ref={boxRef} aria-label={`${name}'s line check`}>
+      <header className="cv-check-h">
+        <span className="ic" aria-hidden="true"><Icon name="ListChecks" size={17} /></span>
+        <span className="t"><b>{name}&apos;s line check</b><i>{book.title} · {book.covers}</i></span>
+        <span className="cv-check-n">
+          {book.found > 0 && <i className="found"><Icon name="TriangleAlert" size={13} />{book.found} to fix</i>}
+          {book.needs > 0 && <i className="needs"><Icon name="CircleDashed" size={13} />{book.needs} need data</i>}
+          {book.clear > 0 && <i className="clear"><Icon name="CircleCheck" size={13} />{book.clear} clear</i>}
+        </span>
+      </header>
+      <ul>
+        {shown.map((c) => {
+          const open = openId === c.id;
+          return (
+            <li key={c.id} className={`${c.status}${open ? ' open' : ''}`}>
+              <button type="button" className="cv-check-row" onClick={() => setOpenId(open ? '' : c.id)} aria-expanded={open}>
+                <span className="st" title={CHECK_WORD[c.status]}><Icon name={CHECK_ICON[c.status]} size={16} /><span className="sr">{CHECK_WORD[c.status]}: </span></span>
+                <span className="nm">{c.name}{c.kind === 'law' && <i className="law"><Icon name="Scale" size={12} />Rule</i>}</span>
+                {c.value && <span className="cv-stake sm"><b>{c.value}</b>{c.claim && <Claim k={c.claim} />}</span>}
+                <Icon name={open ? 'ChevronDown' : 'ChevronRight'} size={15} />
+              </button>
+              {open && (
+                <div className="cv-check-b">
+                  <p>{c.text}</p>
+                  {c.value && <p className="u">{c.value} {c.unit}.</p>}
+                  {c.how && <p className="how"><b><Icon name="Wrench" size={13} />The fix</b>{c.how}</p>}
+                  {c.rule && <p className="rule"><b><Icon name="Scale" size={13} />The rule</b>{c.rule}</p>}
+                  {c.status === 'needs' && <p className="need"><b><Icon name="CircleDashed" size={13} />To check this</b>{c.needs}.{c.needsGo && <button type="button" className="cv-sous-more" onClick={() => onGo(c.needsGo)}>Add it</button>}</p>}
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      {(hidden > 0 || all) && <button type="button" className="cv-sous-more" onClick={() => setAll((x) => !x)} aria-expanded={all}>{all ? 'Show only what to fix' : `Show all ${book.checks.length} checks`}</button>}
+    </section>
+  );
+}
+
 /** One answer: a sentence, the figure when there is one, one button, and the records behind "Show why". */
 function Answer({ t, last, onGo, onAsk, onDo }) {
   const [why, setWhy] = React.useState(false);
@@ -224,6 +278,10 @@ export function SousPanel({ onClose, go, role: shellRole = 'owner', tools = fals
   const [lane, setLane] = React.useState('now');
   const [shown, setShown] = React.useState(-1);
   const [team, setTeam] = React.useState(false);
+  // The specialist's line check on show (the page's own unless a ticket from another area was opened) and the check that is open.
+  const [bookPage, setBookPage] = React.useState('');
+  const [check, setCheck] = React.useState('');
+  const bookRef = React.useRef(null);
   const roomId = CV_D.id;
 
   React.useEffect(() => {
@@ -256,6 +314,7 @@ export function SousPanel({ onClose, go, role: shellRole = 'owner', tools = fals
   const opened = open || (move && board.now[0]?.id === move.id && special ? move.id : '');
   const turn = turns.length ? turns[shown < 0 ? turns.length - 1 : shown] : null;
   const lanes = [['now', 'Do now', board.now.length], ['watching', 'Watching', board.watching.length], ['proven', 'Proven', board.proven.length]];
+  const book = lineCheck(bookPage || me.agent.id, CV_D);
   const forget = (id) => setMem((m) => Object.fromEntries(Object.entries(m || {}).filter(([k]) => k !== id)), 'Sous: brought back');
 
 
@@ -265,6 +324,9 @@ export function SousPanel({ onClose, go, role: shellRole = 'owner', tools = fals
       let saved = false;
       if (server) saved = !!(await engine.draftEmail({ kind: 'vendor', subject: m.act.subject, body: m.act.body }).catch(() => null));
       push({ q: m.title, a: '', draft: m.act, saved });
+    } else if (m.act.kind === 'check') {
+      setBookPage(m.act.page); setCheck(m.act.id);
+      requestAnimationFrame(() => bookRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
     } else if (m.act.kind === 'approve') { onClose(); cv.approve(m.act.id); }
     else leave(m.act.page, m.act.goId ? { id: m.act.goId } : undefined);
   };
@@ -341,6 +403,8 @@ export function SousPanel({ onClose, go, role: shellRole = 'owner', tools = fals
               )}
             </section>
           )}
+
+          {book && <LineCheck key={book.page} book={book} name={agentFor(book.page).name} openId={check} setOpenId={setCheck} onGo={leave} boxRef={bookRef} />}
 
           <div className="cv-pass-tabs" role="tablist" aria-label="The Pass">
             {lanes.map(([k, label, n]) => <button key={k} type="button" role="tab" aria-selected={lane === k} className={lane === k ? 'on' : ''} onClick={() => setLane(k)}>{label}<i>{n}</i></button>)}

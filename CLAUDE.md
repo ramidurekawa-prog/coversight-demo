@@ -103,7 +103,14 @@ here ships to customers.
   across pages; its figures keep their own claims and are never summed.
   Sous opens as *the Pass* (`sousBoard()`: tickets in three lanes, Do now /
   Keeping an eye on / Proven, with one ask line), not a chat window: keep it
-  a board. The nightly `sous` job notifies
+  a board. Each specialist's expertise is its *line check*
+  (`lib/ai/playbook.js`: `lineCheck(page, d)`): the things a consultant in
+  that area checks, run on the room, each `found` (with the fix), `clear` or
+  `needs` (says what data is missing). Wage rules are tables by state and city
+  there (`rulesFor(profile)`, from the room's `state`/`city`); never type a
+  pay rate or state a rule for a place with no table, and every rule says it
+  is a summary to confirm with payroll. A new skill for an agent is a new
+  check, which also becomes a fact and can become its move. The nightly `sous` job notifies
   what it noticed and pre-writes briefs. `tests/sous.test.js` and
   `tests/sous.test.ts` cover it; `tests/helpers/fake-claude.ts` stands in for
   the API.

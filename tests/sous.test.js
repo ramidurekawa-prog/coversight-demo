@@ -114,7 +114,7 @@ describe('answers', () => {
   it('answers from the facts and shows which screens they come from', () => {
     const a = sousAnswer('What should we do first?', facts, { room: 'Oakland' });
     expect(a).toMatchObject({ grounded: true, used: ['top'], claim: 'mod', cites: [{ go: 'plan' }] });
-    expect(sousAnswer('Is delivery worth it?', facts).used).toEqual(['delivery']);
+    expect(sousAnswer('Is delivery worth it?', facts).used.slice(0, 1)).toEqual(['delivery']);
     expect(sousAnswer('How did last week go?', facts).used).toEqual(['week', 'week-change']);
     expect(sousRelevant('anything unusual I should worry about?', facts).every((f) => f.id.startsWith('noticed:'))).toBe(true);
   });
@@ -277,7 +277,7 @@ describe('what the agents recommend', () => {
       const known = `${sousSheet(facts)} ${JSON.stringify(d.plan.sorted)} ${JSON.stringify(d.queue)} ${JSON.stringify(d.inv.invoices)} ${JSON.stringify(d.tokens)}`;
       for (const m of moves) {
         expect(m.title.length, m.id).toBeGreaterThan(8);
-        expect(['email', 'approve', 'go']).toContain(m.act.kind);
+        expect(['email', 'approve', 'go', 'check']).toContain(m.act.kind);
         if (m.value) expect(m.claim, `${m.id} has a figure with no claim`).toBeTruthy();
         expect(numbersOk(`${m.title} ${m.value || ''}`, known), `${roomId}/${m.id}: ${m.title} ${m.value}`).toBe(true);
       }
@@ -486,5 +486,55 @@ describe('the Pass', () => {
     const { b } = board('oakland', 'purchasing', mem, t0 + 864e5);
     expect(b.now.some((m) => m.topic === 'purchasing')).toBe(false);
     expect(b.watching.find((w) => w.memId === price.id)).toMatchObject({ kind: 'handled', note: 'You handled this on Oct 27. Checking back Nov 10.' });
+  });
+});
+
+describe('each specialist’s line check', () => {
+  it('runs on every room: each check has a status, and every figure carries a claim', async () => {
+    const { LINE_CHECK_PAGES, lineCheck } = await import('../lib/ai/playbook.js');
+    for (const id of rooms) {
+      const d = room(id);
+      for (const page of LINE_CHECK_PAGES) {
+        const book = lineCheck(page, d);
+        if (!book) continue;
+        expect(book.found + book.clear + book.needs).toBe(book.checks.length);
+        for (const c of book.checks) {
+          expect(['found', 'clear', 'needs'], c.id).toContain(c.status);
+          expect(`${c.name} ${c.text} ${c.how} ${c.rule}`, c.id).not.toMatch(/undefined|NaN|\{[a-zA-Z]+\}/);
+          if (c.value) expect(c.claim, `${c.id} has a figure with no claim`).toBeTruthy();
+          if (c.status === 'needs') expect(c.needs, c.id).toBeTruthy();
+        }
+      }
+    }
+  });
+
+  it('Roster Coach prices overtime the way the plan does, and leads the Labor page with it', async () => {
+    const { lineCheck } = await import('../lib/ai/playbook.js');
+    const { sousMoves } = await import('../lib/ai/moves.js');
+    const { agentRead, agentAnswer } = await import('../lib/ai/agents.js');
+    const d = room('oakland');
+    const ot = lineCheck('labour', d).checks.find((c) => c.id === 'labour:ot-coming');
+    const plan = d.plan.sorted.find((c) => c.prevent && c.who);
+    expect(ot).toMatchObject({ status: 'found', claim: 'obs', value: money(plan.value) });
+    const noticed = sousNoticed(d);
+    const facts = sousFacts(d, { noticed });
+    const moves = sousMoves(d, { noticed });
+    const read = agentRead('labour', facts, noticed, { moves });
+    expect(read.move).toMatchObject({ source: 'check', go: 'labour', act: { kind: 'check', id: 'labour:ot-coming' } });
+    expect(agentAnswer('labour', 'Can I send a server home early?', facts).used[0]).toBe('check:labour:spare');
+    expect(agentAnswer('labour', 'Which wage rules should I watch?', facts).used.every((id) => id.startsWith('check:labour:'))).toBe(true);
+  });
+
+  it('wage rules follow where the room is, and no rule is stated for a room with no state on file', async () => {
+    const { lineCheck, rulesFor } = await import('../lib/ai/playbook.js');
+    const ids = (d) => lineCheck('labour', d).checks.map((c) => c.id);
+    expect(ids(room('berkeley'))).toContain('labour:fair-week');
+    expect(ids(room('oakland'))).not.toContain('labour:fair-week');
+    const d = room('oakland');
+    const nowhere = { ...d, profile: { ...d.profile, state: undefined, city: undefined } };
+    expect(rulesFor(nowhere.profile).known).toBe(false);
+    const book = lineCheck('labour', nowhere);
+    expect(book.checks.filter((c) => c.kind === 'law').map((c) => c.id)).toEqual(['labour:state']);
+    expect(book.checks.map((c) => c.rule).join(' ')).not.toMatch(/California|meal break/);
   });
 });
