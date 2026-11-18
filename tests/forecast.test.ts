@@ -4,6 +4,7 @@ import { applyInputs } from '../lib/data/apply.js';
 import { addDays, holidayOn, holidaysOfYear } from '../lib/data/forecast/calendar.js';
 import { backtestDays, backtestHours, buildDays, forecast, reforecast, TUNING } from '../lib/data/forecast/engine.js';
 import { covercastRoom } from '../lib/data/forecast/index.js';
+import { livePace, quarterCurve, servicePlanOf, shiftPulseDay } from '../lib/data/forecast/shift-pulse.js';
 import { methodForecasts } from '../lib/data/forecast/methods.js';
 import { seriesFromOrders, seriesFromSample, withManualDays } from '../lib/data/forecast/series.js';
 import { mapToastDay } from '../lib/data/toast-api.js';
@@ -210,6 +211,66 @@ describe('Covercast from Toast orders, and during service', () => {
     expect(late.total).toBe(90 + late.restTotal);
     // A manager's count since 5 pm works the same way.
     expect(reforecast(day, 40, { nowHour: 19, fromHour: 17, kappa: 0.2 })!.soFar).toBe(40);
+  });
+});
+
+describe('Covercast runs Shift Pulse (the Service page)', () => {
+  const ccs = Object.fromEntries(ROOMS.map((id) => [id, covercastRoom(ds.rooms[id], { days: 7 }) as any]));
+  it('beats the page’s old rules on every room: hours a day ahead, and the rest of service from every cut', () => {
+    for (const id of ROOMS) {
+      const r = ccs[id].shiftPulse;
+      expect(r.days).toBeGreaterThan(60);
+      for (const s of ['lunch', 'dinner']) {
+        expect(r.plan[s].covercast.wape).toBeLessThan(r.plan[s].old.wape);
+        for (const cut of Object.keys(r.liveScore[s])) expect(r.liveScore[s][cut].covercast.wape).toBeLessThan(r.liveScore[s][cut].old.wape);
+      }
+    }
+  });
+  it('plans fewer idle server-hours across the group, with no more short hours', () => {
+    const all = ROOMS.flatMap((id) => ['lunch', 'dinner'].map((s) => ccs[id].shiftPulse.staffing[s]));
+    const tot = (k: 'covercast' | 'old', f: 'shortHours' | 'spareServerHours') => sum(all.map((x: any) => x[k][f]));
+    expect(tot('covercast', 'shortHours')).toBeLessThanOrEqual(tot('old', 'shortHours'));
+    expect(tot('covercast', 'spareServerHours')).toBeLessThan(tot('old', 'spareServerHours') * 0.9);
+  });
+  it('splits a day into lunch and dinner by hour, with servers at the forecast, the plan and the range top', () => {
+    const cc = ccs.oakland;
+    const d = shiftPulseDay(cc, cc.covers.days[0].iso) as any;
+    for (const s of ['lunch', 'dinner'] as const) {
+      const p = d[s]!;
+      expect(p.rangeFrom).toBe('service');
+      expect(p.hours.every((h: any) => (s === 'lunch' ? h.hour < 16 : h.hour >= 16))).toBe(true);
+      for (const h of p.hours as any[]) {
+        expect(h.low).toBeLessThanOrEqual(h.covers);
+        expect(h.high).toBeGreaterThanOrEqual(h.covers);
+        expect(h.serversPlan).toBeGreaterThanOrEqual(h.servers!);
+        expect(h.serversHigh).toBeGreaterThanOrEqual(h.servers!);
+      }
+    }
+    expect(Math.abs(d.lunch!.covers + d.dinner!.covers - d.value)).toBeLessThanOrEqual(2);
+    // Without the record, the day's range is used, and it says so.
+    expect(servicePlanOf(cc.covers.days[0], 'dinner', { rate: cc.rate })!.rangeFrom).toBe('day');
+  });
+  it('gives a 15-minute curve for a service window that adds up to its hours', () => {
+    const day = ccs.berkeley.covers.days[0];
+    const curve = quarterCurve(day, { start: 17 * 60, end: 22 * 60 });
+    expect(curve).toHaveLength(20);
+    const hours = sum(day.hours.filter((h: any) => h.hour >= 17 && h.hour < 22).map((h: any) => h.value));
+    expect(Math.abs(sum(curve) - hours)).toBeLessThan(2);
+  });
+  it('trusts tonight’s pace more as service fills in, within the measured range', () => {
+    const curve = Array(20).fill(5);
+    const hot = curve.map((c) => c * 1.3);
+    const early = livePace({ curve, actual: hot, now: 2, service: 'dinner', start: 17 * 60, tuned: { kappa: 0.4, q: [0.9, 1.1] } });
+    const late = livePace({ curve, actual: hot, now: 14, service: 'dinner', start: 17 * 60, tuned: { kappa: 0.4, q: [0.9, 1.1] } });
+    expect(early.rawPace).toBe(30);
+    expect(early.pace).toBeLessThan(late.pace);
+    expect(late.pace).toBeLessThanOrEqual(30);
+    expect(late.range[0]).toBeLessThan(late.remaining);
+    expect(late.range[1]).toBeGreaterThan(late.remaining);
+    expect(late.measured).toBe(true);
+    const flat = livePace({ curve, actual: curve, now: 8, service: 'dinner', start: 17 * 60 });
+    expect(flat.pace).toBe(0);
+    expect(flat.measured).toBe(false);
   });
 });
 

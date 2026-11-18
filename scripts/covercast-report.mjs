@@ -6,6 +6,8 @@
 import { applyInputs } from '../lib/data/apply.js';
 import { backtestDays, backtestHours } from '../lib/data/forecast/engine.js';
 import { seriesFromSample } from '../lib/data/forecast/series.js';
+import { serverRate } from '../lib/data/forecast/index.js';
+import { backtestShiftPulse } from '../lib/data/forecast/shift-pulse.js';
 import { METHODS } from '../lib/data/forecast/methods.js';
 import { SEED } from '../lib/data/seed.js';
 import { stressRoom } from '../tests/helpers/forecast-fixture.js';
@@ -45,3 +47,18 @@ for (const e of extra) console.log(`| ${e.name} | ${e.label} | ${e.from} to ${e.
 console.log('\nEach method alone (day ahead, normal days, covers):\n');
 console.log(`| Room | ${Object.values(METHODS).map((x) => x.label).join(' | ')} |\n|---|${Object.keys(METHODS).map(() => '---').join('|')}|`);
 for (const e of extra.filter((x) => x.label === 'Covers')) console.log(`| ${e.name} | ${Object.keys(METHODS).map((k) => pct(e.methods[k]?.wape)).join(' | ')} |`);
+
+// Shift Pulse (the Service page): Covercast against the page's old rules (mean of 4 same
+// weekdays, raw pace, servers sized to the busiest of 4 weeks), per service, sample rooms.
+console.log('\nShift Pulse, covers, sample rooms (old rules → Covercast):\n');
+console.log('| Room | Service | Hour, day ahead | Rest of service (by cut) | Short hours | Idle server-hours |\n|---|---|---|---|---|---|');
+for (const id of Object.keys(ds.rooms)) {
+  const room = ds.rooms[id];
+  const r = backtestShiftPulse(seriesFromSample(room), { rate: serverRate(room) });
+  if (!r) continue;
+  for (const sv of ['lunch', 'dinner']) {
+    const live = Object.entries(r.liveScore[sv]).map(([c, x]) => `${c > 12 ? c - 12 : 12} pm ${pct(x.old?.wape)} → ${pct(x.covercast?.wape)}`).join(', ');
+    const st = r.staffing[sv];
+    console.log(`| ${room.profile?.short ?? id} | ${sv} | ${pct(r.plan[sv].old.wape)} → ${pct(r.plan[sv].covercast.wape)} | ${live} | ${st.old.shortHours} → ${st.covercast.shortHours} | ${st.old.spareServerHours} → ${st.covercast.spareServerHours} |`);
+  }
+}
