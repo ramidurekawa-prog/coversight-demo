@@ -168,6 +168,8 @@ import {
   History,
   Minus,
   Settings,
+  TrendingDown,
+  User,
 } from 'lucide-react';
 
 const ICONS = {
@@ -334,6 +336,8 @@ const ICONS = {
   History,
   Minus,
   Settings,
+  TrendingDown,
+  User,
 };
 
 /** Every icon name the screens use. A unit test keeps this list complete. */

@@ -59,7 +59,7 @@ export function DenseWeek() {
       <Bars vals={days.map((d) => d.net)} labels={days.map((d) => `${d.dow} ${d.iso.slice(5)}`)} fmt={money} compare={prev.map((d) => d.net)} height={130} />
       <div className="cv-tablewrap" tabIndex={0} role="group" aria-label="Days this week">
         <table className="cv-table">
-          <thead><tr><th>Day</th><th className="r">Sales</th><th className="r">vs last week</th><th className="r">vs last year</th><th className="r">Covers</th><th className="r">Check</th><th className="r">Labour</th><th className="r">Earned</th></tr></thead>
+          <thead><tr><th>Day</th><th className="r">Sales</th><th className="r">vs last week</th><th className="r">vs last year</th><th className="r">Covers</th><th className="r">Check</th><th className="r">Labor</th><th className="r">Earned</th></tr></thead>
           <tbody>{days.map((d, i) => { const ly = sameDayLastYear(dense, d.iso); return (
             <tr key={d.iso}><td style={{ whiteSpace: 'nowrap' }}>{d.dow} {d.iso.slice(5)}</td><td className="r cv-num">{money(d.net)}</td>
               <td className={`r cv-num ${cls(d.net, prev[i].net)}`}>{pct(d.net, prev[i].net)}</td>
