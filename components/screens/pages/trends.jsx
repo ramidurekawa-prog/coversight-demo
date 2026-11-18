@@ -8,8 +8,8 @@ import { CV_D, CV_GROUP, CV_ROOM, Callout, Claim, PageHead, Pill, useCv } from '
 import { dataEnd } from '../../../lib/data/readers';
 import {
   CAUSES, JUDGE_WEEKS, METHOD, METRIC, METRICS, METRIC_GROUPS, MIN_BASELINE, RUN,
-  availableMetrics, cleanNotes, directionOf, explainSignal, fmtChange, fmtMetric,
-  isExplained, lastYearIndex, noteKey, rangesFor, signalKey, trendsCsv, trendsFor,
+  availableMetrics, cleanNotes, explainSignal, fmtChange, fmtMetric,
+  isExplained, lastYearIndex, leaksOf, noteKey, rangesFor, signalKey, trendsCsv, trendsFor,
 } from '../../../lib/data/page/trends';
 import { Spark, TrendChart } from './trends-chart';
 import { useTodayTheme } from './today.themes';
@@ -27,8 +27,6 @@ import s from './trends.module.css';
 // green for good, amber for caution, red only when it's genuinely critical.
 const SERIES_COLOR = 'var(--fg-1)';
 const CMP_COLOR = 'var(--fg-3)';
-const SEV_LABEL = { high: 'High', medium: 'Medium', low: 'Low', info: 'Good news' };
-const SEV_CLASS = { high: s.sevHigh, medium: s.sevMedium, low: s.sevLow, info: s.sevInfo };
 const tone = (key, v) => (v == null || Math.abs(v) < 0.05 ? 'cv-faint' : (v > 0) === METRIC[key].up ? 'cv-up' : 'cv-down');
 const shortDate = (iso) => (iso ? new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }) : '');
 const isMoney = (key) => ['money', 'cents'].includes(METRIC[key]?.unit);
@@ -134,59 +132,101 @@ function Progress({ have, need }) {
   return <span className={s.progress} role="progressbar" aria-valuemin={0} aria-valuemax={need} aria-valuenow={have} aria-label="Weeks of history"><span style={{ width: `${pct}%` }} /></span>;
 }
 
-/* ------------------------------------------------------------- verdict */
+/* ------------------------------------------------------------- leak watch */
 
-const STATE = {
-  improving: { word: 'Improving', icon: 'TrendingUp', cls: 'cv-up' },
-  steady: { word: 'Steady', icon: 'CircleMinus', cls: '' },
-  slipping: { word: 'Slipping', icon: 'TrendingDown', cls: 'cv-down' },
-  unknown: { word: 'Building history', icon: 'Hourglass', cls: '' },
-};
-
-/** One plain sentence on what the verdict means. */
-function verdictNote(dir, t) {
-  if (dir.state === 'unknown') return `Each week is compared with this room's own usual. That takes ${MIN_BASELINE + 1} weeks of its data to learn.`;
-  const what = 'Contribution (sales minus food and labor)';
-  const ch = dir.change?.text ?? '';
-  if (dir.state === 'improving') return `${what} is ${ch} on its usual, more than normal week-to-week swings, so the gain is real.${dir.yoy ? '' : ' Some of it may be seasonal.'}`;
-  if (dir.state === 'slipping') return `${what} is ${ch} on its usual, a bigger drop than normal week-to-week swings. Start with the first thing to look at.`;
-  return `${what} is within normal week-to-week swings of its usual${t.signals.some((x) => !x.good) ? '. One measure below is still worth a look.' : '.'}`;
+/** What the dollar conversion needs from the room: dishes sold a week and the average wage. */
+function ctxOf(d) {
+  const staff = d?.room?.staff ?? [];
+  const hours = staff.reduce((a, p) => a + (p.hours || 0), 0);
+  return { dishes: d?.menu?.units || null, wage: hours ? staff.reduce((a, p) => a + (p.hours || 0) * (p.rate || 0), 0) / hours : null };
 }
+const usd = (v) => `$${Math.round(Math.abs(v)).toLocaleString('en-US')}`;
+const signedUsd = (v) => `${v < 0 ? '−' : '+'}${usd(v)}`;
 
-function RoomSummary({ t, name }) {
-  const dir = directionOf(t);
-  const st = STATE[dir.state];
-  const x = t.metrics.earned;
-  const n = t.rows.length;
-  const word = { improving: 'is improving', steady: 'is steady', slipping: 'is slipping', unknown: 'is still building its history' }[dir.state];
+/**
+ * The answer first: how much is leaking out of this room each week, how much
+ * the changes that are working bring in, and the last 13 weeks in total.
+ * Totals never count one move twice (see leaksOf).
+ */
+function LeakHero({ t, L, name }) {
   const have = Math.max(0, MIN_BASELINE + 1 - t.w.needWeeks);
-  return (
-    <section className={`cv-card ${s.verdict}`} data-state={dir.state} aria-labelledby="trends-how">
-      <div className={s.vPart}>
-        <span className={`${s.vIcon} ${st.cls}`}><Icon name={st.icon} size={26} /></span>
-        <span className="cv-col" style={{ gap: 4, minWidth: 0 }}>
-          <span className={s.vWord}>{name} {word}</span>
-          <p className={s.vNote}>{verdictNote(dir, t)}</p>
-        </span>
-      </div>
-      {dir.state === 'unknown' ? (
+  if (!t.w.ready) {
+    return (
+      <section className={`cv-card ${s.verdict}`} data-state="unknown">
+        <div className={s.vPart}>
+          <span className={s.vIcon}><Icon name="Hourglass" size={26} /></span>
+          <span className="cv-col" style={{ gap: 4, minWidth: 0 }}>
+            <span className={s.vWord}>Learning {name}&apos;s normal week</span>
+            <p className={s.vNote}>Leak Watch needs {MIN_BASELINE + 1} weeks of this room&apos;s own data before it can tell a leak from an ordinary week.</p>
+          </span>
+        </div>
         <div className={s.vStat}>
           <span className="cv-xs cv-faint">History</span>
           <span className={s.big}>{have}<small> / {MIN_BASELINE + 1} weeks</small></span>
           <Progress have={have} need={MIN_BASELINE + 1} />
         </div>
-      ) : (
-        <div className={s.vStat}>
-          <span className="cv-xs cv-faint cv-row" style={{ gap: 6 }}>Contribution a week <Claim k={x.claim} /></span>
-          <span className={s.big}>{fmtMetric('earned', dir.recent)}</span>
-          <Delta metric="earned" a={dir.recent} b={dir.base} suffix={`vs usual ${fmtMetric('earned', dir.base)}`} neutral={dir.state === 'steady'} big />
-        </div>
-      )}
-      <div className={s.vSpark}>
-        <span className="cv-xs cv-faint">Last {JUDGE_WEEKS} weeks</span>
-        <Spark vals={x.vals.slice(Math.max(t.w.from, n - JUDGE_WEEKS))} lim={x.lim} height={56} ariaLabel={`Contribution, last ${JUDGE_WEEKS} weeks`} />
+      </section>
+    );
+  }
+  const leaking = L.leakWeek > 0;
+  const nLeaks = L.leaks.filter((e) => e.s.ongoing && e.counted).length;
+  const nWins = L.wins.filter((e) => e.s.ongoing && e.counted).length;
+  const net13 = L.win13 - L.leak13;
+  const title = leaking ? <>{name} is losing about <span className={s.heroLoss}>{usd(L.leakWeek)}</span> a week</> : <>No slow leaks in {name} right now</>;
+  const note = leaking
+    ? `${plural(nLeaks, 'slow change')} ${nLeaks === 1 ? 'is' : 'are'} costing money every week, about ${usd(L.leak13)} over the last ${L.weeks} weeks. Fix the first one below.`
+    : L.winWeek > 0
+      ? `Nothing is costing money week after week. ${plural(nWins, 'change')} ${nWins === 1 ? 'is' : 'are'} bringing in about ${usd(L.winWeek)} a week: keep ${nWins === 1 ? 'it' : 'them'} going.`
+      : 'Nothing is costing money week after week. Every number is back within its normal swings.';
+  return (
+    <section className={`cv-card ${s.verdict} ${s.hero}`} data-state={leaking ? 'slipping' : 'improving'} aria-labelledby="leak-answer">
+      <div className={s.vPart}>
+        <span className={`${s.vIcon} ${leaking ? 'cv-down' : 'cv-up'}`}><Icon name={leaking ? 'TrendingDown' : 'CircleCheck'} size={26} /></span>
+        <span className="cv-col" style={{ gap: 6, minWidth: 0 }}>
+          <span className={s.vWord} id="leak-answer">{title}</span>
+          <p className={s.vNote}>{note}</p>
+        </span>
       </div>
+      <div className={s.heroFigs}>
+        <div className={s.heroFig}>
+          <span className={s.heroLabel}>Leaking now</span>
+          <span className={`${s.big} ${leaking ? s.loss : ''}`}>{leaking ? `−${usd(L.leakWeek)}` : '$0'}<small> a week</small></span>
+        </div>
+        <div className={s.heroFig}>
+          <span className={s.heroLabel}>Gaining now</span>
+          <span className={`${s.big} ${L.winWeek > 0 ? s.gain : ''}`}>{L.winWeek > 0 ? `+${usd(L.winWeek)}` : '$0'}<small> a week</small></span>
+        </div>
+        <div className={s.heroFig}>
+          <span className={s.heroLabel}>Last {L.weeks} weeks</span>
+          <span className={`${s.big} ${net13 < 0 ? s.loss : net13 > 0 ? s.gain : ''}`}>{net13 ? signedUsd(net13) : '$0'}</span>
+          <span className="cv-xs cv-faint">{usd(L.win13)} gained, {usd(L.leak13)} leaked</span>
+        </div>
+      </div>
+      <span className={s.heroClaim}><Claim k="est" /><span>Estimates. Each change is measured against its own usual level, in contribution (what&apos;s left of sales after food and labor).</span></span>
     </section>
+  );
+}
+
+/**
+ * Normal noise: how much this room's contribution swings in an ordinary week,
+ * so one bad week inside that band isn't mistaken for a leak.
+ */
+function NoiseLine({ t, name }) {
+  const lim = t.metrics.earned.lim;
+  if (!t.w.ready || !lim) return null;
+  const last = t.metrics.earned.latest;
+  const inside = last != null && last >= lim.lcl && last <= lim.ucl;
+  return (
+    <div className={`cv-card ${s.noise}`}>
+      <span className={s.noiseIco}><Icon name="Activity" size={20} /></span>
+      <span className="cv-col" style={{ gap: 4, minWidth: 0 }}>
+        <span className={s.noiseTitle}>Normal ups and downs: {usd(lim.lcl)} to {usd(lim.ucl)} a week</span>
+        <span className={s.headSub}>
+          That&apos;s how far {name}&apos;s contribution swings in an ordinary week. One bad week inside that band is noise, not a leak: no need to react.
+          {last != null && ` This week: ${usd(last)}, ${inside ? 'inside' : 'outside'} the band.`}
+        </span>
+      </span>
+    </div>
   );
 }
 
@@ -204,16 +244,16 @@ function LocationSwitch({ current, onPick }) {
     <div className={s.locs} role="group" aria-label="Location">
       {rooms.map((d) => {
         const t = trendsFor(d.hist.rows);
-        const dir = directionOf(t);
-        const st = STATE[dir.state];
-        const nb = cleanNotes(engine.saved('trends.notes', d.id));
-        const open = t.w.ready ? t.signals.filter((sig) => !sig.good && !isExplained(nb[signalKey(sig, t.rows)])).length : 0;
+        const L = leaksOf(t, ctxOf(d));
+        const name = d.profile?.short || d.id;
+        const kind = !t.w.ready ? 'wait' : L.leakWeek > 0 ? 'loss' : 'ok';
+        const fig = kind === 'wait' ? 'Learning' : kind === 'loss' ? `−${usd(L.leakWeek)}/wk` : 'No leaks';
         return (
-          <button key={d.id} type="button" className={s.loc} aria-pressed={d.id === current} onClick={() => onPick(d.id)}
-            aria-label={`${d.profile?.short || d.id}: ${st.word}${open ? `, ${plural(open, 'change')} to look at` : ''}`}>
-            <span className={`${s.locIco} ${st.cls}`}><Icon name={st.icon} size={16} /></span>
-            <span className={s.locName}>{d.profile?.short || d.id}</span>
-            {open > 0 && <span className={s.locCount}>{open}</span>}
+          <button key={d.id} type="button" className={s.loc} data-kind={kind} aria-pressed={d.id === current} onClick={() => onPick(d.id)}
+            aria-label={`${name}: ${kind === 'loss' ? `losing about ${usd(L.leakWeek)} a week` : kind === 'ok' ? 'no slow leaks' : 'still learning its normal week'}`}>
+            <span className={s.locIco}><Icon name={kind === 'loss' ? 'TrendingDown' : kind === 'ok' ? 'CircleCheck' : 'Hourglass'} size={16} /></span>
+            <span className={s.locName}>{name}</span>
+            <span className={s.locFig}>{fig}</span>
           </button>
         );
       })}
@@ -257,10 +297,10 @@ function watchText(sig) {
 /** A plain title and sentence for one change: what happened, against what's normal. */
 function plainOf(sig, rows) {
   const m = METRIC[sig.metric], e = sig.expected, f = (v) => fmtMetric(sig.metric, v);
-  const name = m.short;
+  const name = { earned: 'Contribution', wcm: 'Margin per dish', exc: 'Voids and comps', covers: 'Guests', net: 'Sales' }[sig.metric] ?? m.label;
   if (sig.kind === 'shift') {
     return {
-      title: `${name} has drifted ${sig.dir}`,
+      title: `${name} ${sig.dir} for ${plural(sig.weeks, 'week')}`,
       text: `For ${sig.weeks} weeks in a row it has sat ${sig.dir === 'up' ? 'above' : 'below'} its usual average of ${f(e.mean)}, at about ${f(sig.avg)}. No single week looks odd, but a run this long isn't normal.`,
     };
   }
@@ -271,8 +311,9 @@ function plainOf(sig, rows) {
   };
 }
 
-function ChangeRow({ sig, t, note, primary, open, editing, onToggle, onEdit, onSave, onRemove, onCancel }) {
+function ChangeRow({ e, t, note, primary, open, editing, onToggle, onEdit, onSave, onRemove, onCancel }) {
   const cv = useCv();
+  const sig = e.s;
   const rows = t.rows;
   const m = METRIC[sig.metric];
   const x = t.metrics[sig.metric];
@@ -295,11 +336,11 @@ function ChangeRow({ sig, t, note, primary, open, editing, onToggle, onEdit, onS
         <div className={s.changeText}>
           <span className={s.changeTitleRow}>
             <span className={s.cardTitle}>{plain.title}</span>
-            <span className={`${s.sev} ${SEV_CLASS[sig.severity]}`}>{sig.good ? 'Good news' : `${SEV_LABEL[sig.severity]} priority`}</span>
+            <span className={`${s.sev} ${sig.good ? s.sevInfo : sig.ongoing ? s.sevHigh : s.sevLow}`}>{sig.good ? (sig.ongoing ? 'Still working' : 'Ended') : sig.ongoing ? 'Still leaking' : 'Stopped'}</span>
           </span>
           <p className={s.changeSentence}>{plain.text}</p>
           <div className={s.changeDo}>
-            {sig.good ? <span className={s.doGood}><Icon name="CircleCheck" size={16} />Nothing to fix. Worth knowing what went right.</span>
+            {sig.good ? <span className={s.doGood}><Icon name="CircleCheck" size={16} />Find out what went right and keep doing it.</span>
               : cause ? <Pill tone={explained ? 'neutral' : 'warn'} icon={explained ? 'CircleCheck' : 'Hourglass'}>{cause.label}</Pill>
                 : todo && <><span className={s.doLabel}>What to do</span><Button size="sm" variant={primary ? 'primary' : 'secondary'} className={primary ? s.ctaSm : undefined} iconRight="ArrowRight" onClick={() => cv.go(todo.page)}>{todo.label}</Button></>}
             <span className={s.cardLinks}>
@@ -310,10 +351,14 @@ function ChangeRow({ sig, t, note, primary, open, editing, onToggle, onEdit, onS
           {note?.text && !editing && <span className={s.noteText}>“{note.text}”</span>}
         </div>
         <div className={s.changeFig}>
-          <span className={s.cardVal}>{fmtNear(sig.metric, shown, sig.kind === 'limit' ? (sig.dir === 'up' ? sig.expected.ucl : sig.expected.lcl) : null)}</span>
-          <span className="cv-xs cv-faint">normal {rangeNear(sig.metric, sig.expected, sig.kind === 'limit' ? sig.value : null)}</span>
-          <RangeBar value={shown} lim={sig.expected} tone={kind === 'done' ? 'bad' : kind} />
-          {isMoney(sig.metric) && <Claim k={x.claim} />}
+          {e.$ ? (
+            <>
+              <span className={`${s.cardVal} ${sig.good ? s.gain : s.loss}`}>{signedUsd(e.$.perWeek)}<small> a week</small></span>
+              <span className="cv-xs cv-faint">{sig.ongoing ? `about ${usd(e.$.soFar)} ${sig.good ? 'gained' : 'lost'} so far` : `${usd(e.$.soFar)} ${sig.good ? 'gained' : 'lost'} while it lasted`}</span>
+              {!e.counted && <span className="cv-xs cv-faint">{sig.good ? 'Part of a bigger gain' : 'Part of a bigger leak'}: counted once</span>}
+            </>
+          ) : <span className="cv-xs cv-faint">Not counted in dollars</span>}
+          <Claim k={e.$?.claim ?? x.claim} />
         </div>
       </div>
       {editing && <NoteForm note={note} onSave={onSave} onRemove={onRemove} onCancel={onCancel} />}
@@ -322,7 +367,14 @@ function ChangeRow({ sig, t, note, primary, open, editing, onToggle, onEdit, onS
           <TrendChart labels={rows.map((rw) => rw.label)} series={[{ key: m.key, label: m.short, color: SERIES_COLOR, vals: x.vals }]} lim={x.lim} start={start} end={n - 1}
             marks={marks} fmt={fmt} height={200} ariaLabel={`${m.label} by week, with the flagged weeks marked`}
             tip={{ title: (i) => `Week of ${shortDate(rows[i].iso) || rows[i].label}` }} />
+          <div className={s.detailFig}>
+            <span className="cv-xs cv-faint">{sig.kind === 'limit' ? 'Furthest week' : 'Average over these weeks'}</span>
+            <span className={s.detailVal}>{fmtNear(sig.metric, shown, sig.kind === 'limit' ? (sig.dir === 'up' ? sig.expected.ucl : sig.expected.lcl) : null)}</span>
+            <span className="cv-xs cv-faint">normal {rangeNear(sig.metric, sig.expected, sig.kind === 'limit' ? sig.value : null)}</span>
+            <RangeBar value={shown} lim={sig.expected} tone={kind === 'done' ? 'bad' : kind} />
+          </div>
           <p className={s.cardWatch}><Icon name="Eye" size={15} /><span>{watchText(sig)}</span></p>
+          {e.$ && <p className={s.cardWhat}><b>How the dollars are worked out:</b> {e.$.basis}, over {plural(e.$.weeks, 'week')}. An estimate, not a cause.</p>}
           <p className={s.cardWhat}><b>{m.label}:</b> {m.help}</p>
           {why.arithmetic.length > 0 && <div className={s.why}><b>What moved</b><ul>{why.arithmetic.map((v) => <li key={v}>{v}</li>)}</ul></div>}
           {why.possible.length > 0 && <div className={s.why}><b>Worth checking</b><ul>{why.possible.map((v) => <li key={v}>{v}</li>)}</ul></div>}
@@ -335,16 +387,16 @@ function ChangeRow({ sig, t, note, primary, open, editing, onToggle, onEdit, onS
   );
 }
 
-function Changes({ t, notes, setNotes, name }) {
+function LeakList({ items, t, notes, setNotes, name, good }) {
   const [editing, setEditing] = React.useState(null);
   const [open, setOpen] = React.useState(null);
-  const [showGood, setShowGood] = React.useState(false);
-  const keyed = t.signals.map((sig) => ({ sig, key: signalKey(sig, t.rows) }));
-  const bad = keyed.filter((x) => !x.sig.good);
-  const unexplained = bad.filter((x) => !isExplained(notes[x.key]));
-  const good = keyed.filter((x) => x.sig.good);
-  const list = [...unexplained, ...bad.filter((x) => isExplained(notes[x.key])), ...(showGood ? good : [])];
-  const firstKey = unexplained[0]?.key;
+  const [showEnded, setShowEnded] = React.useState(false);
+  const keyed = items.map((e) => ({ e, key: signalKey(e.s, t.rows) }));
+  // Up front: what's still going and counted in the total. Behind a click: what ended, and moves that are part of a bigger one.
+  const live = keyed.filter((x) => x.e.s.ongoing && (x.e.counted || !x.e.$));
+  const ended = keyed.filter((x) => !live.includes(x));
+  const list = [...live, ...(showEnded ? ended : [])];
+  const firstKey = good ? null : live.find((x) => !isExplained(notes[x.key]))?.key;
   const save = (sig, key) => (v) => {
     setNotes((cur) => ({ ...cleanNotes(cur), [key]: { ...v, at: new Date().toISOString() } }), `Trends note: ${METRIC[sig.metric].label}, week of ${t.rows[sig.from]?.label} (${CAUSES.find((c) => c.value === v.cause)?.label})`);
     setEditing(null);
@@ -353,32 +405,20 @@ function Changes({ t, notes, setNotes, name }) {
     setNotes((cur) => { const next = { ...cleanNotes(cur) }; delete next[key]; return next; }, `Trends note removed: ${METRIC[sig.metric].label}, week of ${t.rows[sig.from]?.label}`);
     setEditing(null);
   };
-  const have = Math.max(0, MIN_BASELINE - t.w.needWeeks);
-  if (!t.w.ready) {
-    return (
-      <div className={`cv-card ${s.empty}`}>
-        <Icon name="Hourglass" size={28} />
-        <span className={s.emptyBig}>{have} of {MIN_BASELINE} weeks in</span>
-        <Progress have={have} need={MIN_BASELINE} />
-        <span className={s.headSub}>Trend Watch learns what a normal week looks like for {name} first, then flags anything out of the ordinary.</span>
-      </div>
-    );
-  }
   return (
     <div className={s.changes}>
-      {list.map(({ sig, key }) => (
-        <ChangeRow key={key} sig={sig} t={t} note={notes[key]} primary={key === firstKey} open={open === key} editing={editing === key}
+      {list.map(({ e, key }) => (
+        <ChangeRow key={key} e={e} t={t} note={notes[key]} primary={key === firstKey} open={open === key} editing={editing === key}
           onToggle={() => setOpen(open === key ? null : key)}
-          onEdit={() => setEditing(key)} onSave={save(sig, key)} onRemove={remove(sig, key)} onCancel={() => setEditing(null)} />
+          onEdit={() => setEditing(key)} onSave={save(e.s, key)} onRemove={remove(e.s, key)} onCancel={() => setEditing(null)} />
       ))}
-      {!bad.length && (
-        <div className={`cv-card ${s.empty}`}>
-          <span className="cv-up"><Icon name="CircleCheck" size={28} /></span>
-          <span className={s.emptyBig}>Nothing unusual in {name}</span>
-          <span className={s.headSub}>Every number is inside its normal range. Nothing to do here this week.</span>
+      {!live.length && (
+        <div className={`cv-card ${s.emptyRow}`}>
+          <span className={good ? '' : 'cv-up'}><Icon name={good ? 'CircleMinus' : 'CircleCheck'} size={22} /></span>
+          <span>{good ? `Nothing in ${name} is running above its usual right now.` : `Nothing in ${name} is leaking right now.`}</span>
         </div>
       )}
-      {good.length > 0 && <button type="button" className={s.more} onClick={() => setShowGood((v) => !v)} aria-expanded={showGood}>{showGood ? 'Hide good news' : `Show ${good.length} good ${good.length === 1 ? 'change' : 'changes'}`}</button>}
+      {ended.length > 0 && <button type="button" className={s.more} onClick={() => setShowEnded((v) => !v)} aria-expanded={showEnded}>{showEnded ? 'Show less' : `Show ${ended.length} more: ${[ended.some((x) => x.e.s.ongoing) && 'part of the same change', ended.some((x) => !x.e.s.ongoing) && `${good ? 'ended' : 'stopped'} in the last ${t.rows.length - t.w.judgeFrom} weeks`].filter(Boolean).join(', or ')}`}</button>}
     </div>
   );
 }
@@ -393,47 +433,6 @@ function Step({ n, title, sub, id }) {
         {sub && <span className={s.headSub}>{sub}</span>}
       </span>
     </div>
-  );
-}
-
-/* ------------------------------------------------------------- next week */
-
-/**
- * What to watch next week: the line each open change has to get back inside,
- * then the floor for contribution and sales. Thresholds come from the same
- * usual ranges the flags use, so "watch" and "flag" always agree.
- */
-function LookAhead({ t, notes, onPick }) {
-  if (!t.w.ready) return null;
-  const items = [];
-  const seen = new Set();
-  const open = t.signals.filter((x) => !x.good && !isExplained(notes[signalKey(x, t.rows)]) && (x.ongoing || x.to >= t.rows.length - 4));
-  for (const sig of open) {
-    if (seen.has(sig.metric)) continue;
-    seen.add(sig.metric);
-    const e = sig.expected, f = (v) => fmtMetric(sig.metric, v);
-    const line = sig.kind === 'shift' ? e.mean : sig.dir === 'up' ? e.ucl : e.lcl;
-    items.push({ key: sig.metric, tone: sig.severity === 'high' ? 'crit' : 'bad', label: METRIC[sig.metric].short, fig: `${sig.dir === 'up' ? 'Under' : 'Over'} ${f(line)}`, text: sig.kind === 'shift' ? `Back across its average would end the run.` : 'Back inside its usual range would make it a one-off.' });
-  }
-  for (const k of ['earned', 'net', 'covers']) {
-    const x = t.metrics[k];
-    if (items.length >= 4 || seen.has(k) || !x.available || !x.lim) continue;
-    const up = METRIC[k].up;
-    items.push({ key: k, tone: 'ok', label: METRIC[k].short, fig: `${up ? 'Above' : 'Under'} ${fmtMetric(k, up ? x.lim.lcl : x.lim.ucl)}`, text: `A normal week stays ${up ? 'above' : 'under'} this.` });
-  }
-  if (!items.length) return null;
-  return (
-    <section aria-labelledby="trends-ahead">
-      <div className={s.ahead}>
-        {items.slice(0, 4).map((it) => (
-          <button key={it.key} type="button" className={s.aheadItem} data-tone={it.tone} onClick={() => onPick(it.key)}>
-            <span className={s.aheadLabel}>{it.label}</span>
-            <span className={s.aheadFig}>{it.fig}</span>
-            <span className={s.aheadText}>{it.text}</span>
-          </button>
-        ))}
-      </div>
-    </section>
   );
 }
 
@@ -503,6 +502,7 @@ function DataTable({ t, metric, start, end, cmp }) {
 
 function RoomView({ t, notes, setNotes }) {
   const n = t.rows.length;
+  const L = React.useMemo(() => leaksOf(t, ctxOf(CV_D)), [t]);
   const metrics = availableMetrics(t);
   const ranges = rangesFor(t);
   const [metric, setMetric] = React.useState(metrics.find((mm) => mm.key === 'earned')?.key ?? metrics[0]?.key ?? 'net');
@@ -553,18 +553,21 @@ function RoomView({ t, notes, setNotes }) {
   const dataThrough = dataEnd(CV_D.room);
   const rangeItems = ranges.map((r) => ({ v: r.v, label: r.label.replace(/^All (\d+) weeks$/, 'All') }));
   const roomName = CV_ROOM.short || CV_ROOM.name;
-  const openCount = t.signals.filter((q) => !q.good && !isExplained(notes[signalKey(q, t.rows)])).length;
   return (
     <>
-      <Step n={1} id="trends-how" title={`How is ${roomName} doing?`} sub="One number tells you if the business is getting better or worse: contribution, what's left of sales after food and labor." />
-      <RoomSummary t={t} name={roomName} />
+      <LeakHero t={t} L={L} name={roomName} />
 
-      <Step n={2} id="trends-changed" title={`What changed in ${roomName}`}
-        sub={t.w.ready ? (openCount ? `${plural(openCount, 'change')} moved more than normal, most important first. Each one says what to do.` : 'Nothing moved more than normal.') : 'Not judged yet.'} />
-      <Changes t={t} notes={notes} setNotes={setNotes} name={roomName} />
+      {t.w.ready && (
+        <>
+          <Step n={1} id="trends-leaks" title="Leaks to fix" sub="Slow changes costing money every week, biggest first. Each one has one thing to do." />
+          <LeakList items={L.leaks} t={t} notes={notes} setNotes={setNotes} name={roomName} />
 
-      <Step n={3} id="trends-ahead" title="What to watch next week" sub="The lines that tell you whether a change was a one-off or is here to stay." />
-      <LookAhead t={t} notes={notes} onPick={(k) => { pickMetric(k); setExplore(true); }} />
+          <Step n={2} id="trends-wins" title="What's working" sub="Changes bringing in more than usual. Find out why, so you keep them." />
+          <LeakList items={L.wins} t={t} notes={notes} setNotes={setNotes} name={roomName} good />
+
+          <NoiseLine t={t} name={roomName} />
+        </>
+      )}
 
       <details className={`cv-card ${s.disclosure}`} open={explore} onToggle={(e) => setExplore(e.currentTarget.open)}>
         <summary><Icon name="ChevronDown" size={16} className={s.chev} />Explore any number, week by week</summary>
@@ -610,6 +613,7 @@ function RoomView({ t, notes, setNotes }) {
             <dt>Data through</dt><dd>{shortDate(dataThrough || t.rows[n - 1]?.iso)}</dd>
             <dt>Usual range</dt><dd>{x.lim ? `Average ± 3 standard deviations of ${x.lim.n} baseline weeks${x.lim.limited ? ' (limited history)' : ''}` : 'Not enough weeks yet'}</dd>
             <dt>Flagged when</dt><dd>A week leaves its usual range, or {RUN} weeks in a row sit on one side of the average. Holiday and no-sales weeks are never flagged.</dd>
+            <dt>Dollars</dt><dd>Each change against its usual level, in contribution: cost shares × that week&apos;s sales, guests × what a guest usually leaves, margin per dish × dishes sold. Where two changes overlap (food and prime cost), only the bigger is added. Estimates, not causes.</dd>
             <dt>Alerts</dt><dd>Medium and high changes nobody has explained are sent to the room once.</dd>
             <dt>Method</dt><dd>{METHOD}</dd>
           </dl>
@@ -644,9 +648,9 @@ function CvTrends() {
   };
   return (
     <div className={`cv-page wide ${s.page}`}>
-      <PageHead over={`Trend Watch · ${own ? 'your Toast data' : 'sample data'} through ${shortDate(last?.iso)}`}
-        q="Catch a slide before it costs you"
-        sub="Trend Watch learns what a normal week looks like for each room, flags anything that moves more than normal, and tells you what to check."
+      <PageHead over={`Leak Watch · ${own ? 'your Toast data' : 'sample data'} through ${shortDate(last?.iso)}`}
+        q="Catch the slow leaks before your P&L does"
+        sub="Small changes look fine week to week, then cost thousands by the time the monthly P&L arrives. Leak Watch puts each one in dollars and tells you what to do."
         right={<Button variant="secondary" size="sm" icon="Download" onClick={exportCsv}>CSV</Button>} />
       <LocationSwitch current={eng.room} onPick={(id) => engine.setRoom(id)} />
       <RoomView key={eng.room} t={t} notes={notes} setNotes={setNotes} />

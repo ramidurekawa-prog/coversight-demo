@@ -4,7 +4,7 @@ import { SEED } from '../lib/data/seed.js';
 import { deriveRoom, deriveGroup, bankedStats, proofList } from '../lib/data/model.js';
 import {
   CAUSES, JUDGE_WEEKS, METHOD, METRICS, MIN_BASELINE, RUN, availableMetrics, cleanNotes, describeSignal, directionOf, explainSignal,
-  groupSeries, groupTrend, holidaysIn, isExplained, lastYearIndex, limitsOf, noteKey, rangesFor, signalKey, signalsOf, trendsCsv, trendsFor, windows,
+  dollarsOf, groupSeries, groupTrend, holidaysIn, leaksOf, isExplained, lastYearIndex, limitsOf, noteKey, rangesFor, signalKey, signalsOf, trendsCsv, trendsFor, windows,
 } from '../lib/data/page/trends.js';
 
 /**
@@ -153,6 +153,65 @@ describe('Trends: signals', () => {
     expect(isExplained({ cause: 'change', text: '', at: '' })).toBe(true);
     expect(isExplained({ cause: 'looking', text: '', at: '' })).toBe(false);
     expect(isExplained(undefined)).toBe(false);
+  });
+});
+
+describe('Trends: Leak Watch in dollars', () => {
+  /** Food and labor with ordinary wobble, then food 2 points higher for the last 8 weeks. */
+  const foodRise = () => rowsOf(wiggle(52)).map((r, i) => {
+    const fr = 0.3 + [0, 0.004, -0.003, 0.002, -0.004, 0.003, -0.001, 0.003][i % 8] + (i >= 44 ? 0.02 : 0);
+    const lr = 0.25 + [0.002, -0.003, 0, 0.004, -0.002, 0.001, -0.004, 0.003][i % 8];
+    return { ...r, food: r.net * fr, labour: r.net * lr, earned: r.net * (1 - fr - lr) };
+  });
+  it('turns a food-cost rise into dollars: points × that week’s sales, as a loss', () => {
+    const rows = foodRise();
+    const t = trendsFor(rows);
+    const s = t.signals.find((x) => x.metric === 'food');
+    expect(s).toMatchObject({ dir: 'up', good: false, ongoing: true });
+    const d = dollarsOf(s, t);
+    const want = t.rows.slice(s.from, s.to + 1).reduce((a, r) => a - ((r.food / r.net) * 100 - s.expected.mean) / 100 * r.net, 0);
+    expect(d.soFar).toBeCloseTo(want, 6);
+    expect(d.perWeek).toBeLessThan(0);
+    expect(d.claim).toBe('est');
+  });
+
+  it('never counts one slide twice: food and prime overlap, only the bigger counts', () => {
+    const rows = foodRise();
+    const t = trendsFor(rows);
+    const L = leaksOf(t);
+    const costs = L.leaks.filter((e) => ['food', 'prime'].includes(e.s.metric));
+    expect(costs.length).toBe(2);
+    expect(costs.filter((e) => e.counted)).toHaveLength(1);
+    expect(L.leaks.find((e) => e.s.metric === 'earned')?.counted ?? false).toBe(false);
+    const top = Math.max(...costs.map((e) => -e.$.perWeek));
+    expect(L.leakWeek).toBe(Math.round(top));
+  });
+
+  it('a steady room has no leaks and no wins', () => {
+    const L = leaksOf(trendsFor(rowsOf(wiggle(52))));
+    expect(L).toMatchObject({ leaks: [], wins: [], leakWeek: 0, winWeek: 0, leak13: 0, win13: 0, weeks: 13 });
+  });
+
+  it('turn time has no honest dollar figure; overtime and margin per dish need their inputs', () => {
+    const t = trendsFor(deriveRoom(SEED, 'berkeley').hist.rows);
+    const wcm = t.signals.find((x) => x.metric === 'wcm');
+    expect(dollarsOf(wcm, t)).toBeNull();
+    expect(dollarsOf({ ...wcm, metric: 'turn' }, t, { dishes: 100 })).toBeNull();
+  });
+
+  it('reads the sample’s story: Berkeley leaks through margin per dish, Walnut Creek gains from more guests', () => {
+    const ctx = (id) => { const d = deriveRoom(SEED, id); return { d, ctx: { dishes: d.menu.units } }; };
+    const b = ctx('berkeley');
+    const L = leaksOf(trendsFor(b.d.hist.rows), b.ctx);
+    expect(L.leaks[0]).toMatchObject({ counted: true, s: { metric: 'wcm', ongoing: true } });
+    const wcm = L.leaks[0];
+    expect(wcm.$.perWeek).toBeCloseTo((wcm.s.avg - wcm.s.expected.mean) * b.d.menu.units, 6);
+    expect(L.leaks.find((e) => e.s.metric === 'check').counted).toBe(false); // same family, smaller
+    expect(L.leakWeek).toBeGreaterThan(0);
+    const w = ctx('walnut');
+    const W = leaksOf(trendsFor(w.d.hist.rows), w.ctx);
+    expect(W.leakWeek).toBe(0);
+    expect(W.winWeek).toBeGreaterThan(0);
   });
 });
 
