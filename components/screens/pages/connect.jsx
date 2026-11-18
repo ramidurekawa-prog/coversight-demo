@@ -386,7 +386,7 @@ function CvConnectDemo() {
         <section className="cv-card">
           <span className="cv-h4">What the connection gives you in two weeks</span>
           <ul className="cv-ul">
-            <li><Icon name="Users" size={15} />Labour and overtime findings, from clock-ins and wages</li>
+            <li><Icon name="Users" size={15} />Labor and overtime findings, from clock-ins and wages</li>
             <li><Icon name="Receipt" size={15} />Voids and comps against the room's own normal rate</li>
             <li><Icon name="UtensilsCrossed" size={15} />Menu margin and mix, once recipe costs are uploaded</li>
             <li><Icon name="Armchair" size={15} />Table turns, as estimated leads that never count toward recovered dollars</li>

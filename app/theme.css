@@ -1,10 +1,12 @@
 /* =============================================================================
-   Coversight · Midnight & Brass
+   Coversight · Persimmon & Ink (Ramidu, 2026-11-16; app-wide 2026-11-17)
    Overrides the design-system tokens in globals.css (loaded after it).
-   Light: ink-navy structure, brass accent, warm paper canvas.
-   Dark: near-black terminal, brass accent.
-   Status hues keep their meaning (green good, red bad, blue monitoring); the
-   warning hue moves to burnt orange so it can never be confused with brass.
+   Light: warm cream canvas, ink-navy structure and data, persimmon for action.
+   Dark: near-black, the same persimmon action color.
+   Fixed meanings: persimmon = the action or the selected thing, never data;
+   navy = structure and charts; green = verified good; red = a real problem;
+   amber = caution or delayed data. The same values drive Today's palette
+   (components/screens/pages/today.themes.js, THEMES.persimmon).
    ============================================================================= */
 
 :root {
@@ -13,91 +15,99 @@
   --font-mono: 'Manrope', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-wordmark: 'Manrope', ui-sans-serif, system-ui, sans-serif;
 
-  /* Brass replaces the teal ramp everywhere components reference it. */
-  --teal-50: #F7F0DC;  --teal-100: #EFE2BC; --teal-200: #E3CD8F; --teal-300: #D4B562; --teal-400: #C29E3F;
-  --teal-500: #A9862A; --teal-600: #8F6A12; --teal-700: #7A5A0E; --teal-800: #654A0B; --teal-900: #503A08;
+  /* The old accent ramp becomes an ink ramp: links, key figures and data are navy. */
+  --teal-50: #EEF1F5;  --teal-100: #DCE2EA; --teal-200: #BAC5D3; --teal-300: #8C9BB0; --teal-400: #5F7189;
+  --teal-500: #3E5069; --teal-600: #2A3B52; --teal-700: #172536; --teal-800: #111C2A; --teal-900: #0B131D;
 
-  --background: #F5F2EA;
+  --background: #F8F6F0;
   --surface: #FFFFFF;
-  --surface-sunken: #EFEBE1;
-  --surface-hover: #F3EFE6;
-  --fg-1: #141C28;
-  --fg-2: #4E5866;
-  --fg-3: #5E6672;
-  --border: #E4DFD3;
-  --border-strong: #D2CBBB;
-  --border-focus: #8F6A12;
+  --surface-sunken: #F2EEE6;
+  --surface-hover: #F2EEE6;
+  --fg-1: #172536;
+  --fg-2: #536477;
+  --fg-3: #66717C;
+  --border: #E4E3DF;
+  --border-strong: #D3D0C8;
+  --border-focus: #172536;
 
-  --primary: #141C28;          /* ink-navy actions */
-  --primary-hover: #22304A;
-  --primary-active: #0B111A;
-  --primary-fg: #FFFFFF;
+  --primary: #FF8050;          /* persimmon: the one action */
+  --primary-hover: #FF6D39;
+  --primary-active: #F25E28;
+  --primary-fg: #172536;
   --fg-on-accent: #FFFFFF;
-  --accent: #8F6A12;           /* brass: links, key figures, focus */
-  --accent-subtle: #F7F0DC;
-  --ring: 0 0 0 3px rgba(143, 106, 18, 0.30);
+  --accent: #172536;           /* ink: data, key figures, structure */
+  --accent-subtle: #EEF1F5;
+  --cv-selected: #FF8050;      /* the selected thing */
+  --cv-selected-bg: #FFEEE6;
+  --ring: 0 0 0 3px rgba(255, 128, 80, 0.4);
 
-  /* Warning → burnt orange (brass owns gold). */
-  --warning-50: #FFF1E8; --warning-100: #FFDCC6; --warning-500: #EA580C; --warning-600: #C2410C; --warning-700: #9A3412;
-  --exposure-1: #FFF1E8; --exposure-2: #FFDCC6; --exposure-6: #C2410C; --exposure: #C2410C;
+  /* Status: green verified, red real problem, amber caution (never persimmon). */
+  --success-600: #23846A; --success-700: #23846A;
+  --error-600: #C64C50;
+  --warning-50: #FBF2E3; --warning-100: #F3E1C2; --warning-500: #B97923; --warning-600: #B97923; --warning-700: #8F5C14;
+  --exposure-1: #FBF2E3; --exposure-2: #F3E1C2; --exposure-6: #B97923; --exposure: #B97923;
 
-  --cat-1: #141C28;
-  --cat-2: #B08A2E;
-  --cat-3: #7D8896;
+  --cat-1: #172536;
+  --cat-2: #5F7189;
+  --cat-3: #A7B2C0;
 
-  /* Flat, precise geometry. Overlays keep their shadows. */
+  /* Flat geometry by default; pages in Today's style round and soften it (app/page-style.css). */
   --radius-xs: 2px; --radius-sm: 2px; --radius-md: 3px; --radius-lg: 4px; --radius-xl: 6px;
   --shadow-xs: none;
   --shadow-sm: none;
 
-  --side-bg: #111A28; --side-fg: #E9E4D6; --side-mute: #8C93A0; --side-active: #22304A; --side-active-fg: #F2D58A; --side-line: #1E2A3D;
+  --side-bg: #142131; --side-fg: #E9E4D6; --side-mute: #7F8A98; --side-active: rgba(255, 255, 255, 0.07); --side-active-fg: #F6F1E7; --side-line: rgba(255, 255, 255, 0.07);
+  --cv-side-mark: #FF8050;
 }
 
 /* ---- Dark: the terminal ---------------------------------------------------- */
 [data-theme="dark"] {
-  --teal-50: #2A2212;  --teal-100: #3A2E15; --teal-200: #4A3A18; --teal-300: #8C6E2A; --teal-400: #C79C3A;
-  --teal-500: #D9AB45; --teal-600: #E2B54A; --teal-700: #E2B54A; --teal-800: #F0C463; --teal-900: #F5D488;
+  --teal-50: #1B2230;  --teal-100: #232C3C; --teal-200: #33405A; --teal-300: #55657F; --teal-400: #8494AB;
+  --teal-500: #A3B1C4; --teal-600: #C3CEDC; --teal-700: #D5DEE9; --teal-800: #E4EAF1; --teal-900: #F0F4F8;
   --neutral-0: #14161D;
   --background: #0B0C10; --surface: #14161D; --surface-sunken: #0F1116; --surface-hover: #1A1D26;
   --fg-1: #EAEAF0; --fg-2: #A3A6B5; --fg-3: #8E91A2;
-  --border: #242734; --border-strong: #333747; --border-focus: #E2B54A;
-  --primary: #E2B54A; --primary-hover: #F0C463; --primary-active: #C99A30; --primary-fg: #14130F; --fg-on-accent: #14130F;
-  --accent: #E2B54A; --accent-subtle: #2A2212;
-  --ring: 0 0 0 3px rgba(226, 181, 74, 0.35);
+  --border: #242734; --border-strong: #333747; --border-focus: #C3CEDC;
+  --primary: #FF8050; --primary-hover: #FF925F; --primary-active: #F25E28; --primary-fg: #172536; --fg-on-accent: #14130F;
+  --accent: #C3CEDC; --accent-subtle: #1B2230; --cv-selected: #FF8050; --cv-selected-bg: #2E1D16;
+  --ring: 0 0 0 3px rgba(255, 128, 80, 0.4);
   --money-up: #3DDC84; --money-down: #FF5C5C;
-  --warning-50: #2B1A10; --warning-100: #3D2414; --warning-500: #FF7A2E; --warning-600: #FF8A3D; --warning-700: #FFA466;
-  --exposure-1: #2B1A10; --exposure-2: #3D2414; --exposure-6: #FF8A3D; --exposure: #FF8A3D;
-  --cat-1: #E2B54A; --cat-2: #7FB2FF; --cat-3: #A3A6B5;
-  --side-bg: #08090C; --side-fg: #D9D6CC; --side-mute: #7E828F; --side-active: #1C1A12; --side-active-fg: #E2B54A; --side-line: #171920;
+  --warning-50: #2A2111; --warning-100: #3B2E16; --warning-500: #E0A447; --warning-600: #E0A447; --warning-700: #EDBB6A;
+  --exposure-1: #2A2111; --exposure-2: #3B2E16; --exposure-6: #E0A447; --exposure: #E0A447;
+  --cat-1: #C3CEDC; --cat-2: #7F8FA6; --cat-3: #4E5A6B;
+  --side-bg: #08090C; --side-fg: #D9D6CC; --side-mute: #7E828F; --side-active: rgba(255, 255, 255, 0.06); --side-active-fg: #F6F1E7; --side-line: #171920;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --teal-50: #2A2212;  --teal-100: #3A2E15; --teal-200: #4A3A18; --teal-300: #8C6E2A; --teal-400: #C79C3A;
-    --teal-500: #D9AB45; --teal-600: #E2B54A; --teal-700: #E2B54A; --teal-800: #F0C463; --teal-900: #F5D488;
+    --teal-50: #1B2230;  --teal-100: #232C3C; --teal-200: #33405A; --teal-300: #55657F; --teal-400: #8494AB;
+    --teal-500: #A3B1C4; --teal-600: #C3CEDC; --teal-700: #D5DEE9; --teal-800: #E4EAF1; --teal-900: #F0F4F8;
     --neutral-0: #14161D;
     --background: #0B0C10; --surface: #14161D; --surface-sunken: #0F1116; --surface-hover: #1A1D26;
     --fg-1: #EAEAF0; --fg-2: #A3A6B5; --fg-3: #8E91A2;
-    --border: #242734; --border-strong: #333747; --border-focus: #E2B54A;
-    --primary: #E2B54A; --primary-hover: #F0C463; --primary-active: #C99A30; --primary-fg: #14130F; --fg-on-accent: #14130F;
-    --accent: #E2B54A; --accent-subtle: #2A2212;
-    --ring: 0 0 0 3px rgba(226, 181, 74, 0.35);
+    --border: #242734; --border-strong: #333747; --border-focus: #C3CEDC;
+    --primary: #FF8050; --primary-hover: #FF925F; --primary-active: #F25E28; --primary-fg: #172536; --fg-on-accent: #14130F;
+    --accent: #C3CEDC; --accent-subtle: #1B2230; --cv-selected: #FF8050; --cv-selected-bg: #2E1D16;
+    --ring: 0 0 0 3px rgba(255, 128, 80, 0.4);
     --money-up: #3DDC84; --money-down: #FF5C5C;
-    --warning-50: #2B1A10; --warning-100: #3D2414; --warning-500: #FF7A2E; --warning-600: #FF8A3D; --warning-700: #FFA466;
-    --exposure-1: #2B1A10; --exposure-2: #3D2414; --exposure-6: #FF8A3D; --exposure: #FF8A3D;
-    --cat-1: #E2B54A; --cat-2: #7FB2FF; --cat-3: #A3A6B5;
-    --side-bg: #08090C; --side-fg: #D9D6CC; --side-mute: #7E828F; --side-active: #1C1A12; --side-active-fg: #E2B54A; --side-line: #171920;
+    --warning-50: #2A2111; --warning-100: #3B2E16; --warning-500: #E0A447; --warning-600: #E0A447; --warning-700: #EDBB6A;
+    --exposure-1: #2A2111; --exposure-2: #3B2E16; --exposure-6: #E0A447; --exposure: #E0A447;
+    --cat-1: #C3CEDC; --cat-2: #7F8FA6; --cat-3: #4E5A6B;
+    --side-bg: #08090C; --side-fg: #D9D6CC; --side-mute: #7E828F; --side-active: rgba(255, 255, 255, 0.06); --side-active-fg: #F6F1E7; --side-line: #171920;
   }
 }
 
-/* ---- The signature: an ink-navy rail in both modes ------------------------- */
+/* ---- The signature: an ink-navy rail with a persimmon mark, in both modes (Today's sidebar, app-wide) ------------------------- */
 .sidebar { background: var(--side-bg); border-color: var(--side-line); color: var(--side-fg); }
 .sidebar .cv-brand .wm, .sidebar .navitem, .sidebar .userchip { color: var(--side-fg); }
 .sidebar .navitem svg, .sidebar .cv-navgroup, .sidebar [class*="seclbl"], .sidebar .userchip .sub, .sidebar .navsec-rule { color: var(--side-mute); border-color: var(--side-line); }
 .sidebar .navitem:hover { background: var(--side-active); }
-.sidebar .navitem.active { background: var(--side-active); color: var(--side-active-fg); }
-.sidebar .navitem.active svg { color: var(--side-active-fg); }
-.sidebar .navitem.active::before { background: var(--side-active-fg); }
-.sidebar .navitem .cv-new { color: var(--side-active-fg); background: rgba(242, 213, 138, 0.12); }
+.sidebar .navitem.active { background: var(--side-active); color: var(--side-active-fg); font-weight: 600; }
+.sidebar .navitem.active svg { color: var(--cv-side-mark, var(--side-active-fg)); }
+.sidebar .navitem.active::before { width: 3px; height: 18px; left: 0; background: var(--cv-side-mark, var(--side-active-fg)); }
+.sidebar .navitem .count { font-family: var(--font-sans); font-size: 12.5px; font-weight: 600; padding: 0 6px; background: rgba(255, 255, 255, 0.1); color: var(--side-active-fg); }
+.sidebar .navitem .cv-new { color: var(--side-active-fg); background: rgba(255, 255, 255, 0.1); }
+.sidebar .cv-navgroup { margin-top: 14px; font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.7; }
+.sidebar .navitem { min-height: 36px; font-size: 16px; }
 
 /* Money and figures always set in tabular mono. */
 .cv-fig, .cv-num { font-family: var(--font-mono); font-variant-numeric: tabular-nums lining-nums; letter-spacing: -0.01em; }

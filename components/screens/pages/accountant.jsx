@@ -7,11 +7,11 @@ import { useCv, cvMoney, CV_LOCS, Pill, Callout, PageHead } from '../core';
 
 /* ================================================================ Accountant */
 const CV_RECON = [
-  { claim: "Trim Tuesday close, back of house", room: "Walnut Creek", acct: "6020 Hourly labour, BOH", op: 1637, rec: 1447, status: "Reconciled, with a timing note", tone: "good", icon: "BadgeCheck" },
-  { claim: "Pull Thursday prep start back to 8:00", room: "Oakland", acct: "6020 Hourly labour, BOH", op: 416, rec: 416, status: "Reconciled", tone: "good", icon: "BadgeCheck" },
+  { claim: "Trim Tuesday close, back of house", room: "Walnut Creek", acct: "6020 Hourly labor, BOH", op: 1637, rec: 1447, status: "Reconciled, with a timing note", tone: "good", icon: "BadgeCheck" },
+  { claim: "Pull Thursday prep start back to 8:00", room: "Oakland", acct: "6020 Hourly labor, BOH", op: 416, rec: 416, status: "Reconciled", tone: "good", icon: "BadgeCheck" },
   { claim: "Reset the bar comp policy", room: "Walnut Creek", acct: "4090 Comps and discounts", op: 38, rec: 0, status: "Not yet eligible", tone: "neutral", icon: "Hourglass" },
   { claim: "Purchasing lever mapping", room: "Oakland", acct: "5010 or 5020?", op: 0, rec: 0, status: "Mapping exception", tone: "warn", icon: "TriangleAlert" },
-  { claim: "Cut one Friday dinner server (August)", room: "Berkeley", acct: "6010 Hourly labour, FOH", op: -555, rec: -555, status: "Restated, credit issued", tone: "bad", icon: "Undo2" },
+  { claim: "Cut one Friday dinner server (August)", room: "Berkeley", acct: "6010 Hourly labor, FOH", op: -555, rec: -555, status: "Restated, credit issued", tone: "bad", icon: "Undo2" },
 ];
 const LEVER_NAMES = { overtime: 'Overtime', labour: 'Labour overstaff', void_comp: 'Voids & comps', menu_margin: 'Menu margin', mix: 'Mix shift', turns: 'Table turns' };
 const DEFAULT_GL = { overtime: '6020 Wages, overtime', labour: '6010 Wages, hourly', void_comp: '4100 Sales, comps and voids', menu_margin: '4000 Food sales', mix: '4000 Food sales', turns: '4000 Food sales' };
@@ -178,7 +178,7 @@ function CvAccountantSample() {
         <div className="cv-card-head"><span className="cv-h4">One mapping needs you</span><Pill tone="warn" icon="TriangleAlert">Blocks reconciliation for 5010</Pill></div>
         <p className="cv-small cv-muted" style={{ lineHeight: 1.55, maxWidth: "75ch" }}>The new purchasing lever needs to know where vendor price changes land. The reconciliation agent proposes <b>5010 Food cost, proteins</b> for salmon and <b>5020 Food cost, produce</b> for romaine, with 92% confidence from 14 months of your invoices. An agent can propose a mapping. Only a named person can confirm it, once per mapping.</p>
         {mapping ? <Callout tone={mapping === "ok" ? "good" : ""} icon={mapping === "ok" ? "CircleCheck" : "Pencil"}>{mapping === "ok" ? "Mapping confirmed by you, version 3, effective Oct 1." : "Opened in the mapping editor."}</Callout> :
-          <div className="cv-row"><Button size="sm" icon="Check" onClick={() => setMapping("ok")}>Confirm mapping</Button><Button size="sm" variant="secondary" onClick={() => setMapping("edit")}>Change it</Button></div>}
+          <div className="cv-row"><Button size="sm" variant="secondary" icon="Check" onClick={() => setMapping("ok")}>Confirm mapping</Button><Button size="sm" variant="secondary" onClick={() => setMapping("edit")}>Change it</Button></div>}
       </section>
     </div>
   );

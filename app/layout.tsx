@@ -28,6 +28,7 @@ import '@fontsource/ibm-plex-mono/500.css';
 import '@fontsource/ibm-plex-mono/600.css';
 import './globals.css';
 import './theme.css';
+import './page-style.css';
 
 import { Shell } from '../components/shell';
 
