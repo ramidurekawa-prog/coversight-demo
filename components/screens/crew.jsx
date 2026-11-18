@@ -95,7 +95,7 @@ function Proposal({ p, canDecide, onDecide, busy }) {
       )}
       {canDecide && (
         <div className="cv-row" style={{ gap: 8 }}>
-          <Button size="sm" icon="Check" disabled={!!busy} onClick={() => onDecide(p, 'accept')}>{p.kind === 'plan' || p.kind === 'replicate' ? (pl.test || p.kind === 'replicate' ? 'Approve and start the test' : 'Approve') : p.kind === 'mapping' ? 'Confirm mapping' : 'Done'}</Button>
+          <Button size="sm" variant="secondary" icon="Check" disabled={!!busy} onClick={() => onDecide(p, 'accept')}>{p.kind === 'plan' || p.kind === 'replicate' ? (pl.test || p.kind === 'replicate' ? 'Approve and start the test' : 'Approve') : p.kind === 'mapping' ? 'Confirm mapping' : 'Done'}</Button>
           <Button size="sm" variant="ghost" icon="X" disabled={!!busy} onClick={() => onDecide(p, 'reject')}>{p.kind === 'todo' ? 'Not needed' : 'Not now'}</Button>
         </div>
       )}
@@ -117,13 +117,13 @@ function Copilot({ server, roomId }) {
       else { const facts = await previewStore().facts(); setA(answer(who, text, facts)); }
     } catch (e) { setA({ text: e.message, cites: [] }); } finally { setBusy(false); }
   };
-  const SUGGEST = who === 'operator' ? ['What should we do first?', 'Is our data fresh?', 'Why is a test stuck?', 'What labour changes are there?'] : ['Where does each saving land in the ledger?', 'What have we saved?', 'Which tests are open?'];
+  const SUGGEST = who === 'operator' ? ['What should we do first?', 'Is our data fresh?', 'Why is a test stuck?', 'What labor changes are there?'] : ['Where does each saving land in the ledger?', 'What have we saved?', 'Which tests are open?'];
   return (
     <section className="cv-card" data-copilot="1">
       <div className="cv-card-head"><span className="cv-h4">Ask a copilot</span><Tabs value={who} onChange={(v) => { setWho(v); setA(null); }} tabs={[{ value: 'operator', label: 'Operator' }, { value: 'accountant', label: 'Accountant' }]} /></div>
       <form className="cv-row nowrap" style={{ gap: 8 }} onSubmit={(e) => { e.preventDefault(); go(); }}>
         <input className="input" style={{ flex: 1, minWidth: 0 }} value={q} onChange={(e) => setQ(e.target.value)} placeholder={SUGGEST[0]} aria-label="Question" maxLength={500} />
-        <Button size="sm" icon="MessageSquare" disabled={busy || !q.trim()} type="submit">{busy ? 'Asking…' : 'Ask'}</Button>
+        <Button size="sm" variant="secondary" icon="MessageSquare" disabled={busy || !q.trim()} type="submit">{busy ? 'Asking…' : 'Ask'}</Button>
       </form>
       <div className="cv-row" style={{ gap: 6, flexWrap: 'wrap' }}>{SUGGEST.map((s) => <Button key={s} size="sm" variant="secondary" disabled={busy} onClick={() => { setQ(s); go(s); }}>{s}</Button>)}</div>
       {a && (
