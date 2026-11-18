@@ -2,13 +2,15 @@ import { and, eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { applyInputs } from '../lib/data/apply.js';
-import { deriveRoom } from '../lib/data/model.js';
+import { deriveRoom, servicePace } from '../lib/data/model.js';
 import {
-  applyOp, cardState, DECLINE, hoursToMinutes, localDay, nextDay, queueChanges, queueHistory, queueSummary, queueView, RANK_POLICY, todayCards,
+  applyOp, ASSIGNEES, cardState, DECLINE, hoursToMinutes, localDay, nextDay, queueChanges, queueHistory, queueSummary, queueView, RANK_POLICY, todayCards, unlocksOf, upNextOrder, worthOf,
 } from '../lib/data/page/today.js';
-import { SEED } from '../lib/data/seed.js';
+import { areaOf, briefing, cardTrust, carriedOut, clockMinutes, comingUp, results, servicePeriod } from '../lib/data/page/today-brief.js';
+import { NOW, SEED } from '../lib/data/seed.js';
 import { readToastExports } from '../lib/data/toast.js';
-import { saveAction } from '../server/actions';
+import { loadActions, saveAction } from '../server/actions';
+import { listNotifications } from '../server/notify';
 import type { Db } from '../server/db/client';
 import { actions, memberships, tasks, users } from '../server/db/schema';
 import { commitInput, createSampleOrg } from '../server/org';
@@ -177,7 +179,7 @@ describe('the Today API', () => {
     // Rows are stamped by the database clock, so this one runs on the real day.
     const now = new Date();
     const t0 = await loadToday(db, owner(), 'oakland', now);
-    expect(t0.state).toEqual({ done: {}, refused: {}, snoozed: {}, meta: {} });
+    expect(t0.state).toEqual({ done: {}, refused: {}, snoozed: {}, assigned: {}, meta: {} });
     expect(t0.cards[0]).toMatchObject({ id: 'cut', state: 'needs_review', rank: 1 });
     expect(t0.sample).toBe(true);
     await actOnToday(db, owner(), { roomId: 'oakland', op: 'done', cardId: 'count' }, now);
@@ -194,6 +196,54 @@ describe('the Today API', () => {
     const rows = await db.select().from(actions).where(and(eq(actions.orgId, orgId), eq(actions.key, 'queue'))).orderBy(actions.at);
     expect(rows.map((r) => r.userId)).toEqual(['u1', 'u2', 'u1']);
     expect(rows[2]!.summary).toMatch(/not for us \(doesn’t apply here\)/);
+  });
+
+  it('assigns a card to a role on the server, refuses an unknown role, and records who it went to', async () => {
+    const now = new Date();
+    await expect(actOnToday(db, owner(), { roomId: 'oakland', op: 'assign', cardId: 'ot', to: 'chef' }, now)).rejects.toThrow(/invalid request/);
+    const t = await actOnToday(db, owner(), { roomId: 'oakland', op: 'assign', cardId: 'ot', to: 'gm' }, now);
+    expect(t.state.assigned).toEqual({ ot: { to: 'gm', at: expect.any(String), from: 'user:u1' } });
+    expect(t.cards.find((c: { id: string }) => c.id === 'ot')?.state).toBe('assigned');
+    expect(t.summary.total).toBe(t.summary.ready + t.summary.blocked + t.summary.handled);
+    const [row] = await db.select().from(actions).where(and(eq(actions.orgId, orgId), eq(actions.key, 'queue')));
+    expect(row!.summary).toMatch(/assigned to the general manager/);
+    const u = await actOnToday(db, owner(), { roomId: 'oakland', op: 'undo', cardId: 'ot' }, now);
+    expect(u.state.assigned).toEqual({});
+  });
+
+  it('hands a card to a teammate who can see the room, alerts only them, and tells the sender once they’ve seen it', async () => {
+    const now = new Date();
+    await db.insert(users).values([{ id: 'u3', name: 'Luis', email: 'l@x.co' }, { id: 'u4', name: 'Ana', email: 'a@x.co' }]);
+    await db.insert(memberships).values([{ orgId, userId: 'u3', role: 'floor', rooms: ['oakland'] }, { orgId, userId: 'u4', role: 'floor', rooms: ['berkeley'] }]);
+    const floor = { orgId, userId: 'u3', role: 'floor' as const, rooms: ['oakland'] };
+    const t0 = await loadToday(db, owner(), 'oakland', now);
+    // Offered: everyone who can see Oakland (owner, Luis), not Jess or Ana, who see Berkeley only.
+    expect(t0.people.map((x: { name: string }) => x.name)).toEqual(['Luis', 'Maria']);
+    await expect(actOnToday(db, owner(), { roomId: 'oakland', op: 'assign', cardId: 'ot', to: 'user:u4' }, now)).rejects.toThrow(/can’t see this room/);
+    const t = await actOnToday(db, owner(), { roomId: 'oakland', op: 'assign', cardId: 'ot', to: 'user:u3' }, now);
+    expect(t.state.assigned.ot).toMatchObject({ to: 'user:u3', name: 'Luis', from: 'user:u1' });
+    const notes = await listNotifications(db, floor);
+    expect(notes.items.find((n: { kind: string }) => n.kind === 'today.assigned')).toMatchObject({ title: expect.stringMatching(/^For you: /), link: '/today/?card=ot' });
+    // The alert is for Luis alone: the owner's bell doesn't show it.
+    expect((await listNotifications(db, owner())).items.some((n: { kind: string }) => n.kind === 'today.assigned')).toBe(false);
+    // Only Luis can mark it seen.
+    await expect(actOnToday(db, owner(), { roomId: 'oakland', op: 'ack', cardId: 'ot' }, now)).rejects.toThrow(/Only the person/);
+    const seen = await actOnToday(db, floor, { roomId: 'oakland', op: 'ack', cardId: 'ot' }, now);
+    expect(seen.state.assigned.ot.ack).toMatchObject({ by: 'Luis' });
+    expect(seen.history.map((h: { op: string }) => h.op)).toEqual(['assign', 'ack']);
+    expect((await listNotifications(db, owner())).items.find((n: { kind: string }) => n.kind === 'today.seen')?.body).toMatch(/Luis has seen it/);
+    // Luis can hand it back; a floor manager can't change group settings.
+    const done = await actOnToday(db, floor, { roomId: 'oakland', op: 'undo', cardId: 'ot' }, now);
+    expect(done.state.assigned).toEqual({});
+    await expect(saveAction(db, floor, { key: 'pricing', value: { perRoomMonthlyCents: 1, feePct: 1 } })).rejects.toThrow(/owner or admin/);
+  });
+
+  it('keeps each person’s Today layout to themselves', async () => {
+    const layout = { owner: { metrics: ['sales', 'covers', 'tonight'], widgets: [] } };
+    await saveAction(db, owner(), { key: 'today.layout', value: layout });
+    expect((await loadActions(db, orgId, null, 'u1'))['@me']?.['today.layout']).toEqual(layout);
+    expect((await loadActions(db, orgId, ['berkeley'], 'u2'))['@me']).toBeUndefined();
+    expect(Object.keys(await loadActions(db, orgId)).some((k) => k.startsWith('user:') || k === '@me')).toBe(false);
   });
 
   it('an approval made anywhere is the same action here, pending execution until it’s made', async () => {
@@ -249,5 +299,170 @@ describe('the Today API', () => {
     await loadToday(db, owner(), 'oakland', new Date(later.getTime() - 36e5 * 2));
     const t3 = await loadToday(db, owner(), 'oakland', later);
     expect(t3.cards[0].id).toMatch(/^stale:/);
+  });
+});
+
+describe('today’s counts and money labels', () => {
+  it('every count on the page adds up: total = to decide + waiting on data + handled', () => {
+    for (const room of ROOMS) {
+      const cards = todayCards(deriveRoom(SEED, room), { today });
+      let stored: any = null;
+      const ctx = { cards, today, own: true, now: at };
+      for (const op of [null, 'done', 'snooze']) {
+        const ready = cards.filter((c) => isActiveCard(c, stored, ctx) && !c.approval && !c.task && !c.start && c.deadline !== 'today');
+        if (op && ready[0]) stored = applyOp(stored, { op, cardId: ready[0].id }, ctx);
+        const sum = queueSummary(cards, queueView(stored, ctx));
+        expect(sum.ready + sum.blocked + sum.handled).toBe(sum.total);
+        expect(sum.left).toBe(sum.ready + sum.blocked);
+      }
+    }
+  });
+
+  it('every dollar figure on a card says what the money is', () => {
+    for (const room of ROOMS) {
+      for (const c of todayCards(deriveRoom(SEED, room), { today })) {
+        const w = worthOf(c);
+        if (/^(about\s+)?[−-]?\$/.test(c.value)) {
+          expect(w.figure, `${room}/${c.id}`).toBeTruthy();
+          expect(w.means, `${room}/${c.id}`).toBeTruthy();
+        } else {
+          expect(w.figure).toBeNull();
+          expect(w.note).toBe(c.value);
+        }
+      }
+    }
+    expect(worthOf({ value: '$37 tonight' }).figure).toBeNull(); // no meaning written down: not a headline figure
+    expect(worthOf({ value: 'about $146/wk', means: 'Extra profit a week' })).toMatchObject({ figure: '$146', about: true });
+  });
+});
+
+function isActiveCard(c: C, stored: unknown, ctx: { cards: C[]; today: string; own: boolean; now: number }) {
+  const st = cardState(c, queueView(stored as never, ctx));
+  return st === 'ready' || st === 'needs_review';
+}
+
+describe('up next, by the money at stake', () => {
+  const cards = todayCards(deriveRoom(SEED, 'oakland'), { today });
+  it('the recipe upload shows the salmon price it unlocks', () => {
+    const recipes = cards.find((c) => c.id === 'recipes')!;
+    expect(unlocksOf(recipes, cards)).toMatchObject({ figure: '$146', unit: '/wk', claim: 'mod' });
+  });
+  it('orders by money times urgency, then the least time', () => {
+    const [, ...rest] = cards.filter((c) => !c.blocked);
+    const ids = upNextOrder(rest, cards).map((c) => c.id);
+    expect(ids.slice(0, 2)).toEqual(['recipes', 'ot']);
+    expect(ids.indexOf('7shifts')).toBeLessThan(ids.indexOf('count')); // no dollars: 1 min before 15 min
+  });
+});
+
+describe('assigning a card', () => {
+  const d = deriveRoom(SEED, 'oakland');
+  const cards = todayCards(d, { today });
+  const ctx = { cards, today, own: false, now: at };
+
+  it('assigned is handled, not done: it leaves the list, counts add up, and it can be finished or taken back', () => {
+    expect(() => applyOp(null, { op: 'assign', cardId: 'ot', to: 'chef' }, ctx)).toThrow(/Say who/);
+    const a = applyOp(null, { op: 'assign', cardId: 'ot', to: 'gm' }, ctx);
+    const v = queueView(a, ctx);
+    expect(cardState(cards.find((c: C) => c.id === 'ot'), v)).toBe('assigned');
+    const sum = queueSummary(cards, v);
+    expect(sum).toMatchObject({ assigned: 1, cleared: 0 });
+    expect(sum.total).toBe(sum.ready + sum.blocked + sum.handled);
+    expect(() => applyOp(a, { op: 'assign', cardId: 'ot', to: 'owner' }, ctx)).toThrow(/already assigned/);
+    expect(() => applyOp(a, { op: 'snooze', cardId: 'ot' }, ctx)).toThrow();
+    const back = applyOp(a, { op: 'undo', cardId: 'ot' }, ctx);
+    expect(cardState(cards.find((c: C) => c.id === 'ot'), queueView(back, ctx))).toBe('ready');
+    const done = applyOp(applyOp(null, { op: 'assign', cardId: 'count', to: 'kitchen' }, ctx), { op: 'done', cardId: 'count' }, ctx);
+    expect(done.assigned).toEqual({});
+    expect(Object.keys(done.done)).toEqual(['count']);
+    expect(Object.keys(ASSIGNEES)).toEqual(['gm', 'kitchen', 'bar', 'owner']);
+  });
+
+  it('the history says who it went to', () => {
+    const a = applyOp(null, { op: 'assign', cardId: 'ot', to: 'gm' }, ctx);
+    const h = queueHistory([{ value: a, at: '2026-10-27T18:00:00Z', by: { you: true } }]);
+    expect(h).toEqual([{ cardId: 'ot', op: 'assign', to: 'gm', at: '2026-10-27T18:00:00Z', by: { you: true } }]);
+  });
+});
+
+describe('the briefing, coming up and results (pure)', () => {
+  const view = queueView(null, { today, own: false, cards: [] });
+  const for_ = (id: string) => { const d = deriveRoom(SEED, id); return { d, cards: todayCards(d, { today }) }; };
+
+  it('says how far a card can be trusted and how long is left to act', () => {
+    const { d, cards } = for_('oakland');
+    const cut = cards.find((c: C) => c.id === 'cut');
+    expect(cardTrust(cut, d, NOW)).toEqual({ delayed: { name: '7shifts', last: '18 hours ago' }, before: '8 pm', minsLeft: 45 });
+    const fresh = { ...d, feeds: d.feeds.map((f: { name: string }) => (f.name === '7shifts' ? { ...f, state: 'ok' } : f)) };
+    expect(cardTrust(cut, fresh, NOW).delayed).toBeNull();
+    expect(cardTrust(cards.find((c: C) => c.id === 'count'), d, NOW)).toEqual({ delayed: null, before: null, minsLeft: null });
+  });
+
+  it('reads the service period from the clock, rolling late night into the previous day', () => {
+    expect(servicePeriod(clockMinutes('7:15 pm'))).toMatchObject({ id: 'dinner', phase: 'during' });
+    expect(servicePeriod(clockMinutes('3:00 pm'))).toMatchObject({ id: 'before-dinner', phase: 'before' });
+    expect(servicePeriod(clockMinutes('1:30 am'))).toMatchObject({ phase: 'after', lateNight: true });
+  });
+
+  it('leads with tonight, counts decisions from the same cards, and names a feed that is behind', () => {
+    const { d, cards } = for_('oakland');
+    const b = briefing(d, { cards, view, now: NOW });
+    expect(b.headline).toBe('Dinner is 22% quieter than usual.');
+    expect(b.line).toBe('Covers are 22% below the usual Tuesday dinner pace. Check staffing for the next service hour.');
+    expect(b.warn.map((w: { name: string }) => w.name)).toContain('7shifts');
+    const q = for_('berkeley');
+    expect(briefing(q.d, { cards: q.cards, view, now: NOW }).headline).toBe('Dinner demand is on track.');
+    expect(briefing(q.d, { cards: [], view, now: NOW }).headline).toBe('Dinner demand is on track.');
+    expect(briefing({ ...q.d, room: { ...q.d.room, service: null } }, { cards: [], view, now: NOW })).toMatchObject({ tone: 'calm', headline: 'Everything looks on track.' });
+  });
+
+  it('coming up shows the rest of tonight and results due, never a card already on the list', () => {
+    const { d, cards } = for_('oakland');
+    const items = comingUp(d, { cards, view, now: NOW });
+    expect(items.map((x: { when: string }) => x.when)).toEqual(['8 pm', '9 pm', 'Nov 3', 'Nov 30']);
+    expect(items[0]).toMatchObject({ title: 'Usually 18 covers', detail: '5 scheduled, 4 forecast need' });
+    for (const x of items) expect(cards.some((c: C) => c.title === x.title)).toBe(false);
+  });
+
+  it('keeps confirmed, being checked and could-save apart, and confirmed is only what passed', () => {
+    const { d, cards } = for_('walnut');
+    const r = results(d, { cards, view });
+    expect(r.confirmed.week).toBe(d.banked.week);
+    expect(r.confirmed.items.every((p: { outcome: string }) => p.outcome === 'verified' || p.outcome === 'limited')).toBe(true);
+    expect(r.checking.every((p: { outcome: string }) => p.outcome === 'testing')).toBe(true);
+    expect(r.could.every((x: { c: C }) => !x.c.blocked)).toBe(true);
+    expect(r).not.toHaveProperty('total');
+  });
+
+  it('every card has an area and says plainly how it is carried out', () => {
+    for (const id of ROOMS) {
+      for (const c of todayCards(deriveRoom(SEED, id), { today })) {
+        expect(areaOf(c)).toBeTruthy();
+        const how = carriedOut(c);
+        if (c.task) expect(how.text).toMatch(/doesn’t change/);
+      }
+    }
+  });
+});
+
+describe('tonight’s pace', () => {
+  it('is counted from the live covers, never typed, so every screen agrees', () => {
+    const got = Object.fromEntries(Object.entries(SEED.rooms).map(([id, r]) => [id, servicePace((r as { service: object }).service)]));
+    const byPace = Object.values(got).map((p) => p && [p.so, p.usual, p.pace]);
+    expect(byPace).toContainEqual([46, 59, -22]);
+    for (const p of Object.values(got)) {
+      if (!p) continue;
+      expect(p.pace).toBe(Math.round((p.so / p.usual - 1) * 100));
+    }
+    for (const r of Object.values(SEED.rooms)) expect((r as { service: Record<string, unknown> }).service).not.toHaveProperty('pace');
+  });
+});
+
+describe('tonight on a room’s own data', () => {
+  it('shows no live pace: the sample’s covers never stand in for a real room', async () => {
+    const { tonight } = await import('../lib/data/page/today-brief.js');
+    const d = deriveRoom(SEED, 'oakland');
+    expect(tonight(d, NOW)).not.toBeNull();
+    expect(tonight({ ...d, room: { ...d.room, fromToast: { end: '2026-10-25' } } }, NOW)).toBeNull();
   });
 });

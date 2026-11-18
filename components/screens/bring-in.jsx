@@ -21,7 +21,7 @@ const LANES = [
 ];
 const FEEDS = [
   ['Sales, orders and covers', ['api', 'export']],
-  ['Labour hours, wages, overtime', ['api', 'export']],
+  ['Labor hours, wages, overtime', ['api', 'export']],
   ['Menu prices and plates sold', ['api', 'export', 'file', 'paste', 'link', 'type']],
   ['Plate costs', ['file', 'paste', 'link', 'photo', 'type']],
   ['Invoice lines', ['file', 'paste', 'link', 'photo', 'type']],

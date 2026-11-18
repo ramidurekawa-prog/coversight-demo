@@ -51,7 +51,7 @@
 .tile:hover:not(:disabled) { border-color: var(--border-strong); }
 .tile:disabled { cursor: default; }
 .tile:focus-visible { outline: none; box-shadow: var(--ring); }
-.tile.tileOn { border-color: var(--accent); background: var(--accent-subtle); }
+.tile.tileOn { border-color: var(--cv-selected); background: var(--cv-selected-bg); }
 .tileLabel { display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-xs); color: var(--fg-3); font-weight: 600; }
 .tileVal { font-family: var(--font-mono); font-size: 2.5rem; font-weight: 600; line-height: 1; color: var(--fg-1); font-variant-numeric: tabular-nums; }
 .tileSub { font-size: var(--text-xs); color: var(--fg-2); }
@@ -80,7 +80,7 @@
 .tagA, .tbA { background: var(--cat-1); color: var(--fg-on-accent); }
 .tagB, .tbB { background: var(--signal-warn); color: var(--fg-on-accent); }
 .tagC, .tbC { background: var(--cat-2); color: var(--fg-on-accent); }
-.tagD, .tbD { background: var(--primary); color: var(--primary-fg); }
+.tagD, .tbD { background: var(--teal-500); color: #fff; } /* data, not an action: never persimmon */
 .tagE, .tbE { background: var(--cat-3); color: var(--fg-on-accent); }
 
 /* ---------------------------------------------------------------- charts */
@@ -104,7 +104,7 @@
 .vbBtn { display: flex; flex-direction: column; gap: 6px; width: 100%; padding: 10px; border: 1px solid transparent; border-radius: var(--radius-md); background: none; text-align: left; font: inherit; color: inherit; cursor: pointer; }
 .vbBtn:hover { background: var(--surface-hover); }
 .vbBtn:focus-visible { outline: none; box-shadow: var(--ring); }
-.vbBtn.vbOn { border-color: var(--accent); background: var(--accent-subtle); }
+.vbBtn.vbOn { border-color: var(--cv-selected); background: var(--cv-selected-bg); }
 .vbBtn.vbStatic { padding: 0; cursor: default; }
 .vbBtn.vbStatic:hover { background: none; }
 .vbHead { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
@@ -130,7 +130,7 @@
 .legendBtn b { color: var(--fg-1); font-family: var(--font-mono); }
 .legendBtn:disabled { opacity: 0.45; cursor: default; }
 .legendBtn:focus-visible { outline: none; box-shadow: var(--ring); }
-.legendBtn.legendOn { border-color: var(--accent); background: var(--accent-subtle); }
+.legendBtn.legendOn { border-color: var(--cv-selected); background: var(--cv-selected-bg); }
 .swatch { width: 10px; height: 10px; border-radius: 50%; }
 
 .weeks { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 6px; height: 96px; align-items: end; }

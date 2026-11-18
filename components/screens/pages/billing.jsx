@@ -103,7 +103,7 @@ function BillingReal() {
 
 function CvBilling() {
   const eng = useEngine();
-  if (eng.mode === 'server' && eng.org && !eng.org.sample && eng.viewer?.role !== 'gm') {
+  if (eng.mode === 'server' && eng.org && !eng.org.sample && !['gm', 'floor'].includes(eng.viewer?.role)) {
     return (
       <div className="cv-page">
         <PageHead over={`Billing · ${eng.org.name}`} q="What did we charge, and on what?"

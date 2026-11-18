@@ -80,7 +80,8 @@ export const orgs = pgTable('orgs', {
   ...timestamps,
 });
 
-export const memberRole = pgEnum('member_role', ['owner', 'gm', 'admin']);
+/** owner and admin see every room; gm and floor (a floor or shift manager) only their rooms. */
+export const memberRole = pgEnum('member_role', ['owner', 'gm', 'admin', 'floor']);
 
 export const memberships = pgTable(
   'memberships',
@@ -295,6 +296,8 @@ export const notifications = pgTable(
     body: text('body').notNull().default(''),
     link: text('link'),
     dedupe: text('dedupe'),
+    /** For one person only (a card handed to them); null means everyone who can see the room. */
+    userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }),
     createdAt: at('created_at').notNull().defaultNow(),
   },
   (t) => [index('notifications_org_idx').on(t.orgId, t.createdAt), unique('notifications_dedupe').on(t.orgId, t.dedupe)],
@@ -594,5 +597,48 @@ export const meetingActions = pgTable(
 
 export const orgRelations = relations(orgs, ({ many }) => ({ rooms: many(rooms), memberships: many(memberships) }));
 
-export const schema = { users, sessions, accounts, verifications, orgs, memberships, rooms, roomData, inputs, actions, auditLog, memberRole, windowStatus, testWindows, checkpoints, jobRuns, snapshots, taskStatus, tasks, notifications, notificationReads, outbox, invites, invoices, toastConnections, posDays, linkedSources, agentCycles, agentEvents, agentRuns, agentProposals, meetingSessions, meetingActions };
 
+/**
+ * Tonight, as it happens: one room's covers per 15-minute slot so far today,
+ * pulled from Toast during service (server/live.ts), and the comparable
+ * night built from the same weekday in pos_days. Kept separate from pos_days
+ * so a mid-service pull never overwrites the nightly sync's full day.
+ */
+export const serviceLive = pgTable(
+  'service_live',
+  {
+    orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+    roomId: text('room_id').notNull(),
+    day: text('day').notNull(),
+    /** Covers per 15-minute slot from 5 pm, pulled from Toast. Empty until a pull succeeds. */
+    slots: jsonb('slots').$type<number[]>().notNull().default(sql`'[]'::jsonb`),
+    orders: integer('orders').notNull().default(0),
+    /** Servers scheduled per slot from 7shifts, when connected. */
+    staff: jsonb('staff').$type<number[] | null>(),
+    /** What a manager entered by hand when a feed is missing or down: covers so far and servers on, as of a time. */
+    manual: jsonb('manual').$type<{ covers?: number; servers?: number; at: string; by?: string } | null>(),
+    pulledAt: at('pulled_at'),
+    staffAt: at('staff_at'),
+    error: text('error'),
+    staffError: text('staff_error'),
+  },
+  (t) => [primaryKey({ columns: [t.orgId, t.roomId, t.day] })],
+);
+
+/** 7shifts: a read-only access token, sealed like Toast's secret, and which 7shifts location is which room. */
+export const staffConnections = pgTable('staff_connections', {
+  orgId: uuid('org_id').primaryKey().references(() => orgs.id, { onDelete: 'cascade' }),
+  provider: text('provider').notNull().default('7shifts'),
+  companyId: text('company_id').notNull(),
+  tokenSealed: text('token_sealed').notNull(),
+  locations: jsonb('locations').$type<{ locationId: string; roomId: string; name: string }[]>().notNull(),
+  /** Which 7shifts roles count as servers on the floor. Empty means every role. */
+  serverRoles: jsonb('server_roles').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+  status: text('status').notNull().default('connected'),
+  lastError: text('last_error'),
+  checkedAt: at('checked_at').notNull().defaultNow(),
+  createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: at('created_at').notNull().defaultNow(),
+});
+
+export const schema = { users, sessions, accounts, verifications, orgs, memberships, rooms, roomData, inputs, actions, auditLog, memberRole, windowStatus, testWindows, checkpoints, jobRuns, snapshots, taskStatus, tasks, notifications, notificationReads, outbox, invites, invoices, toastConnections, posDays, linkedSources, agentCycles, agentEvents, agentRuns, agentProposals, meetingSessions, meetingActions, serviceLive, staffConnections };

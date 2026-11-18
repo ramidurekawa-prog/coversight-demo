@@ -81,7 +81,7 @@ function CvDataReal() {
           {err && <Callout tone="warn" icon="CircleX">{err}</Callout>}
         </section>
       </div>
-      {!isOwner && <Callout icon="Lock">Only an owner can export or delete. You&apos;re signed in as {eng.viewer?.role === 'gm' ? 'a GM' : 'an admin'}.</Callout>}
+      {!isOwner && <Callout icon="Lock">Only an owner can export or delete. You&apos;re signed in as {{ gm: 'a GM', floor: 'a floor manager' }[eng.viewer?.role] || 'an admin'}.</Callout>}
     </div>
   );
 }

@@ -14,18 +14,28 @@ import '@fontsource/ibm-plex-sans/400.css';
 import '@fontsource/ibm-plex-sans/500.css';
 import '@fontsource/ibm-plex-sans/600.css';
 import '@fontsource/ibm-plex-sans/700.css';
+import '@fontsource/manrope/400.css';
+import '@fontsource/manrope/500.css';
+import '@fontsource/manrope/600.css';
+import '@fontsource/manrope/700.css';
+import '@fontsource/manrope/800.css';
+import '@fontsource/dm-sans/400.css';
+import '@fontsource/dm-sans/500.css';
+import '@fontsource/dm-sans/600.css';
+import '@fontsource/dm-sans/700.css';
 import '@fontsource/ibm-plex-mono/400.css';
 import '@fontsource/ibm-plex-mono/500.css';
 import '@fontsource/ibm-plex-mono/600.css';
 import './globals.css';
 import './theme.css';
+import './page-style.css';
 
 import { Shell } from '../components/shell';
 
 export const metadata: Metadata = {
   title: 'Coversight Product Demo',
   description: 'Coversight on a sample three-room restaurant group: every figure computed, labelled with how strong the claim is, and clickable.',
-  icons: { icon: [{ url: '/favicon-32.png', sizes: '32x32' }, { url: '/icon.png', sizes: '180x180' }], apple: '/icon.png' },
+  icons: { icon: [{ url: '/favicon-persimmon-32.png', sizes: '32x32' }, { url: '/icon-persimmon.png', sizes: '180x180' }], apple: '/icon-persimmon.png' },
 };
 
 export const viewport: Viewport = { width: 'device-width', initialScale: 1 };

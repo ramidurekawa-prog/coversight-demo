@@ -6,6 +6,7 @@ import { Icon, Button } from '../../kit';
 import { engine, useEngine, useSaved } from '../../engine';
 import { useCv, cvMoney, CV_D, CV_ROOM, CV_NOW, Claim, Money, Pill, PageHead, cvScale } from '../core';
 import { DenseService } from '../dense-sections';
+import { servicePace } from '../../../lib/data/model';
 import { bandSpread, clockLabel, clockMinutes, cutApprovalId, DINNER_FROM, fencesOf, hhmm, isCutFor, localNow, manualNight, MIN_CALIBRATED, servicePlan, SLOT_MIN } from '../../../lib/data/page/service.js';
 import s from './service.module.css';
 
@@ -472,6 +473,7 @@ function ServiceSample() {
   const cv = useCv();
   const sv = CV_D.room.service;
   const [state, setState] = useSaved('service', 'ask');
+  const samplePace = servicePace(sv)?.pace ?? 0;
   const [fencesSaved] = useSaved('fences', null);
   const fences = fencesOf(fencesSaved);
   const so = sv.actual.reduce((a, b) => a + b, 0);
@@ -498,7 +500,7 @@ function ServiceSample() {
       <PageHead over={`Service · ${CV_ROOM.name} · ${sv.day} · ${CV_NOW.time}`} q="How is service going?" />
       <div className={s.mode}><span className={s.dot} />Sample night · a fixed scene, not live data</div>
       <div className={s.kpis}>
-        <StatusCard {...status} sub={`${sv.pace > 0 ? '+' : ''}${sv.pace}% vs a comparable night`} />
+        <StatusCard {...status} sub={`${samplePace > 0 ? '+' : ''}${samplePace}% vs a comparable night`} />
         <CoversCard label="Covers so far" value={so} lo={lo} hi={hi} sub={`expected ${lo}–${hi} by now`} />
         <ServersCard on={on} need={need} release={sv.mode === 'cut' && state === 'ask'} />
       </div>
