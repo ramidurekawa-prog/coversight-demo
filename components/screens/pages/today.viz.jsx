@@ -14,7 +14,7 @@ import s from './today.module.css';
  * one the card's comparison uses (passed in), so the picture and the words
  * always agree. The latest point is filled.
  */
-export function Spark({ values, avg, first, last: lastLabel, caption, fmt = String, h = 44 }) {
+export function Spark({ values, avg, first, last: lastLabel, caption, fmt = String, h = 34 }) {
   if (!values || values.length < 2) return null;
   const mean = avg ?? values.slice(0, -1).reduce((a, b) => a + b, 0) / (values.length - 1);
   const lo = Math.min(...values, mean), hi = Math.max(...values, mean);
@@ -58,7 +58,7 @@ export function MarkBar({ value, mark, max, fmt = String, label = 'This week', t
  * as a shaded shape across the whole service, tonight as a line up to now,
  * and when the usual rush is. Times come from the service's own slots.
  */
-export function PaceCurve({ comp, actual, times, h = 56 }) {
+export function PaceCurve({ comp, actual, times, h = 38 }) {
   if (!comp?.length || !actual?.length) return null;
   const n = comp.length - 1;
   const top = Math.max(...comp, ...actual) * 1.1 || 1;

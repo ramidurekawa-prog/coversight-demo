@@ -332,11 +332,11 @@ export function Worth({ q, cards, big = false }) {
   if (big) {
     return (
       <span className={`${s.worth} ${s.worthBig}`}>
-        <span className={s.worthFig}>{w.about && <span className={s.worthPre}>about </span>}{w.figure || un.figure}{unit?.startsWith('/') && <span className={s.worthUnit}>{unit}</span>}</span>
         <span className={s.worthRow}>
+          <span className={s.worthFig}>{w.about && <span className={s.worthPre}>about </span>}{w.figure || un.figure}{unit?.startsWith('/') && <span className={s.worthUnit}>{unit}</span>}</span>
           <Claim k={un ? un.claim : q.claim} label={un ? undefined : q.claimLabel} />
-          <span className={s.worthMeans}>{un ? 'What finishing this unlocks' : w.means}</span>
         </span>
+        <span className={s.worthMeans}>{un ? 'What finishing this unlocks' : w.means}</span>
       </span>
     );
   }
