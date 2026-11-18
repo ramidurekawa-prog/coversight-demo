@@ -18,31 +18,59 @@ const short = (min) => clockLabel(min).replace(' pm', '').replace(' am', '');
 
 /* ================================================================ the visual pieces */
 
-/** The big status chip: two or three words, colour plus icon. */
-const STATUS = {
-  good: ['CircleCheck', s.st_good],
-  warn: ['TriangleAlert', s.st_warn],
-  accent: ['UserMinus', s.st_accent],
-  neutral: ['Activity', s.st_neutral],
-};
-function StatusCard({ tone, label, sub }) {
-  const [icon, cls] = STATUS[tone] || STATUS.neutral;
+/**
+ * The answer, at the top: what to do right now in one line, why in one more,
+ * and the one persimmon button. Everything else on the page backs this up.
+ */
+const TONE_ICON = { act: 'UserMinus', good: 'CircleCheck', warn: 'TriangleAlert', neutral: 'Activity', wait: 'Hourglass' };
+function Hero({ tone = 'neutral', kicker, title, sub, value, primary, secondary, state, why }) {
+  const [open, setOpen] = React.useState(false);
   return (
-    <section className={`${s.kpi} ${s.statusCard} ${cls}`} role="status" aria-live="polite">
-      <span className={s.kpiLabel}>Tonight</span>
-      <span className={s.statusBig}><Icon name={icon} size={26} />{label}</span>
-      {sub && <span className={s.kpiSub}>{sub}</span>}
+    <section className={`${s.hero} ${s[`h_${tone}`] || ''}`} aria-labelledby="svc-hero" role="status" aria-live="polite">
+      <div className={s.heroMain}>
+        <span className={s.heroKicker}><Icon name={TONE_ICON[tone] || 'Activity'} size={16} />{kicker}</span>
+        <h2 id="svc-hero" className={s.heroTitle}>{title}</h2>
+        {sub && <p className={s.heroSub}>{sub}</p>}
+        {why && (
+          <>
+            <button type="button" className={s.why} onClick={() => setOpen((v) => !v)} aria-expanded={open}><Icon name={open ? 'ChevronUp' : 'ChevronDown'} size={15} />Why</button>
+            {open && <div className={s.whyBox}>{why}</div>}
+          </>
+        )}
+      </div>
+      {(value || primary || state) && (
+        <div className={s.heroSide}>
+          {value}
+          {state ?? (
+            <div className={s.actions}>
+              {primary}
+              {secondary}
+            </div>
+          )}
+        </div>
+      )}
     </section>
   );
 }
 
-/** Covers so far as a big number, with a bar showing where it sits in the expected range. */
+/** The dollar figure on a release: always potential, always Estimated. */
+function Potential({ value, money }) {
+  if (value == null) return <span className={s.kpiSub}>No wage rates in your data, so no dollar figure.</span>;
+  return (
+    <span className={s.potential}>
+      <span className={s.potFig}>{money ?? cvMoney(value)}</span>
+      <span className={s.kpiSub}>potential wages tonight, not saved yet <Claim k="est" /></span>
+    </span>
+  );
+}
+
+/** Covers so far as a big number, with a bar showing where it sits against a usual night. */
 function CoversCard({ label, value, lo, hi, max, sub, marker = true }) {
   const top = Math.max(max ?? hi * 1.25, value * 1.1, 1);
   const pct = (v) => `${Math.min(100, (v / top) * 100)}%`;
-  const where = value > hi ? s.over : value < lo ? s.under : s.inside;
+  const where = value > hi ? s.over : value < lo ? s.under : '';
   return (
-    <section className={s.kpi} aria-label={`${label}: ${value}, expected ${lo} to ${hi}`}>
+    <section className={s.kpi} aria-label={`${label}: ${value}, usual ${lo} to ${hi}`}>
       <span className={s.kpiLabel}>{label}</span>
       <span className={s.big}>{value}</span>
       <div className={s.gauge} aria-hidden="true">
@@ -54,12 +82,12 @@ function CoversCard({ label, value, lo, hi, max, sub, marker = true }) {
   );
 }
 
-/** Servers on the floor as seats: filled are needed, open are spare, dashed is the one to release. */
+/** Servers on the floor as seats: filled are needed, open are spare, dashed is the one to send home. */
 function ServersCard({ on, need, release, sub }) {
-  if (on == null) return <section className={s.kpi}><span className={s.kpiLabel}>Servers</span><span className={s.big}>—</span><span className={s.kpiSub}>{sub || 'No clock-ins yet'}</span></section>;
+  if (on == null) return <section className={s.kpi}><span className={s.kpiLabel}>Servers on now</span><span className={`${s.big} ${s.none}`}>—</span><span className={s.kpiSub}>{sub || 'No clock-ins yet'}</span></section>;
   return (
     <section className={s.kpi} aria-label={`${on} servers on, ${need} needed`}>
-      <span className={s.kpiLabel}>Servers</span>
+      <span className={s.kpiLabel}>Servers on now</span>
       <span className={s.big}>{on}<span className={s.bigOf}> on · {need} needed</span></span>
       <span className={s.bigSeats} aria-hidden="true">
         {Array.from({ length: Math.min(on, 12) }, (_, i) => <span key={i} className={`${s.bigSeat} ${i < need ? '' : release && i === on - 1 ? s.gone : s.spare}`} />)}
@@ -70,67 +98,77 @@ function ServersCard({ on, need, release, sub }) {
 }
 
 /**
- * Covers every 15 minutes: tonight, the comparable night and the forecast band.
- * Hover, tap or arrow-key along it to read any quarter hour; the chips turn
- * layers on and off.
+ * Tonight against a usual night, every 15 minutes, with the likely range ahead
+ * and the send-home time marked. Hover, tap or arrow-key along it to read a time.
  */
-function PaceChart({ comp, actual, now, factor, spread, start, cutSlot }) {
+function PaceChart({ comp, actual, now, factor, spread, start, cutSlot, usual }) {
   const [sel, setSel] = React.useState(null);
-  const [show, setShow] = React.useState({ comp: true, band: true });
-  const W = 640, H = 220, P = { l: 30, r: 12, t: 22, b: 26 };
+  // Draw at the card's real width so the type stays the same size on a phone and a desktop.
+  const box = React.useRef(null);
+  const [W, setW] = React.useState(960);
+  React.useEffect(() => {
+    const el = box.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(([e]) => setW(Math.max(280, Math.round(e.contentRect.width))));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const H = W < 560 ? 230 : 280, P = { l: 34, r: 12, t: 56, b: 30 };
   const n = comp.length;
-  const top = Math.max(4, Math.ceil(Math.max(...comp, ...actual, ...comp.map((c) => c * factor * (1 + spread))) / 2) * 2);
+  const f = Number.isFinite(factor) ? factor : 1;
+  const top = Math.max(4, Math.ceil(Math.max(...comp, ...actual, ...comp.map((c) => c * f * (1 + spread))) / 2) * 2);
   const x = cvScale(0, n - 1, P.l, W - P.r);
   const y = cvScale(0, top, H - P.b, P.t);
   const from = Math.max(0, now - 1);
-  const fc = comp.map((c, i) => (i < from ? null : i === from && actual[from] != null ? actual[from] : c * factor));
+  const fc = comp.map((c, i) => (i < from ? null : i === from && actual[from] != null ? actual[from] : c * f));
   const up = [], lo = [];
-  comp.forEach((c, i) => { if (i >= now) { up.push([x(i), y(c * factor * (1 + spread))]); lo.unshift([x(i), y(c * factor * (1 - spread))]); } });
+  comp.forEach((c, i) => { if (i >= from) { up.push([x(i), y(c * f * (1 + spread))]); lo.unshift([x(i), y(c * f * (1 - spread))]); } });
   const ticks = [];
-  for (let i = 0; i < n; i += 4) ticks.push(i);
+  for (let i = 0; i < n; i += W < 560 ? 8 : 4) ticks.push(i);
   const step = (W - P.l - P.r) / Math.max(1, n - 1);
   const i = sel ?? (now > 0 ? now - 1 : 0);
   const at = clockLabel(start + i * SLOT_MIN);
   const tip = i < actual.length
-    ? [`${at}`, `Tonight ${actual[i]}`, `Comparable ${comp[i]}`]
-    : [`${at}`, `Forecast ${Math.round(comp[i] * factor * (1 - spread))}–${Math.round(comp[i] * factor * (1 + spread))}`, `Comparable ${comp[i]}`];
-  const tipX = Math.min(W - P.r - 112, Math.max(P.l, x(i) - 56));
+    ? [at, `Tonight ${actual[i]} · usual ${comp[i]}`]
+    : [at, `Likely ${Math.round(comp[i] * f * (1 - spread))}–${Math.round(comp[i] * f * (1 + spread))} · usual ${comp[i]}`];
+  const TW = 168;
+  const tipX = Math.min(W - P.r - TW, Math.max(P.l, x(i) - TW / 2));
   const onKey = (e) => {
     if (e.key === 'ArrowRight') { setSel(Math.min(n - 1, i + 1)); e.preventDefault(); }
     if (e.key === 'ArrowLeft') { setSel(Math.max(0, i - 1)); e.preventDefault(); }
   };
   return (
-    <div className={s.chartWrap}>
-      <div className={s.chips} role="group" aria-label="Show on the chart">
-        <button type="button" className={`${s.chip} ${s.chipOn}`} aria-pressed="true" disabled><i className={s.swTonight} />Tonight</button>
-        <button type="button" className={`${s.chip} ${show.comp ? s.chipOn : ''}`} aria-pressed={show.comp} onClick={() => setShow((v) => ({ ...v, comp: !v.comp }))}><i className={s.swComp} />Comparable</button>
-        <button type="button" className={`${s.chip} ${show.band ? s.chipOn : ''}`} aria-pressed={show.band} onClick={() => setShow((v) => ({ ...v, band: !v.band }))}><i className={s.swBand} />Forecast range</button>
-      </div>
+    <div className={s.chartWrap} ref={box}>
       <svg className={`cv-chart ${s.chart}`} viewBox={`0 0 ${W} ${H}`} role="img" tabIndex={0} onKeyDown={onKey} onMouseLeave={() => setSel(null)}
         aria-label={`Covers every 15 minutes. ${tip.join(', ')}. Use the arrow keys to move.`}>
-        {[0, Math.round(top / 2), top].map((v) => <g key={v}><line className="grid" x1={P.l} x2={W - P.r} y1={y(v)} y2={y(v)} /><text x={P.l - 8} y={y(v) + 3} textAnchor="end">{v}</text></g>)}
-        {show.band && up.length > 1 && <polygon points={[...up, ...lo].map((p) => p.join(',')).join(' ')} fill="var(--accent)" opacity="0.16" />}
-        {show.comp && <polyline points={comp.map((c, k) => `${x(k)},${y(c)}`).join(' ')} fill="none" stroke="var(--fg-3)" strokeWidth="1.5" strokeDasharray="4 3" />}
-        {show.band && <polyline points={fc.map((c, k) => c != null && `${x(k)},${y(c)}`).filter(Boolean).join(' ')} fill="none" stroke="var(--accent)" strokeWidth="1.5" strokeDasharray="2 3" />}
+        {[0, Math.round(top / 2), top].map((v) => <g key={v}><line className="grid" x1={P.l} x2={W - P.r} y1={y(v)} y2={y(v)} /><text x={P.l - 8} y={y(v) + 4} textAnchor="end">{v}</text></g>)}
+        {up.length > 1 && <polygon points={[...up, ...lo].map((q) => q.join(',')).join(' ')} fill="var(--accent)" opacity="0.1" />}
+        <polyline points={comp.map((c, k) => `${x(k)},${y(c)}`).join(' ')} fill="none" stroke="var(--fg-3)" strokeWidth="1.5" strokeDasharray="4 4" />
+        <polyline points={fc.map((c, k) => c != null && `${x(k)},${y(c)}`).filter(Boolean).join(' ')} fill="none" stroke="var(--accent)" strokeWidth="1.5" strokeDasharray="2 4" opacity="0.7" />
         {actual.length > 0 && <polyline points={actual.map((c, k) => `${x(k)},${y(c)}`).join(' ')} fill="none" stroke="var(--accent)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />}
         {cutSlot != null && cutSlot < n && <>
-          <line x1={x(cutSlot)} x2={x(cutSlot)} y1={P.t} y2={H - P.b} stroke="var(--warning-600)" strokeWidth="1.5" strokeDasharray="3 3" />
-          <text x={x(cutSlot) + 5} y={H - P.b - 6} style={{ fill: 'var(--warning-600)', fontWeight: 600 }}>release {short(start + cutSlot * SLOT_MIN)}</text>
+          <line x1={x(cutSlot)} x2={x(cutSlot)} y1={P.t - 4} y2={H - P.b} stroke="var(--primary)" strokeWidth="2" />
+          <text x={x(cutSlot) + 6} y={H - P.b - 8} style={{ fill: 'var(--fg-1)', fontWeight: 700 }}>send home {short(start + cutSlot * SLOT_MIN)}</text>
         </>}
-        <line x1={x(i)} x2={x(i)} y1={P.t} y2={H - P.b} stroke="var(--fg-2)" strokeWidth="1" opacity="0.5" />
-        <circle cx={x(i)} cy={y(i < actual.length ? actual[i] : comp[i] * factor)} r="5" fill="var(--accent)" stroke="var(--surface)" strokeWidth="2" />
-        <g transform={`translate(${tipX},${2})`} className={s.tip}>
-          <rect width="112" height="44" rx="6" />
-          {tip.map((t, k) => <text key={k} x="8" y={14 + k * 12} className={k ? '' : 'lbl'}>{t}</text>)}
+        <line x1={x(i)} x2={x(i)} y1={P.t - 4} y2={H - P.b} stroke="var(--fg-2)" strokeWidth="1" opacity="0.4" />
+        <circle cx={x(i)} cy={y(i < actual.length ? actual[i] : comp[i] * f)} r="5" fill="var(--accent)" stroke="var(--surface)" strokeWidth="2" />
+        <g transform={`translate(${tipX},4)`} className={s.tip}>
+          <rect width={TW} height="40" rx="8" />
+          {tip.map((t, k) => <text key={k} x="10" y={16 + k * 15} className={k ? '' : 'lbl'}>{t}</text>)}
         </g>
-        {ticks.map((k) => <text key={k} x={x(k)} y={H - 8} textAnchor="middle">{short(start + k * SLOT_MIN)}</text>)}
+        {ticks.map((k, j) => <text key={k} x={x(k)} y={H - 6} textAnchor="middle">{short(start + k * SLOT_MIN)}{j === 0 ? ' pm' : ''}</text>)}
         {comp.map((_, k) => <rect key={k} x={x(k) - step / 2} y={P.t} width={step} height={H - P.t - P.b} fill="transparent" onMouseEnter={() => setSel(k)} onClick={() => setSel(k)} />)}
       </svg>
+      <div className="cv-legend">
+        <span><i className={s.swTonight} />Tonight</span>
+        <span><i className={s.swComp} />{usual}</span>
+        <span><i className={s.swBand} />Likely range</span>
+      </div>
     </div>
   );
 }
 
-/** A typical night hour by hour: bars for covers, seats for servers. Tap an hour to read it. */
+/** A usual night hour by hour: bars for covers, seats for servers. Tap an hour to read it. */
 function HourBars({ plan, cutFrom }) {
   const [sel, setSel] = React.useState(null);
   const max = Math.max(...plan.hours.map((h) => h.peak), 1);
@@ -143,7 +181,7 @@ function HourBars({ plan, cutFrom }) {
           const cutting = cutFrom != null && x.hour >= cutFrom;
           return (
             <button key={x.hour} type="button" className={`${s.col} ${x.hour === h.hour ? s.colSel : ''} ${cutting ? s.colCut : ''}`} onClick={() => setSel(x.hour)} aria-pressed={x.hour === h.hour}
-              aria-label={`${clockLabel(x.hour * 60)}: typically ${x.covers} covers, up to ${x.peak}; ${on} servers on, ${x.need} needed`}>
+              aria-label={`${clockLabel(x.hour * 60)}: usually ${x.covers} covers, up to ${x.peak}; ${on} servers on, ${x.need} needed`}>
               <span className={s.colSeats} aria-hidden="true">{Array.from({ length: Math.min(on, 8) }, (_, i) => <span key={i} className={`${s.seat} ${i < x.need ? '' : cutting && i === on - 1 ? s.gone : s.spare}`} />)}</span>
               <span className={s.colTrack} aria-hidden="true">
                 <span className={s.colPeak} style={{ height: `${(x.peak / max) * 100}%` }} />
@@ -156,11 +194,11 @@ function HourBars({ plan, cutFrom }) {
       </div>
       <div className={s.readout} aria-live="polite">
         <b>{clockLabel(h.hour * 60)}</b>
-        <span><span className={s.num}>{h.covers}</span> covers typical · up to <span className={s.num}>{h.peak}</span></span>
+        <span><span className={s.num}>{h.covers}</span> covers usually · up to <span className={s.num}>{h.peak}</span></span>
         <span><span className={s.num}>{Math.round(h.servers)}</span> on · <span className={s.num}>{h.need}</span> needed{h.idle ? ` · ${h.idle} spare` : ''}</span>
       </div>
       <div className="cv-legend">
-        <span><i className={s.swBar} />Typical covers</span>
+        <span><i className={s.swBar} />Usual covers</span>
         <span><i className={s.swPeak} />Busiest week</span>
         <span><i className={s.seat} style={{ borderRadius: '50%' }} />Needed</span>
         <span><i className={`${s.seat} ${s.spare}`} style={{ borderRadius: '50%' }} />Spare</span>
@@ -172,10 +210,10 @@ function HourBars({ plan, cutFrom }) {
 /** Every check a release has to pass. Ones the data can't answer are the manager's. */
 function Checks({ checks }) {
   return (
-    <ul className={s.checks} aria-label="Checks before a release">
+    <ul className={s.checks} aria-label="Checks before sending someone home">
       {checks.map((c) => (
-        <li key={c.key} className={c.ok === true ? s.pass : c.ok === false ? s.fail : s.manual}>
-          <Icon name={c.ok === true ? 'CircleCheck' : c.ok === false ? 'CircleX' : 'CircleHelp'} size={15} />
+        <li key={c.key} className={c.ok === true ? s.pass : c.ok === false ? s.fail : s.yours}>
+          <Icon name={c.ok === true ? 'CircleCheck' : c.ok === false ? 'CircleX' : 'CircleHelp'} size={16} />
           <span><span className="sr-only">{c.ok === true ? 'Passes: ' : c.ok === false ? 'Fails: ' : 'Yours to check: '}</span>{c.label}{c.note ? <span className="cv-faint"> {c.note}</span> : null}</span>
         </li>
       ))}
@@ -183,86 +221,56 @@ function Checks({ checks }) {
   );
 }
 
-/** "How this works": fences and rules, closed by default. */
-function HowItWorks({ fences, extra }) {
+/** Everything behind the answer, in one tap: the checks, hour by hour, your rules and how it works. */
+function Details({ checks, plan, cutFrom, fences, extra, children }) {
   const cv = useCv();
   return (
-    <details className={`cv-card ${s.how}`}>
-      <summary><Icon name="CircleHelp" size={16} />How this works</summary>
-      <div className={s.fences}>
-        <div className={s.fence}><span className="cv-xs cv-faint">Fewest servers on dinner</span><span className={s.v}>{fences.minDinner}</span></div>
-        <div className={s.fence}><span className="cv-xs cv-faint">Latest same-night release</span><span className={s.v}>{clockLabel(fences.cutBy)}</span></div>
+    <details className={`cv-card ${s.details}`}>
+      <summary><Icon name="ListChecks" size={18} /><span>Details</span><span className={s.detailsHint}>checks, hour by hour, your rules</span><Icon name="ChevronDown" size={18} className={s.chev} /></summary>
+      <div className={s.detailsBody}>
+        {checks?.length > 0 && <div className={s.block}><span className={s.blockTitle}>Checks before sending someone home</span><Checks checks={checks} /></div>}
+        {plan && <div className={s.block}><span className={s.blockTitle}>A usual {dayOf(plan.day)}, hour by hour · last {plan.weeks} weeks</span><HourBars plan={plan} cutFrom={cutFrom} /></div>}
+        <div className={s.block}>
+          <span className={s.blockTitle}>Your rules</span>
+          <div className={s.fences}>
+            <div className={s.fence}><span className="cv-xs cv-faint">Fewest servers on dinner</span><span className={s.v}>{fences.minDinner}</span></div>
+            <div className={s.fence}><span className="cv-xs cv-faint">Latest time to send someone home</span><span className={s.v}>{clockLabel(fences.cutBy)}</span></div>
+          </div>
+          <Button size="sm" variant="ghost" iconRight="ArrowRight" onClick={() => cv.go('fences')}>Change rules</Button>
+        </div>
+        <div className={s.block}>
+          <span className={s.blockTitle}>How it works</span>
+          <ul className="cv-ul">
+            <li><Icon name="Activity" size={15} />Tonight is compared with the same night on recent weeks. The likely range comes from how far off that guess was on your own past nights.</li>
+            <li><Icon name="BellOff" size={15} />At most one suggestion and one alert a night. Someone goes home only if the rest still cover the busiest likely finish.</li>
+            <li><Icon name="ShieldCheck" size={15} />Approving puts the steps on Today. Nothing changes in 7shifts until someone does it, and Toast clock-ins confirm it.</li>
+            {extra}
+          </ul>
+        </div>
+        {children}
       </div>
-      <Button size="sm" variant="ghost" iconRight="ArrowRight" onClick={() => cv.go('fences')}>Change fences</Button>
-      <ul className="cv-ul">
-        <li><Icon name="Activity" size={15} />The forecast range comes from how far off the forecast was on your own recent nights.</li>
-        <li><Icon name="BellOff" size={15} />At most one suggestion and one alert per service. A release must be safe at the top of the range.</li>
-        <li><Icon name="ShieldCheck" size={15} />Approving creates a task, never a change. It counts only once Toast clock-ins show it.</li>
-        {extra}
-      </ul>
     </details>
   );
 }
 
-/**
- * The one thing to do tonight: big title, potential value, two buttons.
- * Why, the checks and what happens next sit behind "Why?" and "Review".
- */
-function ActionCard({ title, value, valueNode, why, checks, source, risk, next, state, onReview, onDecline, reviewing, onApprove, onBack, busy }) {
-  const [open, setOpen] = React.useState(false);
-  return (
-    <section className={s.action} aria-labelledby="svc-act">
-      <div className={s.actionMain}>
-        <span className={s.kpiLabel}>Do this</span>
-        <span id="svc-act" className={s.actionTitle}>{title}</span>
-        {valueNode ?? (value != null
-          ? <span className={s.actionValue}><span className={s.big}>{cvMoney(value)}</span><span className={s.kpiSub}>potential wages tonight, not saved yet <Claim k="est" /></span></span>
-          : <span className={s.kpiSub}>No wage rates in your data, so no dollar figure.</span>)}
-      </div>
-      <div className={s.actionSide}>
-        {state ? state : reviewing ? (
-          <div className={s.review}>
-            <Checks checks={checks} />
-            <span className="cv-xs cv-muted">{risk}</span>
-            <span className="cv-xs cv-muted">{next}</span>
-            <div className={s.actions}>
-              <Button className="btn-lg" icon="Check" onClick={onApprove} disabled={busy}>{busy ? 'Checking…' : 'Approve'}</Button>
-              <Button className="btn-lg" variant="secondary" onClick={onBack} disabled={busy}>Back</Button>
-            </div>
-          </div>
-        ) : (
-          <>
-            <div className={s.actions}>
-              <Button className="btn-lg" icon="ClipboardCheck" onClick={onReview}>Review</Button>
-              <Button className="btn-lg" variant="secondary" onClick={onDecline}>Not tonight</Button>
-            </div>
-            <button type="button" className={s.why} onClick={() => setOpen((v) => !v)} aria-expanded={open}><Icon name={open ? 'ChevronUp' : 'ChevronDown'} size={14} />Why?</button>
-            {open && <div className={s.review}><span className="cv-xs cv-muted">{why}</span>{checks && <Checks checks={checks} />}{source && <span className="cv-xs cv-faint">Source: {source}</span>}</div>}
-          </>
-        )}
-      </div>
-    </section>
-  );
-}
-
 /** Tonight's count by hand, for when no live feed is on: covers so far and servers on the floor. */
-function ManualCount({ saved, onSave, time }) {
+function ManualCount({ saved, onSave, time, primary }) {
   const [covers, setCovers] = React.useState(saved?.covers ?? '');
   const [servers, setServers] = React.useState(saved?.servers ?? '');
   const ok = covers !== '' && Number.isInteger(+covers) && +covers >= 0 && +covers <= 5000 && (servers === '' || (Number.isInteger(+servers) && +servers >= 0 && +servers <= 200));
   return (
     <form className={`cv-card ${s.manualCard}`} onSubmit={(e) => { e.preventDefault(); if (ok) onSave(+covers, servers === '' ? null : +servers); }}>
-      <div className="cv-card-head"><span className="cv-h4">Tonight so far</span><span className="cv-xs cv-faint">{saved ? `your count at ${saved.atLabel}` : 'no live feed: enter your own count'}</span></div>
+      <div className="cv-card-head"><span className="cv-h4">Your count tonight</span><span className="cv-xs cv-faint">{saved ? `last saved at ${saved.atLabel}` : 'no live feed, so type it in'}</span></div>
       <div className={s.manualRow}>
         <label className={s.field}><span className="cv-xs cv-faint">Covers so far</span><input className="input" type="number" inputMode="numeric" min="0" max="5000" value={covers} onChange={(e) => setCovers(e.target.value)} required /></label>
         <label className={s.field}><span className="cv-xs cv-faint">Servers on now</span><input className="input" type="number" inputMode="numeric" min="0" max="200" value={servers} onChange={(e) => setServers(e.target.value)} /></label>
-        <Button type="submit" icon="Check" disabled={!ok}>Save at {time}</Button>
+        <Button type="submit" variant={primary ? 'primary' : 'secondary'} icon="Check" disabled={!ok}>Save at {time}</Button>
       </div>
     </form>
   );
 }
 
-/** A small banner when there's nothing to do, or something stops the page acting. */
+/** A small banner when something stops the page acting. */
 function Note({ tone = 'neutral', icon = 'Info', children, action }) {
   return <div className={`${s.note} ${s[`n_${tone}`] || ''}`}><Icon name={icon} size={16} /><span>{children}</span>{action}</div>;
 }
@@ -310,7 +318,6 @@ function ServiceOwn() {
   const answer = night?.answer ?? 'ask';
   const task = (eng.tasks || []).find((t) => t.roomId === CV_D.id && isCutFor(t.approvalId, today.date) && t.status !== 'cancelled');
   const [busy, setBusy] = React.useState(false);
-  const [review, setReview] = React.useState(false);
   const L = live?.live ? live.night : null;
   // A manager's own count tonight, used only when there's no live feed.
   const [manualSaved, setManual] = useSaved('service.manual', null);
@@ -340,7 +347,6 @@ function ServiceOwn() {
       }
       await engine.createTask(a.approvalId, a);
       setNight({ date: today.date, answer: 'yes', at: hhmm(cutAt), approvalId: a.approvalId }, `${today.day}: release one server from ${clockLabel(cutAt)} approved`);
-      setReview(false);
       cv.toast('Approved. The 7shifts steps are on Today. Nothing has changed in 7shifts yet.');
     } catch (err) {
       cv.toast(err.message);
@@ -348,7 +354,7 @@ function ServiceOwn() {
       setBusy(false);
     }
   };
-  const decline = () => { setNight({ date: today.date, answer: 'no', at: cutAt != null ? hhmm(cutAt) : null }, `${today.day}: kept everyone on`); setReview(false); cv.toast('Kept everyone on tonight. Saved.'); };
+  const decline = () => { setNight({ date: today.date, answer: 'no', at: cutAt != null ? hhmm(cutAt) : null }, `${today.day}: kept everyone on`); cv.toast('Kept everyone on tonight. Saved.'); };
   const reopen = async () => {
     if (task?.status === 'open') await engine.taskAction(task.id, 'cancel');
     setNight({ date: today.date, answer: 'ask', at: null }, 'Service answer reopened');
@@ -362,45 +368,51 @@ function ServiceOwn() {
     ? <><span className={`${s.dot} ${L.stale ? '' : s.live}`} />Live from Toast · orders through {L.dataThrough != null ? clockLabel(L.dataThrough) : '—'} · updated {ago(Math.round((Date.now() - Date.parse(live.fetchedAt)) / 6e4))}</>
     : <><span className={s.dot} />Planning · recent {days(today.day)}, not tonight&apos;s live demand</>;
 
-  let status, kpis, chart = null, checks = [], act = null, watch = null;
+  let hero, kpis, chart = null, checks = [], act = null;
   if (L) {
     const lo = Math.round(lc.cmp * (1 - lc.spread)), hi = Math.round(lc.cmp * (1 + lc.spread));
-    const h = L.health;
-    status = { tone: h.tone, label: { warn: L.stale ? 'Data too old' : 'Busier than expected', good: 'On track', accent: 'One server spare', neutral: lc.mode === 'early' ? 'Just starting' : 'Quieter, all needed' }[h.tone] ?? 'On track', sub: `${lc.pace > 0 ? '+' : ''}${lc.pace}% vs a usual ${dayOf(today.day)}` };
+    const vs = `${Math.abs(lc.pace)}% ${lc.pace < 0 ? 'under' : 'over'} a usual ${dayOf(today.day)}`;
     kpis = [
-      <CoversCard key="c" label="Covers so far" value={lc.so} lo={lo} hi={hi} sub={lc.now ? `expected ${lo}–${hi} by now` : 'service not started'} marker={lc.now > 0} />,
-      <ServersCard key="s" on={lc.serversNow} need={lc.needTop ?? lc.needMid ?? 0} release={lc.mode === 'cut'} sub={lc.needTop != null && lc.needMid !== lc.needTop ? `${lc.needMid}–${lc.needTop} needed across the range` : null} />,
+      <CoversCard key="c" label="Covers so far" value={lc.so} lo={lo} hi={hi} sub={lc.now ? `usual by now: ${lo}–${hi}` : 'service not started'} marker={lc.now > 0} />,
+      <ServersCard key="s" on={lc.serversNow} need={lc.needTop ?? lc.needMid ?? 0} release={lc.mode === 'cut'} sub={lc.needTop != null && lc.needMid !== lc.needTop ? `${lc.needMid}–${lc.needTop} needed across the likely range` : 'clocked in on Toast'} />,
     ];
-    chart = <PaceChart comp={L.comp} actual={L.actual} now={L.actual.length} factor={lc.factor} spread={lc.spread} start={L.win.start} cutSlot={lc.mode === 'cut' ? (lc.at - L.win.start) / SLOT_MIN : null} />;
+    chart = { node: <PaceChart comp={L.comp} actual={L.actual} now={L.actual.length} factor={lc.factor} spread={lc.spread} start={L.win.start} usual={`Usual ${dayOf(today.day)}`} cutSlot={lc.mode === 'cut' ? (lc.at - L.win.start) / SLOT_MIN : null} />,
+      note: lc.band?.calibrated ? `usual = last ${L.weeks} ${days(today.day)}` : `usual = last ${L.weeks} ${days(today.day)} · range still learning` };
     checks = lc.checks;
-    if (lc.mode === 'cut') act = { title: `Release 1 server at ${clockLabel(lc.at)}`, why: `Covers are ${Math.abs(lc.pace)}% ${lc.pace < 0 ? 'under' : 'over'} the last ${L.weeks} ${days(today.day)}. Even at the top of the range, ${lc.serversNow - 1} servers cover every hour to close.`, source: `Toast tonight vs ${L.weeks} comparable ${days(today.day)}` };
-    else if (lc.mode === 'wait') watch = lc.why === 'history' ? `Looks light, but only ${L.weeks} comparable nights. Needs ${MIN_CALIBRATED} to suggest a release.` : `Watching. Checking again at ${clockLabel(lc.checkAt)}.`;
-    else if (lc.mode === 'stale') watch = `No new Toast orders since ${L.dataThrough != null ? clockLabel(L.dataThrough) : 'service started'}. Suggestions paused.`;
-    else if (lc.mode === 'late') watch = `Past your latest release time (${clockLabel(fences.cutBy)}).`;
-    else if (lc.mode === 'unknown') watch = 'No servers clocked in on Toast, so no staffing call.';
-    else if (lc.mode === 'early') watch = `First call at ${clockLabel(lc.checkAt)}.`;
+    if (lc.mode === 'cut') {
+      act = { title: `Send 1 server home at ${clockLabel(lc.at)}`, sub: `Covers are ${vs}. ${lc.serversNow - 1} servers still cover the busiest likely finish.` };
+      hero = { tone: 'act', kicker: 'Do this now' };
+    } else if (lc.mode === 'stale') hero = { tone: 'warn', kicker: 'Toast is late', title: 'No call until Toast catches up', sub: `No new orders since ${L.dataThrough != null ? clockLabel(L.dataThrough) : 'service started'}. Check the room yourself.` };
+    else if (L.health.tone === 'warn') hero = { tone: 'warn', kicker: 'Busier than usual', title: 'Keep everyone on', sub: `Covers are ${vs}.` };
+    else if (lc.mode === 'wait') hero = { tone: 'wait', kicker: 'Watching', title: lc.why === 'history' ? 'Looks quiet, but too few past nights to act' : `Looks quiet. Next check ${clockLabel(lc.checkAt)}`, sub: lc.why === 'history' ? `Needs ${MIN_CALIBRATED} recent ${days(today.day)}; has ${L.weeks}. Keep everyone on.` : `Covers are ${vs}, but the range is still too wide to send anyone home.` };
+    else if (lc.mode === 'late') hero = { tone: 'good', kicker: 'Nothing to do', title: 'Keep everyone on', sub: `It's past your latest time to send someone home (${clockLabel(fences.cutBy)}).` };
+    else if (lc.mode === 'unknown') hero = { tone: 'neutral', kicker: 'No servers clocked in', title: 'No staffing call yet', sub: 'Nobody with a server job is clocked in on Toast.' };
+    else if (lc.mode === 'early') hero = { tone: 'neutral', kicker: 'Service just starting', title: `First check at ${clockLabel(lc.checkAt)}`, sub: 'Too early to tell how tonight is going.' };
+    else hero = { tone: 'good', kicker: 'On track', title: 'Keep everyone on', sub: lc.mode === 'quiet' ? `Covers are ${vs}, but everyone on is needed.` : `Covers are ${vs}.` };
   } else if (plan) {
     const typical = plan.hours.reduce((t, x) => t + x.covers, 0), peakTotal = plan.hours.reduce((t, x) => t + x.peak, 0);
     const peakHour = plan.hours.reduce((a, b) => (b.peak > a.peak ? b : a));
-    status = plan.cutFrom != null ? { tone: 'accent', label: 'One server spare', sub: `from ${clockLabel(plan.cutFrom * 60)} on recent ${days(today.day)}` } : { tone: 'good', label: 'Keep everyone on', sub: plan.blocked ? 'a fence holds tonight' : `every hour used its servers` };
-    if (manual) status = { tone: manual.tone, label: manual.label, sub: `your count at ${clockLabel(clockMinutes(manualToday.at))}${manual.pace != null ? ` · ${manual.pace > 0 ? '+' : ''}${manual.pace}% vs typical` : ''}` };
     kpis = manual ? [
-      <CoversCard key="c" label="Covers so far" value={manual.covers} lo={manual.typical} hi={Math.max(manual.busiest, manual.typical)} sub={`by now: typical ${manual.typical} · busiest week ${manual.busiest}`} marker />,
-      <ServersCard key="s" on={manual.servers} need={manual.need ?? 0} release={false} sub={manual.need == null ? 'no plan for this hour' : manual.staff === 'short' ? 'fewer than the busiest week needed' : 'sized for the busiest week'} />,
+      <CoversCard key="c" label="Covers so far" value={manual.covers} lo={manual.typical} hi={Math.max(manual.busiest, manual.typical)} sub={`usual by now ${manual.typical} · busiest week ${manual.busiest}`} marker />,
+      <ServersCard key="s" on={manual.servers} need={manual.need ?? 0} release={false} sub={manual.need == null ? 'no plan for this hour' : manual.staff === 'short' ? 'fewer than the busiest week needed' : 'from your count'} />,
     ] : [
-      <CoversCard key="c" label={`Covers on a ${dayOf(today.day)}`} value={typical} lo={typical} hi={peakTotal} max={peakTotal * 1.15} sub={`typical · up to ${peakTotal} in the busiest week`} marker />,
+      <CoversCard key="c" label={`Covers on a usual ${dayOf(today.day)}`} value={typical} lo={typical} hi={peakTotal} max={peakTotal * 1.15} sub={`up to ${peakTotal} in the busiest week`} marker />,
       <ServersCard key="s" on={Math.round(peakHour.servers)} need={peakHour.need} release={false} sub={`at the ${clockLabel(peakHour.hour * 60)} peak`} />,
     ];
     checks = [
-      { key: 'peak', label: 'Every hour from the release had a spare, even in its busiest week', ok: plan.spareFrom != null },
+      { key: 'peak', label: 'Every hour after had a spare server, even in its busiest week', ok: plan.spareFrom != null },
       { key: 'history', label: `At least ${MIN_CALIBRATED} recent ${days(today.day)}`, ok: plan.weeks >= MIN_CALIBRATED },
       { key: 'floor', label: `At least ${fences.minDinner} servers stay on dinner`, ok: plan.blocked?.why !== 'floor' },
-      { key: 'cutBy', label: `Before ${clockLabel(fences.cutBy)}, your latest release`, ok: plan.blocked?.why !== 'late' },
-      { key: 'live', label: 'Tonight’s live demand', ok: null, note: 'This is a plan from recent weeks. Look at the room first.' },
+      { key: 'cutBy', label: `Before ${clockLabel(fences.cutBy)}, your latest time`, ok: plan.blocked?.why !== 'late' },
+      { key: 'live', label: 'Tonight’s real covers', ok: null, note: 'This is a plan from recent weeks. Look at the room first.' },
       { key: 'roles', label: 'Sections and roles stay covered', ok: null, note: 'Toast doesn’t show sections.' },
     ];
-    if (plan.cutFrom != null) act = { title: `Plan to release 1 server at ${clockLabel(plan.cutFrom * 60)}`, why: `On each of the last ${plan.weeks} ${days(today.day)}, every hour from ${clockLabel(plan.cutFrom * 60)} had a spare server, even in its busiest week (${plan.rate.toFixed(1)} covers per server-hour).`, source: `Toast data through ${CV_D.room.fromToast.end}` };
-    else if (plan.blocked) watch = plan.blocked.text;
+    const crowded = manual?.tone === 'warn';
+    if (plan.cutFrom != null && !crowded) {
+      act = { title: `Plan to send 1 server home at ${clockLabel(plan.cutFrom * 60)}`, sub: `On each of the last ${plan.weeks} ${days(today.day)}, every hour from then had a spare server, even the busiest week. Check the room first.` };
+      hero = { tone: 'act', kicker: manual ? manual.label : 'Tonight’s plan' };
+    } else if (crowded) hero = { tone: 'warn', kicker: manual.label, title: 'Keep everyone on', sub: `Your count of ${manual.covers} is above the busiest recent ${dayOf(today.day)} by now (${manual.busiest}).` };
+    else hero = { tone: 'good', kicker: manual ? manual.label : 'Tonight’s plan', title: 'Keep everyone on', sub: plan.blocked ? plan.blocked.text : `Every hour on recent ${days(today.day)} used all its servers.` };
   }
 
   const ex = L?.execution;
@@ -420,49 +432,40 @@ function ServiceOwn() {
   const banner = !server ? null
     : live == null ? <Note icon="Loader">Checking Toast…</Note>
     : live.live ? null
-    : live.why === 'not-connected' ? <Note icon="PlugZap" action={<Button size="sm" variant="ghost" iconRight="ArrowRight" onClick={() => cv.go('connect')}>Connect Toast</Button>}>Connect Toast to pace tonight live.</Note>
-    : live.why === 'no-history' ? <Note icon="Hourglass">Live pacing starts once two recent {days(today.day)} are synced.</Note>
-    : <Note tone="warn" icon="TriangleAlert">{live.message || 'Couldn’t reach Toast.'} Showing the plan.</Note>;
+    : live.why === 'not-connected' ? <Note icon="PlugZap" action={<Button size="sm" variant="ghost" iconRight="ArrowRight" onClick={() => cv.go('connect')}>Connect Toast</Button>}>Toast isn’t connected. Type your count below, or connect Toast to track tonight live.</Note>
+    : live.why === 'no-history' ? <Note icon="Hourglass">Live tracking starts once two recent {days(today.day)} are synced from Toast. Type your count below until then.</Note>
+    : <Note tone="warn" icon="TriangleAlert">{live.message || 'Couldn’t reach Toast.'} Type your count below.</Note>;
 
   if (!plan && !L) {
     return (
       <div className="cv-page">
         <PageHead over={`Service · ${CV_ROOM.name} · ${dayName}`} q="How is service going?" />
-        <Note icon="Clock" action={<Button size="sm" variant="ghost" iconRight="ArrowRight" onClick={() => cv.go('inputs')}>Data inputs</Button>}>Needs Toast orders and time entries for {days(today.day)} (20+ busy hours).</Note>
+        <Hero tone="neutral" kicker="Not enough data yet" title="Add Toast data to start" sub={`Needs Toast orders and time entries for ${days(today.day)} (20+ busy hours).`}
+          primary={<Button className={s.cta} iconRight="ArrowRight" onClick={() => cv.go('inputs')}>Add data</Button>} />
       </div>
     );
   }
 
+  const why = act ? <><Checks checks={checks} /><span className="cv-xs cv-muted">{L ? 'If covers climb past the range after, you’ll get a warning to call them back.' : 'Based on recent weeks, not tonight. If it’s busy, keep everyone on.'}</span></> : null;
   return (
     <div className="cv-page">
       <PageHead over={`Service · ${CV_ROOM.name} · ${dayName} · ${clockLabel(today.minutes)}`} q="How is service going?" />
       <div className={s.mode}>{modeLine}</div>
       {banner}
-      <div className={s.kpis}>
-        <StatusCard {...status} />
-        {kpis}
-      </div>
-      {act && (
-        <ActionCard title={act.title} value={value} why={act.why} checks={checks} source={act.source}
-          risk={L ? 'If covers climb past the range after, you’d be one short. You’ll get a warning.' : 'Based on recent weeks, not tonight. If it’s busy, keep everyone on.'}
-          next={`Approving re-checks it${L ? ' on fresh data' : ''}, then puts the 7shifts steps on Today. Nothing changes in 7shifts until someone does it${L ? '; Toast clock-ins confirm it' : ''}.`}
-          state={actState} reviewing={review} busy={busy}
-          onReview={() => setReview(true)} onBack={() => setReview(false)} onApprove={approve} onDecline={decline} />
-      )}
-      {!act && watch && <Note icon="Hourglass">{watch}</Note>}
-      {!L && plan && <ManualCount key={manualToday?.at ?? 'new'} saved={manualToday && { ...manualToday, atLabel: clockLabel(clockMinutes(manualToday.at)) }} onSave={saveManual} time={clockLabel(today.minutes)} />}
-      <section className={`cv-card ${s.chartCard}`}>
-        <div className="cv-card-head"><span className="cv-h4">{L ? 'Covers every 15 minutes' : `A typical ${dayOf(today.day)}, hour by hour`}</span>
-          <span className="cv-xs cv-faint">{L ? (lc.band?.calibrated ? `range ±${Math.round(lc.spread * 100)}% from ${lc.band.nights} past nights` : `range ±${Math.round(lc.spread * 100)}%, not yet calibrated`) : `last ${plan.weeks} weeks`}</span></div>
-        {chart ?? <HourBars plan={plan} cutFrom={plan.cutFrom} />}
-      </section>
-      {L && plan && (
+      <Hero tone={hero.tone} kicker={hero.kicker} title={act?.title ?? hero.title} sub={act?.sub ?? hero.sub} why={why}
+        value={act && <Potential value={value} />}
+        state={act ? actState : undefined}
+        primary={act && <Button className={s.cta} icon="Check" onClick={approve} disabled={busy}>{busy ? 'Checking…' : 'Approve'}</Button>}
+        secondary={act && <Button className={s.ctaAlt} variant="secondary" onClick={decline} disabled={busy}>Not tonight</Button>} />
+      {!L && plan && <ManualCount key={manualToday?.at ?? 'new'} primary={!act || !!actState} saved={manualToday && { ...manualToday, atLabel: clockLabel(clockMinutes(manualToday.at)) }} onSave={saveManual} time={clockLabel(today.minutes)} />}
+      <div className={s.kpis}>{kpis}</div>
+      {chart && (
         <section className={`cv-card ${s.chartCard}`}>
-          <div className="cv-card-head"><span className="cv-h4">A typical {dayOf(today.day)}, hour by hour</span><span className="cv-xs cv-faint">last {plan.weeks} weeks</span></div>
-          <HourBars plan={plan} cutFrom={null} />
+          <div className="cv-card-head"><span className="cv-h4">Tonight vs a usual {dayOf(today.day)}</span><span className="cv-xs cv-faint">{chart.note}</span></div>
+          {chart.node}
         </section>
       )}
-      <HowItWorks fences={fences} />
+      <Details checks={act ? null : checks} plan={plan && { ...plan, day: today.day }} cutFrom={L ? null : plan?.cutFrom} fences={fences} />
     </div>
   );
 }
@@ -473,53 +476,58 @@ function ServiceSample() {
   const cv = useCv();
   const sv = CV_D.room.service;
   const [state, setState] = useSaved('service', 'ask');
-  const samplePace = servicePace(sv)?.pace ?? 0;
   const [fencesSaved] = useSaved('fences', null);
   const fences = fencesOf(fencesSaved);
-  const so = sv.actual.reduce((a, b) => a + b, 0);
-  const cmp = sv.comp.slice(0, sv.now).reduce((a, b) => a + b, 0);
+  const sp = servicePace(sv) ?? { so: 0, usual: 0, factor: 1, pace: 0 };
   const spread = sv.mode === 'wait' ? 0.2 : bandSpread(sv.now, sv.comp.length) * 0.65;
   const start = DINNER_FROM * 60;
   const cutSlot = sv.mode === 'cut' ? 12 : null;
-  const lo = Math.round(cmp * (1 - spread)), hi = Math.round(cmp * (1 + spread));
+  const lo = Math.round(sp.usual * (1 - spread)), hi = Math.round(sp.usual * (1 + spread));
   const tile = (k) => sv.tiles.find((t) => t[0] === k);
   const on = +(tile('Servers on')?.[1] ?? 0) || null;
   const need = +((tile('Servers on')?.[2] ?? '').match(/\d+/)?.[0] ?? 0);
-  const status = sv.mode === 'cut' ? { tone: 'accent', label: 'One server spare' } : sv.mode === 'wait' ? { tone: 'neutral', label: 'Watching' } : { tone: 'good', label: 'On track' };
+  const day = sv.day.split(' ')[0];
+  const vs = `${Math.abs(sp.pace)}% ${sp.pace < 0 ? 'under' : 'over'} a usual ${day}`;
   const actState = sv.mode !== 'cut' || state === 'ask' ? null : (
     <div className={s.stateBox}>
-      {state === 'yes' ? <Pill tone="info" icon="Hourglass">Approved · awaiting execution</Pill> : <Pill icon="CircleMinus">Kept everyone on</Pill>}
+      {state === 'yes' ? <Pill tone="info" icon="Hourglass">Approved · steps are on Today</Pill> : <Pill icon="CircleMinus">Kept everyone on</Pill>}
       <div className={s.actions}>
         {state === 'yes' && <Button size="sm" variant="ghost" iconRight="ArrowRight" onClick={() => cv.go('today')}>Open Today</Button>}
         <Button size="sm" variant="ghost" icon="Undo2" onClick={() => setState('ask', `${sv.title}: answer reopened`)}>Change</Button>
       </div>
     </div>
   );
+  const hero = sv.mode === 'cut'
+    ? { tone: 'act', kicker: 'Do this now', title: sv.title.replace('Cut one server', 'Send 1 server home'), sub: `Covers are ${vs}. ${need} servers still cover the busiest likely finish.` }
+    : sv.mode === 'wait'
+      ? { tone: 'wait', kicker: 'Watching', title: 'Looks quiet. Next check 7:45', sub: `Covers are ${vs}, but the range is still too wide to send anyone home.` }
+      : { tone: 'good', kicker: 'On track', title: 'Keep everyone on', sub: `Covers are ${vs}. Everyone on is needed.` };
   return (
     <div className="cv-page">
       <PageHead over={`Service · ${CV_ROOM.name} · ${sv.day} · ${CV_NOW.time}`} q="How is service going?" />
       <div className={s.mode}><span className={s.dot} />Sample night · a fixed scene, not live data</div>
+      <Hero {...hero} why={sv.mode === 'cut' ? <span className="cv-sm">{sv.body}</span> : null}
+        value={sv.mode === 'cut' && <Potential value={sv.value} money={<Money id="service-cut">{cvMoney(sv.value)}</Money>} />}
+        state={sv.mode === 'cut' ? actState : undefined}
+        primary={sv.mode === 'cut' && <Button className={s.cta} icon="Check" onClick={() => cv.approve(sv.approval, () => setState('yes', sv.title))}>Approve</Button>}
+        secondary={sv.mode === 'cut' && <Button className={s.ctaAlt} variant="secondary" onClick={() => { setState('no', `${sv.title}: declined`); cv.toast('Kept everyone on. Saved.'); }}>Not tonight</Button>} />
       <div className={s.kpis}>
-        <StatusCard {...status} sub={`${samplePace > 0 ? '+' : ''}${samplePace}% vs a comparable night`} />
-        <CoversCard label="Covers so far" value={so} lo={lo} hi={hi} sub={`expected ${lo}–${hi} by now`} />
-        <ServersCard on={on} need={need} release={sv.mode === 'cut' && state === 'ask'} />
+        <CoversCard label="Covers so far" value={sp.so} lo={lo} hi={hi} sub={`usual by now: ${lo}–${hi}`} />
+        <ServersCard on={on} need={need} release={sv.mode === 'cut' && state === 'ask'} sub="clocked in" />
       </div>
-      {sv.mode === 'cut' ? (
-        <ActionCard title={sv.title.replace('Cut one server', 'Release 1 server')}
-          valueNode={<span className={s.actionValue}><span className={s.big}><Money id="service-cut">{cvMoney(sv.value)}</Money></span><span className={s.kpiSub}>potential wages tonight, not saved yet <Claim k="est" /></span></span>}
-          why={sv.body} state={actState}
-          onReview={() => cv.approve(sv.approval, () => setState('yes', sv.title))}
-          onDecline={() => { setState('no', `${sv.title}: declined`); cv.toast('Kept everyone on. Saved.'); }} />
-      ) : <Note icon={sv.mode === 'wait' ? 'Hourglass' : 'CircleCheck'}>{sv.mode === 'wait' ? 'Watching. The range is still too wide to act.' : 'Nothing to do. Everyone on is needed.'}</Note>}
       <section className={`cv-card ${s.chartCard}`}>
-        <div className="cv-card-head"><span className="cv-h4">Covers every 15 minutes</span><span className="cv-xs cv-faint">sample range ±{Math.round(spread * 100)}%</span></div>
-        <PaceChart comp={sv.comp} actual={sv.actual} now={sv.now} factor={sv.factor} spread={spread} start={start} cutSlot={cutSlot} />
+        <div className="cv-card-head"><span className="cv-h4">Tonight vs a usual {day}</span><span className="cv-xs cv-faint">sample · range ±{Math.round(spread * 100)}%</span></div>
+        <PaceChart comp={sv.comp} actual={sv.actual} now={sv.now} factor={sp.factor} spread={spread} start={start} cutSlot={cutSlot} usual={`Usual ${day}`} />
       </section>
-      <div className={s.miniTiles}>
-        {sv.tiles.filter((t) => t[0] !== 'Servers on').map(([k, v, t]) => <div key={k} className={s.mini}><span className="cv-xs cv-faint">{k}</span><span className={s.v}>{v}</span><span className="cv-xs cv-faint">{t}</span></div>)}
-      </div>
-      <HowItWorks fences={fences} extra={<li><Icon name="Smartphone" size={15} />Switch rooms in the top bar: one has a release ready, one is quiet, one is waiting.</li>} />
-      <DenseService />
+      <Details fences={fences} extra={<li><Icon name="Smartphone" size={15} />Switch rooms in the top bar: one has someone to send home, one is on track, one is waiting.</li>}>
+        <div className={s.block}>
+          <span className={s.blockTitle}>On the floor</span>
+          <div className={s.miniTiles}>
+            {sv.tiles.filter((t) => t[0] !== 'Servers on').map(([k, v, t]) => <div key={k} className={s.mini}><span className="cv-xs cv-faint">{k}</span><span className={s.v}>{v}</span><span className="cv-xs cv-faint">{t}</span></div>)}
+          </div>
+        </div>
+        <DenseService />
+      </Details>
     </div>
   );
 }
