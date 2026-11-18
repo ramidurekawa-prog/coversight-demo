@@ -1,330 +1,179 @@
 'use client';
 
 import * as React from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
-import { Button, Icon, Tabs } from '../../kit';
-import { CV_D, CV_DS, CV_ROOM, Callout, Claim, Pill, PageHead, useCv } from '../core';
-import { engine, useEngine } from '../../engine';
-import { KINDS, SCHEMAS, mapColumns, parseCSV, preview, templateCSV, templateRows, validate } from '../../../lib/data/ingest';
-import { SEED } from '../../../lib/data/seed';
-import { KIND_LABEL } from '../../../lib/data/apply';
+import { Button, Icon } from '../../kit';
+import { CV_D, CV_DS, CV_ROOM, PageHead, Pill, useCv } from '../core';
+import { useEngine } from '../../engine';
+import { KINDS } from '../../../lib/data/ingest';
+import { SCHEMAS, attention, blockedWhy, dependsOn, pageState, safeCSV, stakes } from '../../../lib/data/page/inputs';
+import { AddWays, Connections, DataRows, applies } from './inputs-visual';
 import { ToastImport } from '../toast-import';
 import { BringIn } from '../bring-in';
+import { boardRows } from './inputs-board';
+import { Editor } from './inputs-editor';
+import { History } from './inputs-history';
+import { host, useLinkActions, when } from './inputs-links';
+import { AddPanel, CapabilityPanel, KindPanel, LinkPanel, ReadinessPanel, SamplePanel, SidePanel } from './inputs-panels';
+import { undoEntry, useHistory, useLinks } from './inputs-data';
+import { templateRows } from '../../../lib/data/ingest';
+import { useTodayTheme } from './today.themes';
+import s from './inputs.module.css';
 
-const META = (k) => SCHEMAS[k] || { title: KIND_LABEL[k] || k, icon: k === 'toast' ? 'PlugZap' : 'FilePen' };
-
-/* Data inputs: the manual ingestion layer. Six kinds of data a restaurant
- * often keeps by hand. Each one: type it in (pre-filled with what's there
- * now) or paste/upload a CSV, check it row by row, preview exactly which
- * figures move, then commit. Every commit is logged and can be undone, and
- * verified figures never move. */
-
-const inputStyle = { width: '100%', minWidth: 70, height: 32, padding: '0 8px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-strong)', background: 'var(--surface)', color: 'var(--fg-1)', font: 'inherit', fontSize: 'var(--text-sm)' };
-
-function download(name, text) {
-  try {
-    const url = URL.createObjectURL(new Blob([text], { type: 'text/csv' }));
-    const a = document.createElement('a');
-    a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  } catch { /* downloads blocked: the template is still visible in the paste box */ }
-}
-
-function KindCard({ kind, on, onPick }) {
-  const s = SCHEMAS[kind];
-  const entry = CV_D.inputs[kind];
-  const feed = CV_D.feeds.find((f) => f.name === s.feed);
-  return (
-    <button type="button" className={`cv-kind ${on ? 'on' : ''}`} onClick={() => onPick(kind)} aria-pressed={on}>
-      <span className={`cv-q-ico ${entry ? 'good' : feed && feed.state !== 'healthy' ? 'warn' : 'accent'}`}><Icon name={s.icon} size={18} /></span>
-      <span className="cv-col" style={{ gap: 3, alignItems: 'flex-start', textAlign: 'left' }}>
-        <b>{s.title}</b>
-        <span className="cv-xs cv-faint">{entry ? `Entered by hand ${entry.date} · ${entry.n} row${entry.n === 1 ? '' : 's'}` : feed ? `${feed.state === 'healthy' ? 'Sample data' : feed.state === 'off' ? 'Nothing yet' : `Feed ${feed.state}`} · ${feed.last}` : 'Sample data'}</span>
-      </span>
-    </button>
-  );
-}
-
-function Grid({ kind, rows, setRows, issues }) {
-  const cols = SCHEMAS[kind].columns;
-  const bad = (i, k) => issues.find((x) => x.row === i + 1 && (x.col === k || x.col == null));
-  const set = (i, k, v) => setRows(rows.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
-  return (
-    <div className="cv-tablewrap" tabIndex={0} role="group" aria-label={`${SCHEMAS[kind].title} rows`} style={{ maxHeight: 460, overflowY: 'auto' }}>
-      <table className="cv-table cv-grid-edit">
-        <thead><tr><th style={{ width: 36 }}>#</th>{cols.map((c) => <th key={c.k}>{c.label}{c.required ? '' : ' (optional)'}</th>)}<th style={{ width: 40 }}><span className="sr-only">Remove</span></th></tr></thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <tr key={i}>
-              <td className="cv-xs cv-faint cv-num">{i + 1}</td>
-              {cols.map((c) => {
-                const b = bad(i, c.k);
-                const style = { ...inputStyle, borderColor: b ? (b.level === 'error' ? 'var(--error-600)' : 'var(--warning-600)') : 'var(--border-strong)', textAlign: c.type === 'text' || c.type === 'enum' ? 'left' : 'right' };
-                return (
-                  <td key={c.k}>
-                    {c.type === 'enum' ? (
-                      <select aria-label={`${c.label}, row ${i + 1}`} value={r[c.k] ?? ''} onChange={(e) => set(i, c.k, e.target.value)} style={style}>
-                        <option value="">Choose…</option>
-                        {c.options.map((o) => <option key={o} value={o}>{o}</option>)}
-                      </select>
-                    ) : (
-                      <input aria-label={`${c.label}, row ${i + 1}`} value={r[c.k] ?? ''} inputMode={c.type === 'text' ? 'text' : 'decimal'} onChange={(e) => set(i, c.k, e.target.value)} style={style} />
-                    )}
-                  </td>
-                );
-              })}
-              <td><button className="iconbtn" style={{ width: 28, height: 28 }} aria-label={`Remove row ${i + 1}`} onClick={() => setRows(rows.filter((_, j) => j !== i))}><Icon name="X" size={14} /></button></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function Issues({ result }) {
-  if (!result) return null;
-  const { errors, warnings, issues, rows } = result;
-  return (
-    <div className="cv-col" style={{ gap: 8 }}>
-      <div className="cv-row" style={{ gap: 8 }}>
-        <Pill tone={errors ? 'bad' : 'good'} icon={errors ? 'CircleX' : 'CircleCheck'}>{errors ? `${errors} error${errors === 1 ? '' : 's'}` : 'No errors'}</Pill>
-        <Pill tone={warnings ? 'warn' : 'neutral'} icon="TriangleAlert">{warnings} warning{warnings === 1 ? '' : 's'}</Pill>
-        <span className="cv-xs cv-faint">{rows.length} row{rows.length === 1 ? '' : 's'} ready</span>
-      </div>
-      {issues.length > 0 && (
-        <ul className="cv-issues">
-          {issues.slice(0, 12).map((x, i) => (
-            <li key={i} className={x.level}>
-              <Icon name={x.level === 'error' ? 'CircleX' : 'TriangleAlert'} size={14} />
-              <span>{x.row ? <b>Row {x.row}{x.col ? ` · ${x.col}` : ''}: </b> : null}{x.msg}</span>
-            </li>
-          ))}
-          {issues.length > 12 && <li className="cv-xs cv-faint">…and {issues.length - 12} more</li>}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-function Preview({ pv }) {
-  if (!pv) return null;
-  return (
-    <div className="cv-grid g2" style={{ alignItems: 'start' }}>
-      <div className="cv-col" style={{ gap: 8 }}>
-        <span className="cv-over">What changes if you commit</span>
-        <div className="cv-diff">
-          <div className="r h" style={{ gridTemplateColumns: 'minmax(0, 1.8fr) minmax(0, 1fr) minmax(0, 1fr)' }}><span>Figure</span><span>Now</span><span>After</span></div>
-          {pv.moves.map((m) => (
-            <div key={m.label} className="r" style={{ gridTemplateColumns: 'minmax(0, 1.8fr) minmax(0, 1fr) minmax(0, 1fr)' }}><span className="cv-row" style={{ gap: 6 }}>{m.label} <Claim k={m.claim} /></span><span className="was">{m.before}</span><span className="now" style={{ fontWeight: m.changed ? 700 : 400 }}>{m.after}</span></div>
-          ))}
-        </div>
-      </div>
-      <div className="cv-col" style={{ gap: 8 }}>
-        <span className="cv-over">What can't change</span>
-        <div className="cv-diff">
-          <div className="r h" style={{ gridTemplateColumns: 'minmax(0,1fr) 120px' }}><span>Figure</span><span>Stays</span></div>
-          {pv.frozen.map((m) => <div key={m.label} className="r" style={{ gridTemplateColumns: 'minmax(0,1fr) 120px' }}><span className="cv-row" style={{ gap: 6 }}>{m.label} <Claim k="book" /></span><span className="now">{m.value} <Icon name="Lock" size={12} /></span></div>)}
-        </div>
-        <span className="cv-xs cv-faint">Verified rates are frozen in their packets when the window closes. New data moves estimates and observed figures, never a proven number.</span>
-      </div>
-    </div>
-  );
-}
-
-function Panel({ kind, seed }) {
-  const cv = useCv();
-  const eng = useEngine();
-  const room = CV_DS.rooms[CV_D.id];
-  const s = SCHEMAS[kind];
-  const [mode, setMode] = React.useState(seed ? 'csv' : 'grid');
-  const [rows, setRows] = React.useState(() => templateRows(kind, room).map((r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, v == null ? '' : String(v)]))));
-  const [csv, setCsv] = React.useState(seed?.csv ?? '');
-  const [result, setResult] = React.useState(null);
-  const [mapInfo, setMapInfo] = React.useState(null);
-  const [pv, setPv] = React.useState(null);
-  const [replace, setReplace] = React.useState(() => !!eng.inputs[CV_D.id]?.[kind]?.opts?.replace);
-  const opts = s.replace && replace ? { replace: true } : undefined;
-  const fileRef = React.useRef(null);
-  const blankRow = () => Object.fromEntries(s.columns.map((c) => [c.k, '']));
-
-  const check = () => {
-    let res;
-    if (mode === 'csv') {
-      const parsed = parseCSV(csv);
-      const mi = mapColumns(parsed.headers, kind);
-      setMapInfo(mi);
-      if (mi.missing.length) { setResult({ rows: [], issues: [{ row: 0, col: null, level: 'error', msg: `Missing column${mi.missing.length === 1 ? '' : 's'}: ${mi.missing.join(', ')}` }], errors: 1, warnings: 0 }); setPv(null); return; }
-      res = validate(kind, parsed.rows, room, mi.map, opts);
-    } else {
-      setMapInfo(null);
-      res = validate(kind, rows, room, null, opts);
-    }
-    setResult(res);
-    const commitRows = kind === 'waste' ? [...(eng.inputs[CV_D.id]?.waste?.rows || []), ...res.rows] : res.rows;
-    setPv(res.errors || !res.rows.length ? null : preview(SEED, eng.inputs, CV_D.id, kind, commitRows, opts));
-  };
-
-  // Arrived from "Bring data in": check it straight away so the issues and the preview show.
-  React.useEffect(() => { if (seed) { check(); document.getElementById(`kind-${kind}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const commit = () => {
-    const prior = kind === 'waste' ? eng.inputs[CV_D.id]?.waste?.rows || [] : [];
-    const commitRows = [...prior, ...result.rows];
-    const changed = pv.moves.filter((m) => m.changed).map((m) => `${m.label}: ${m.before} → ${m.after}`);
-    engine.commit(kind, CV_D.id, commitRows, `${opts?.replace ? 'Replaced the sample list. ' : ''}${changed.length ? changed.join('; ') : 'No figure moved'}`, opts);
-    cv.toast(`${s.title} committed for ${CV_ROOM.short}: ${result.rows.length} rows. ${changed.length ? `${changed.length} figure${changed.length === 1 ? '' : 's'} moved.` : 'Nothing moved.'}`);
-  };
-
-  const onFile = (e) => {
-    const f = e.target.files && e.target.files[0];
-    if (!f) return;
-    const reader = new FileReader();
-    reader.onload = () => { setCsv(String(reader.result || '')); setResult(null); setPv(null); };
-    reader.readAsText(f);
-  };
-
-  return (
-    <section className="cv-card" id={`kind-${kind}`}>
-      <div className="cv-card-head">
-        <div className="cv-col" style={{ gap: 4 }}>
-          <span className="cv-h4">{s.title} · {CV_ROOM.name}</span>
-          {seed && <span className="cv-xs"><Icon name="FileInput" size={12} /> From {seed.source}{seed.notes ? ` · ${seed.notes}` : ''}</span>}
-          <span className="cv-small cv-muted" style={{ maxWidth: '70ch' }}>{s.blurb}</span>
-        </div>
-        <Button variant="secondary" size="sm" icon="Download" onClick={() => download(`${kind}-${CV_D.id}-template.csv`, templateCSV(kind, room))}>Template</Button>
-      </div>
-      <Tabs value={mode} onChange={(m) => { setMode(m); setResult(null); setPv(null); }} tabs={[{ value: 'grid', label: 'Type it in' }, { value: 'csv', label: 'Paste or upload CSV' }]} />
-      {mode === 'grid' ? (
-        <>
-          <span className="cv-xs cv-faint">{kind === 'waste' ? 'Each row adds to the log.' : 'Pre-filled with what this room has now. Change what\'s different and check it.'}</span>
-          <Grid kind={kind} rows={rows} setRows={(r) => { setRows(r); setResult(null); setPv(null); }} issues={result?.issues || []} />
-          <div className="cv-row">
-            {!s.single && <Button size="sm" variant="ghost" icon="Plus" onClick={() => setRows([...rows, blankRow()])}>Add a row</Button>}
-            {!s.single && <Button size="sm" variant="ghost" icon="Eraser" onClick={() => { setRows([blankRow()]); setResult(null); setPv(null); }}>Start blank</Button>}
-          </div>
-        </>
-      ) : (
-        <div className="cv-col" style={{ gap: 8 }}>
-          <label htmlFor={`csv-${kind}`} className="cv-small" style={{ fontWeight: 600 }}>Paste rows with a header line, or upload a .csv</label>
-          <textarea id={`csv-${kind}`} rows={8} value={csv} onChange={(e) => { setCsv(e.target.value); setResult(null); setPv(null); }} placeholder={templateCSV(kind, room).split('\n').slice(0, 3).join('\n')}
-            style={{ ...inputStyle, height: 'auto', padding: 10, fontFamily: 'var(--font-mono)', fontSize: 12, whiteSpace: 'pre' }} />
-          <div className="cv-row">
-            <input ref={fileRef} type="file" accept=".csv,text/csv,text/plain" onChange={onFile} style={{ display: 'none' }} />
-            <Button size="sm" variant="secondary" icon="Upload" onClick={() => fileRef.current && fileRef.current.click()}>Upload a file</Button>
-            <Button size="sm" variant="ghost" onClick={() => { setCsv(templateCSV(kind, room)); setResult(null); setPv(null); }}>Paste the template</Button>
-            <span className="cv-xs cv-faint">Headers are matched by name: {s.columns.map((c) => c.k).join(', ')} (common alternatives work too).</span>
-          </div>
-          {mapInfo && mapInfo.ignored.length > 0 && <Callout icon="Info">Ignored column{mapInfo.ignored.length === 1 ? '' : 's'}: {mapInfo.ignored.join(', ')}.</Callout>}
-        </div>
-      )}
-      {s.replace && (
-        <label className="cv-row cv-small" style={{ gap: 8, alignItems: 'flex-start', cursor: 'pointer' }}>
-          <input type="checkbox" checked={replace} onChange={(e) => { setReplace(e.target.checked); setResult(null); setPv(null); }} style={{ marginTop: 3 }} />
-          <span className="cv-col" style={{ gap: 2 }}><b>{s.replace.label}</b><span className="cv-xs cv-faint">{replace ? s.replace.note : 'Off: your rows update matching sample rows, and new names are added.'}</span></span>
-        </label>
-      )}
-      <div className="cv-row">
-        <Button icon="ListChecks" onClick={check}>Check {mode === 'grid' ? rows.length : 'the'} rows</Button>
-        {result && !result.errors && pv && <Button icon="Check" onClick={commit}>Commit to {CV_ROOM.short}</Button>}
-        {result && result.errors > 0 && <span className="cv-small cv-down">Fix the errors to commit. Warnings are allowed.</span>}
-      </div>
-      <Issues result={result} />
-      <Preview pv={pv} />
-    </section>
-  );
-}
-
-function Log() {
-  const cv = useCv();
-  const eng = useEngine();
-  const name = (id) => CV_DS.rooms[id]?.profile?.short || id;
-  return (
-    <section className="cv-card">
-      <div className="cv-card-head">
-        <span className="cv-h4">Audit log</span>
-        <Button size="sm" variant="ghost" icon="RotateCcw" disabled={!eng.log.length} onClick={() => { engine.reset(); cv.toast('Back to the sample restaurant group. Every hand-entered row is cleared.'); }}>Reset to sample data</Button>
-      </div>
-      {eng.log.length === 0 ? <span className="cv-small cv-muted">Nothing entered by hand yet. Every commit lands here with what it moved, and each one can be undone.</span> : (
-        <div className="cv-col" style={{ gap: 0 }}>
-          {eng.log.map((e, i) => (
-            <div key={e.id} className="cv-row nowrap" style={{ gap: 12, padding: '10px 0', borderTop: i ? '1px solid var(--border)' : 0, alignItems: 'flex-start', opacity: e.undone ? 0.55 : 1 }}>
-              <span className="cv-q-ico" style={{ width: 30, height: 30 }}><Icon name={META(e.kind).icon} size={15} /></span>
-              <div className="cv-col" style={{ gap: 2, flex: 1 }}>
-                <span className="cv-small" style={{ fontWeight: 600 }}>{META(e.kind).title} · {name(e.room)} · {e.rows} row{e.rows === 1 ? '' : 's'}{e.undone ? ' · undone' : ''}</span>
-                <span className="cv-xs cv-faint">{e.at} · by you · {e.summary}</span>
-              </div>
-              {!e.undone && <Button size="sm" variant="secondary" icon="Undo2" onClick={() => { engine.undo(e.id); cv.toast('Undone. The figures are back to what they were.'); }}>Undo</Button>}
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
-
-/* Using the demo on your own restaurant: the order that gives a sensible room fastest. */
-const OWN_STEPS = [
-  ['profile', 'Name, seats and weekly covers', 'Renames the room everywhere.'],
-  ['recipes', 'Your dishes, prices, plate costs and plates a week', 'Tick "replace the sample menu". Earned, food cost and the menu moves come from here.'],
-  ['exceptions', 'Your team: sales, voids, comps, discounts, hours, rate', 'Tick "replace the sample staff". Labour and every control limit come from here.'],
-  ['channels', 'This week\'s sales by channel', 'Delivery share, refunds and the markup range.'],
-  ['counts', 'A count of a few key items', 'Add what came in, unit cost and expected use, and usage gaps appear.'],
-];
-function OwnStart() {
-  const [open, setOpen] = React.useState(false);
-  const done = (k) => !!CV_D.inputs[k];
-  return (
-    <section className="cv-card" aria-labelledby="own-start">
-      <div className="cv-card-head">
-        <div className="cv-col" style={{ gap: 4 }}>
-          <span className="cv-h4" id="own-start">Try it on your own restaurant</span>
-          <span className="cv-small cv-muted">Five inputs, about 15 minutes. Whatever you don&apos;t enter stays sample data, scaled to your sales.</span>
-        </div>
-        <Button size="sm" variant="secondary" icon={open ? 'ChevronUp' : 'ChevronDown'} onClick={() => setOpen(!open)} aria-expanded={open}>{open ? 'Hide steps' : 'Show steps'}</Button>
-      </div>
-      {open && (
-        <ol className="cv-col" style={{ gap: 8, margin: 0, paddingLeft: 20 }}>
-          {OWN_STEPS.map(([k, what, why]) => (
-            <li key={k} className="cv-small">
-              <a href={`#${k}`}><b>{SCHEMAS[k].title}</b></a>{done(k) ? ' ✓' : ''}: {what}. <span className="cv-faint">{why}</span>
-            </li>
-          ))}
-        </ol>
-      )}
-    </section>
-  );
-}
+/* Add & Manage Data. Outcome and action first: is the data working, what
+ * needs fixing and what fixing it unlocks. Then connections (the systems) kept
+ * apart from coverage (the kinds of data). Adding data has one entry point,
+ * and the editor and import steps only appear in a focused workspace while
+ * something is actually being entered or imported. The server checks every
+ * import again with the same rules; verified figures never move. */
 
 function CvInputs() {
   const eng = useEngine();
+  const router = useRouter();
+  const cv = useCv();
+  useTodayTheme(false); // Today's Persimmon & Ink palette while this page is on screen
+  const server = eng.mode === 'server';
+  const sample = !server || !!eng.org?.sample;
   const [kind, setKind] = React.useState('profile');
   const [seed, setSeed] = React.useState(null);
+  const [startMode, setStartMode] = React.useState(null);
+  const [editing, setEditing] = React.useState(false);
+  const [quick, setQuick] = React.useState(false);
+  const [panel, setPanel] = React.useState(null); // { type, kind?, link?, start?, files? }
+  const [histKind, setHistKind] = React.useState('');
+  const close = React.useCallback(() => setPanel(null), []);
+  const { links, setLinks } = useLinks(server);
+  // Coverage needs who made each room's current entry; Recent activity keeps its own filtered list.
+  const roomHistory = useHistory({ server, roomId: CV_D.id, kind: null });
+
   React.useEffect(() => {
-    const read = () => { const h = window.location.hash.slice(1); if (KINDS.includes(h)) setKind(h); };
+    const read = () => { const h = window.location.hash.slice(1); if (KINDS.includes(h)) { setKind(h); setEditing(true); } };
     read();
     window.addEventListener('hashchange', read);
     return () => window.removeEventListener('hashchange', read);
   }, []);
-  const pick = (k) => { setKind(k); setSeed(null); try { window.history.replaceState(null, '', `#${k}`); } catch { /* no history */ } };
-  const entered = KINDS.filter((k) => CV_D.inputs[k]).length;
+  const setHash = (k) => { try { window.history.replaceState(null, '', k ? `#${k}` : window.location.pathname + window.location.search); } catch { /* no history */ } };
+  const open = (k, m = null, q = false) => { setPanel(null); setKind(k); setSeed(null); setStartMode(m); setQuick(q); setEditing(true); setHash(q ? '' : k); };
+  const closeEditor = React.useCallback(() => { setEditing(false); setSeed(null); setHash(''); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const review = (x) => { setPanel(null); setQuick(false); setSeed(x); setKind(x.kind); setStartMode('csv'); setEditing(true); setHash(x.kind); };
+  const add = (start = null, files = null) => setPanel({ type: 'add', start, files });
+  // A file dragged anywhere onto the page goes straight to the reader.
+  const [dragging, setDragging] = React.useState(false);
+  const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes('Files');
+  const dropHandlers = editing || panel ? {} : {
+    onDragOver: (e) => { if (hasFiles(e)) { e.preventDefault(); setDragging(true); } },
+    onDragLeave: (e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDragging(false); },
+    onDrop: (e) => { if (hasFiles(e)) { e.preventDefault(); setDragging(false); const f = [...e.dataTransfer.files]; if (f.length) add('file', f); } },
+  };
+
+  const room = CV_DS.rooms[CV_D.id];
+  const rows = boardRows(links, roomHistory.entries);
+  const linkedKinds = new Set(links.filter((l) => l.roomId === CV_D.id).flatMap((l) => l.picks.map((p) => p.kind)));
+  const items = attention(CV_D, room, { windows: eng.windows, linkedKinds, server });
+  const stake = stakes(CV_D, room);
+  const { busy: linkBusy, readNow, unlink } = useLinkActions(setLinks);
+  const linkFor = (k) => links.find((l) => l.roomId === CV_D.id && l.picks.some((p) => p.kind === k)) || null;
+  const lastFor = (k) => roomHistory.entries.find((e) => e.kind === k && e.room === CV_D.id && e.current) || null;
+  const download = (k) => {
+    const cols = SCHEMAS[k].columns.map((c) => c.k);
+    const data = CV_D.inputs?.[k]?.rows?.length ? CV_D.inputs[k].rows : templateRows(k, room);
+    try {
+      const url = URL.createObjectURL(new Blob([safeCSV(cols, data)], { type: 'text/csv' }));
+      const el = document.createElement('a'); el.href = url; el.download = `${k}-${CV_D.id}.csv`; document.body.appendChild(el); el.click(); el.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch { cv.toast('Couldn’t start the download in this browser.'); }
+  };
+  const undoLast = async (e) => {
+    try { await undoEntry(e.id); cv.toast(`Undone. ${SCHEMAS[e.kind].title} is back to what it was before.`); roomHistory.reload(); setPanel(null); closeEditor(); } catch (err) { cv.toast(`Couldn’t undo: ${err.message}`); }
+  };
+  const findingsFor = (k) => CV_D.candidates.filter((c) => dependsOn(k, c) && !c.prevent && c.value > 0)
+    .map((c) => { const why = blockedWhy(c, room, CV_D.inputs || {}); return { id: c.id, title: c.title, value: c.value, claim: c.claim, held: why && (k === 'recipes' || c.needs === k) ? why : null }; })
+    .sort((x, y) => y.value - x.value);
+
+  // Connections are systems, not kinds of data: the feeds that aren't one of the seven hand-entered kinds, plus linked sheets.
+  const own = !!CV_D.room?.fromToast;
+  const systems = [
+    ...CV_D.feeds.filter((f) => !f.input || f.input === 'toast').map((f) => ({
+      id: f.name, name: f.name, icon: 'PlugZap', required: f.name === 'Toast', supplies: f.what, state: f.state, last: f.last, note: f.note, ok: f.state === 'healthy', sample: !own,
+      refresh: f.name === 'Toast' ? 'Every night once Toast is connected, or whenever you upload new exports' : 'On its own once connected',
+      href: f.name === 'Toast' ? '/connect' : '/sources',
+    })),
+    ...links.filter((l) => l.roomId === CV_D.id).map((l) => ({
+      id: l.id, name: `${host(l.url)} sheet`, icon: 'Link2', supplies: l.picks.map((p) => SCHEMAS[p.kind]?.title ?? p.kind).join(', '),
+      state: !l.pulledAt ? 'off' : l.lastError ? 'partial' : 'healthy', last: l.pulledAt ? `Read ${when(l.pulledAt)}` : 'Not read yet', note: l.lastError || null,
+      ok: !!l.pulledAt && !l.lastError, sample: false, required: true, refresh: 'Every morning at 1:30 am Pacific, or when you press Read it now', link: l, failed: l.lastResult?.failed || [],
+    })),
+  ];
+  const ownKinds = rows.filter((r) => r.src.key === 'hand' || r.src.key === 'linked').length;
+  const head = pageState({ sample, items, own: ownKinds, connected: systems.filter((x) => !x.sample && x.state !== 'off').length });
+
+  const needs = items.length;
+  const headline = needs ? `${needs} of ${rows.length} need${needs === 1 ? 's' : ''} your data` : 'Your data is up to date';
+
   return (
-    <div className="cv-page wide">
-      <PageHead over={`Data inputs · ${CV_ROOM.name}`} q="Bring in what isn't connected yet"
-        sub="Drop a file, paste from a spreadsheet, link a Google Sheet, snap a photo, or type it in. Every row is checked before it lands, you see exactly which figures move, and every commit can be undone." />
-      <BringIn onReview={(x) => { setSeed(x); setKind(x.kind); try { window.history.replaceState(null, '', `#${x.kind}`); } catch { /* no history */ } }} />
-      <ToastImport />
-      <OwnStart />
-      <div className="cv-row" style={{ gap: 8 }}>
-        <Pill tone={entered ? 'info' : 'neutral'} icon="PencilLine">{entered ? `${entered} of ${KINDS.length} kinds entered by hand at ${CV_ROOM.short}` : `${CV_ROOM.short} is on sample data`}</Pill>
-        <span className="cv-xs cv-faint">{eng.mode === 'server' ? 'Saved to your account.' : 'Saved in this browser only.'} Switch rooms in the top bar to enter another room's data.</span>
-      </div>
-      <div className="cv-kinds">
-        {KINDS.map((k) => <KindCard key={k} kind={k} on={k === kind} onPick={pick} />)}
-      </div>
-      <Panel key={`${CV_D.id}-${kind}-${seed?.id ?? ''}`} kind={kind} seed={seed?.kind === kind ? seed : null} />
-      <Log />
-      <Callout icon="ShieldCheck">Hand-entered data is labelled wherever it's used: its feed shows "manual entry" on Sources, and a quarantined test that was waiting on it restarts its window from the day it arrived. It never re-prices a verified result.</Callout>
+    <div className={`cv-page ${s.page} ${s.narrow}`} data-page="inputs" data-state={head.state} {...dropHandlers}>
+      <PageHead over={`Add & Manage Data · ${CV_ROOM.name}`} q={headline}
+        sub="Add it any way that’s easy, then keep it right. Use this when a connection is missing or gets something wrong."
+        right={sample
+          ? <Button size="sm" variant="secondary" icon="FlaskConical" onClick={() => setPanel({ type: 'sample' })}>Sample data</Button>
+          : <Pill tone="good" icon="Cloud">Saved to your account</Pill>} />
+
+      <AddWays over={dragging} onFiles={(f) => add('file', f)} onPhoto={(f) => add('scan', f)}
+        onWay={(id) => (id === 'connect' ? router.push('/connect') : add(id === 'link' ? 'connect' : id === 'type' ? 'manual' : 'paste'))} />
+
+      <section className="cv-card" aria-label={`Data for ${CV_ROOM.short}`} id="inputs-next">
+        <DataRows rows={rows} items={items} sample={sample} server={server} quiet={editing}
+          onOpen={open} onLink={() => add('connect')} onDetails={(k) => open(k, 'grid')}
+          onQuick={(k) => open(k, 'grid', true)} onDownload={download} onUndo={undoLast} onHistory={(k) => { setHistKind(k); setPanel({ type: 'hist' }); }} />
+      </section>
+
+      <nav className={s.moreLinks} aria-label="More">
+        <button type="button" onClick={() => setPanel({ type: 'conns' })}><Icon name="PlugZap" size={16} />Connections<span className={s.moreNote}>{systems.filter(applies).filter((x) => x.ok).length} of {systems.filter(applies).length} up to date</span></button>
+        <button type="button" onClick={() => { setHistKind(''); setPanel({ type: 'hist' }); }}><Icon name="History" size={16} />History and undo</button>
+        <Link href="/data"><Icon name="Download" size={16} />Export or delete</Link>
+      </nav>
+
+      {!editing && panel?.type === 'conns' && (
+        <SidePanel over={CV_ROOM.short} title="Connections" onClose={close} wide
+          foot={<Link className="btn btn-secondary btn-sm" href="/sources">All connections<Icon name="ChevronRight" size={15} /></Link>}>
+          <Connections systems={systems} busy={linkBusy} onReadNow={readNow}
+            onSettings={(l) => setPanel({ type: 'link', link: l })} onToastExports={() => setPanel({ type: 'toast' })} />
+        </SidePanel>
+      )}
+      {!editing && panel?.type === 'hist' && (
+        <SidePanel over={CV_ROOM.short} title="History and undo" onClose={close} wide>
+          <History server={server} onChanged={roomHistory.reload} kindFilter={histKind} />
+        </SidePanel>
+      )}
+
+      {editing && quick && (
+        <SidePanel wide over={CV_ROOM.short} title="Quick add" onClose={closeEditor}>
+          <Editor key={`${CV_D.id}-${kind}-quick`} kind={kind} seed={null} startMode="grid" quick />
+        </SidePanel>
+      )}
+      {editing && !quick && (
+        <SidePanel workspace over={CV_ROOM.short} title={seed ? 'Import a file' : 'Manage data'} onClose={closeEditor}>
+          <Editor key={`${CV_D.id}-${kind}-${seed?.id ?? ''}-${startMode ?? ''}`} kind={kind} seed={seed?.kind === kind ? seed : null} startMode={startMode}
+            lastEntry={lastFor(kind)} onUndo={undoLast} onHistory={(k) => { closeEditor(); setHistKind(k); setPanel({ type: 'hist' }); }} />
+        </SidePanel>
+      )}
+      {!editing && panel?.type === 'kind' && (() => { const r = rows.find((x) => x.kind === panel.kind); return (
+        <KindPanel row={r} item={items.find((x) => x.kind === panel.kind)} stake={stake.find((x) => x.kind === panel.kind)} last={lastFor(panel.kind)} link={linkFor(panel.kind)} server={server} sample={sample}
+          onEdit={open} onLink={() => add('connect')} onReadNow={readNow} onUndo={undoLast} onDownload={download}
+          onHistory={(k) => { setHistKind(k); setPanel({ type: 'hist' }); }} onClose={close} />
+      ); })()}
+      {!editing && panel?.type === 'ready' && <ReadinessPanel rows={rows} items={items} onPick={(k) => setPanel({ type: 'kind', kind: k })} onClose={close} />}
+      {!editing && panel?.type === 'cap' && <CapabilityPanel kind={panel.kind} stake={stake.find((x) => x.kind === panel.kind)} findings={findingsFor(panel.kind)} sample={sample} onEdit={open} onClose={close} />}
+      {!editing && panel?.type === 'sample' && <SamplePanel server={server} onAdd={() => add()} onClose={close} />}
+      {!editing && panel?.type === 'link' && <LinkPanel link={links.find((l) => l.id === panel.link.id) || panel.link} busy={linkBusy} onReadNow={readNow} onUnlink={(l) => unlink(l, close)} onClose={close} />}
+      {!editing && panel?.type === 'toast' && <SidePanel workspace over="Toast" title="Upload Toast data exports" onClose={close}><ToastImport /></SidePanel>}
+      {!editing && panel?.type === 'add' && (
+        <AddPanel key={panel.start || 'menu'} server={server} start={panel.start} onManual={(k) => open(k, 'grid')} onToastExports={() => setPanel({ type: 'toast' })} onClose={close}>
+          <BringIn setLinks={setLinks} onReview={review} files={panel.files} startPaste={panel.start === 'paste'} />
+        </AddPanel>
+      )}
     </div>
   );
 }

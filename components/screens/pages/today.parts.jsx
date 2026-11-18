@@ -192,7 +192,7 @@ export function tileData({ d, dense, sv, flags, now, live = null }) {
       cmp: target ? `${vs(diff, 'target')} · ${pc(avg)} usual` : `${vs(diff, 'usual')} · no target set`, delta: Math.abs(diff) < 0.05 ? 0 : diff / 100,
       viz: <MarkBar value={last.labourRate} mark={target ?? avg} max={Math.max(last.labourRate, target ?? avg) * 1.25} fmt={pc} label="Share of sales" tickLabel={target ? 'Target' : 'Usual'} />, claim: 'obs',
       warn: labor7?.state === 'stale' ? '7shifts delayed' : null,
-      facts: [['Labor, share of sales', `${pc(last.labourRate)} (week of ${last.label})`], ...(target ? [['Your target', pc(target)]] : [['Target', 'Not set. Add one in your restaurant profile (Data inputs).']]), ['Usual (the 4 weeks before)', pc(avg)], ['Labor cost', money(last.labour)], ['Source', `${src()}${labor7?.state === 'stale' ? `; 7shifts last updated ${labor7.last}` : ''}`]],
+      facts: [['Labor, share of sales', `${pc(last.labourRate)} (week of ${last.label})`], ...(target ? [['Your target', pc(target)]] : [['Target', 'Not set. Add one in your restaurant profile (Add & Manage Data).']]), ['Usual (the 4 weeks before)', pc(avg)], ['Labor cost', money(last.labour)], ['Source', `${src()}${labor7?.state === 'stale' ? `; 7shifts last updated ${labor7.last}` : ''}`]],
       go: 'labour',
     };
   } else {
