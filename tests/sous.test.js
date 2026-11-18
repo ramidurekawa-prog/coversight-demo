@@ -442,3 +442,49 @@ describe('track record', () => {
     expect(moveFor({ id: 'x', page: 'x', topics: ['nope'] }, moves)).toBeNull();
   });
 });
+
+// ---- the Pass ---------------------------------------------------------------
+import { sousBoard } from '../lib/ai/moves.js';
+
+describe('the Pass', () => {
+  const board = (roomId, page = '', mem = {}, now = Date.now()) => {
+    const d = deriveRoom(SEED, roomId);
+    const memory = sousRemember(sousNoticed(d), mem, now);
+    const moves = sousMoves(d, { noticed: memory.active, card: sousToday(d).card, quietIds: memory.quietIds });
+    return { d, moves, b: sousBoard(d, { moves, memory, mem, page }) };
+  };
+
+  it('lays every room out in three lanes with nothing in two of them', () => {
+    for (const roomId of Object.keys(SEED.rooms)) {
+      const { d, moves, b } = board(roomId);
+      expect(b.now.length).toBeGreaterThan(0);
+      expect(b.now.length).toBeLessThanOrEqual(4);
+      expect(b.now.length + b.more).toBe(moves.length);
+      expect(b.watching.filter((w) => w.kind === 'test')).toHaveLength(d.proofs.filter((p) => p.outcome === 'testing').length);
+      expect(b.proven.map((w) => w.value)).toEqual(d.banked.live.map((p) => `${money(Math.round(p.bookable))} a week`));
+      for (const w of b.proven) expect(w.claim).toBe('book');
+      const ids = [...b.now, ...b.watching, ...b.proven].map((x) => x.id);
+      expect(new Set(ids).size).toBe(ids.length);
+    }
+  });
+
+  it('puts the page’s own ticket first', () => {
+    expect(board('oakland', 'purchasing').b.now[0].go).toBe('purchasing');
+    expect(board('oakland', 'inventory').b.now[0].go).toBe('inventory');
+  });
+
+  it('never shows the same thing as two tickets', () => {
+    const { b } = board('oakland', 'purchasing');
+    expect(b.now.filter((m) => m.topic === 'purchasing')).toHaveLength(1);
+  });
+
+  it('moves a handled ticket to "keeping an eye on" with the day Sous checks back', () => {
+    const d = deriveRoom(SEED, 'oakland');
+    const price = sousNoticed(d).find((n) => n.id === 'vendor:price');
+    const t0 = Date.parse('2026-10-27T00:00:00Z');
+    const mem = { [price.id]: { at: new Date(t0).toISOString(), how: 'handled', sig: noticedSig(price), title: price.title } };
+    const { b } = board('oakland', 'purchasing', mem, t0 + 864e5);
+    expect(b.now.some((m) => m.topic === 'purchasing')).toBe(false);
+    expect(b.watching.find((w) => w.memId === price.id)).toMatchObject({ kind: 'handled', note: 'You handled this on Oct 27. Checking back Nov 10.' });
+  });
+});

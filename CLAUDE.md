@@ -100,7 +100,10 @@ here ships to customers.
   (`sousRemember()`, saved under the `sous` action key; `sous.seen` per person
   keeps the strip quiet until an agent has something new) and each area's
   verified track record (`agentRecord()`). `sousLinks()` ties one ingredient
-  across pages; its figures keep their own claims and are never summed. The nightly `sous` job notifies
+  across pages; its figures keep their own claims and are never summed.
+  Sous opens as *the Pass* (`sousBoard()`: tickets in three lanes, Do now /
+  Keeping an eye on / Proven, with one ask line), not a chat window: keep it
+  a board. The nightly `sous` job notifies
   what it noticed and pre-writes briefs. `tests/sous.test.js` and
   `tests/sous.test.ts` cover it; `tests/helpers/fake-claude.ts` stands in for
   the API.

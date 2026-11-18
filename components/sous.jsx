@@ -2,8 +2,8 @@
 
 import * as React from 'react';
 
-import { agentAnswer, agentRead, agentTeam } from '../lib/ai/agents';
-import { agentRecord, noticedSig, sousMoves, sousRemember } from '../lib/ai/moves';
+import { agentAnswer, agentFor, agentRead, agentTeam } from '../lib/ai/agents';
+import { agentRecord, noticedSig, sousBoard, sousMoves, sousRemember } from '../lib/ai/moves';
 import { SOUS, firstSentence, sousBrief, sousCites, sousFacts, sousNoticed, sousRole, sousSuggest, sousToday } from '../lib/ai/sous';
 import { money } from '../lib/data/model';
 import { CV_PAGES } from '../lib/pages';
@@ -219,9 +219,11 @@ export function SousPanel({ onClose, go, role: shellRole = 'owner', tools = fals
   const [remote, setRemote] = React.useState(null);
   const [text, setText] = React.useState('');
   const [busy, setBusy] = React.useState(false);
+  // Which ticket is open (the page's own, when Sous is called from a page), which lane a phone shows, and which answer is up.
   const [open, setOpen] = React.useState('');
-  const [why, setWhy] = React.useState(false);
-  const endRef = React.useRef(null);
+  const [lane, setLane] = React.useState('now');
+  const [shown, setShown] = React.useState(-1);
+  const [team, setTeam] = React.useState(false);
   const roomId = CV_D.id;
 
   React.useEffect(() => {
@@ -241,23 +243,21 @@ export function SousPanel({ onClose, go, role: shellRole = 'owner', tools = fals
     return () => { live = false; };
   }, [server, roomId, page, eng.version]);
 
-  React.useEffect(() => { if (turns.length) endRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' }); }, [turns, busy]);
+  React.useEffect(() => { setShown(-1); }, [turns.length]);
 
   const brief = remote?.roomId === roomId && remote.engine === 'ai' ? remote.brief : local.brief;
   const me = local.agent;
   const { move } = me;
   const special = me.agent.id !== 'sous';
   const suggest = special && me.ask.length ? me.ask : local.suggest;
-  const pageTitle = CV_PAGES[page]?.title || '';
-  const icon = CV_PAGES[me.agent.id]?.icon || 'Sparkles';
-  const rec = local.record[me.agent.id] || (['today', 'proof', 'ledger', 'plan', 'week', 'portfolio', 'sous'].includes(me.agent.id) ? local.record.all : null);
-  const others = special ? me.elsewhere : local.noticed;
   const leave = (p, params) => { onClose(); go(p, params); };
   const push = (t) => setTurns((xs) => [...xs, { by: me.agent.name, ...t }]);
-  const toggle = (k) => setOpen((x) => (x === k ? '' : k));
+  const board = sousBoard(CV_D, { moves: local.moves, memory: local.memory, mem: eng.actions?.[CV_D.id]?.sous || {}, page: me.agent.id });
+  const opened = open || (move && board.now[0]?.id === move.id && special ? move.id : '');
+  const turn = turns.length ? turns[shown < 0 ? turns.length - 1 : shown] : null;
+  const lanes = [['now', 'Do now', board.now.length], ['watching', 'Watching', board.watching.length], ['proven', 'Proven', board.proven.length]];
+  const forget = (id) => setMem((m) => Object.fromEntries(Object.entries(m || {}).filter(([k]) => k !== id)), 'Sous: brought back');
 
-  /** Show the whole record behind a line. */
-  const explain = (label, textFull, goTo, claim) => push({ q: label, a: textFull, short: firstSentence(textFull), cites: goTo ? [{ go: goTo, label }] : [], claim, grounded: true, suggest: [] });
 
   /** Carry out a move, up to the point where the person decides: a draft to send, an approval to give, or the screen to do it on. */
   const act = async (m) => {
@@ -274,7 +274,6 @@ export function SousPanel({ onClose, go, role: shellRole = 'owner', tools = fals
     setMem((m) => ({ ...(m || {}), [n.id]: { at: new Date().toISOString(), how, sig: noticedSig(n), title: n.title } }), `Sous: ${how === 'handled' ? 'handled' : 'set aside'}: ${n.title}`);
     cv.toast(how === 'handled' ? 'Got it. I will check back in two weeks.' : 'Set aside. I will only raise it again if the numbers change.');
   };
-  const moveNoticed = move?.noticedId ? local.noticed.find((n) => n.id === move.noticedId) : null;
 
   const ask = async (question) => {
     const q = String(question || '').trim().slice(0, 500);
@@ -307,121 +306,118 @@ export function SousPanel({ onClose, go, role: shellRole = 'owner', tools = fals
 
   return (
     <>
-      <div className="cv-scrim" onClick={onClose} />
-      <aside className="cv-drawer cv-sous" role="dialog" aria-label={`${special ? me.agent.name : SOUS.name}, your AI teammate`}>
-        <div className="hd">
-          <div className="cv-sous-id">
-            <span className="cv-sous-mark" aria-hidden="true"><Icon name={special ? icon : 'Sparkles'} size={20} /></span>
-            <div className="cv-col" style={{ gap: 2, minWidth: 0 }}>
-              <span className="cv-sous-name">{special ? me.agent.name : SOUS.name}</span>
-              <span className="cv-sous-sub">{special ? `${SOUS.name} on ${pageTitle}${me.agent.id === 'portfolio' ? '' : ` at ${brief.room}`}` : `${SOUS.tagline} at ${brief.room}`}</span>
-            </div>
-          </div>
-          <button className="iconbtn" onClick={onClose} aria-label="Close Sous"><Icon name="X" size={18} /></button>
-        </div>
+      <div className="cv-pass-scrim" onClick={onClose} />
+      <div className="cv-pass" role="dialog" aria-modal="true" aria-label={`The Pass: ${SOUS.name}, your AI teammate`}>
+        <header className="cv-pass-top">
+          <span className="cv-sous-mark" aria-hidden="true"><Icon name="Sparkles" size={20} /></span>
+          <form className="cv-pass-ask" onSubmit={(e) => { e.preventDefault(); ask(text); }}>
+            <input id="cv-sous-q" autoFocus value={text} onChange={(e) => setText(e.target.value)} placeholder={special ? `Ask ${me.agent.name}, or anything about ${brief.room}` : `Ask ${SOUS.name} anything about ${brief.room}`} maxLength={500} autoComplete="off" aria-label={`Ask ${SOUS.name} about ${brief.room}`} />
+            <button type="submit" className="cv-sous-send" disabled={!text.trim() || busy} aria-label="Ask"><Icon name="ArrowUp" size={18} /></button>
+          </form>
+          <button className="iconbtn" onClick={onClose} aria-label="Close the Pass"><Icon name="X" size={18} /></button>
+        </header>
 
-        <div className="bd">
-          <section className={`cv-sous-hero${move ? ' act' : ''}`} aria-label={move ? 'What to do' : 'On this page'}>
-            <span className="cv-sous-over">{move ? `${me.voice} · do this` : special ? 'On this page' : 'Right now'}</span>
-            <p className="cv-sous-headline">{move ? move.title : me.lead?.text || brief.headline}</p>
-            <Stake move={move} size="lg" />
-            {move ? <p className="cv-sous-full">{firstSentence(move.why)}</p> : <p className="cv-sous-full">Nothing needs you here right now. I&apos;ll speak up when that changes.</p>}
-            {move && (
-              <div className="cv-sous-acts">
-                <Button icon={ACT[move.act.kind]?.icon} iconRight={ACT[move.act.kind] ? undefined : 'ArrowRight'} onClick={() => act(move)}>{ctaFor(move)}</Button>
-                {moveNoticed && <Button variant="secondary" icon="Check" onClick={() => remember(moveNoticed, 'handled')}>Already handled</Button>}
-              </div>
-            )}
-            {move && (
-              <div className="cv-sous-links">
-                <button type="button" className="cv-sous-more" onClick={() => setWhy((x) => !x)} aria-expanded={why}>{why ? 'Hide' : 'Show why'}</button>
-                {moveNoticed && <button type="button" className="cv-sous-more" onClick={() => remember(moveNoticed, 'dismissed')}>Not for us</button>}
-              </div>
-            )}
-            {move && why && (
-              <div className="cv-sous-why">
-                <p>{move.why}</p>
-                {move.source === 'noticed' || move.source === 'today' ? null : <p>This is a potential gain, not money saved. It counts only after a test verifies it.</p>}
-                <Cites cites={[{ go: move.go === 'finding' ? 'plan' : move.go, label: '' }]} onGo={leave} />
-              </div>
-            )}
-            {rec && (rec.wins > 0 || rec.testing > 0) && (
-              <div className="cv-sous-record" title="Verified changes are counted at the low end of what a test measured.">
-                <Icon name="BadgeCheck" size={15} />
-                <span>{rec.wins > 0 ? <><b>{rec.wins} verified {rec.wins === 1 ? 'change' : 'changes'}</b> holding <b>{money(Math.round(rec.week))} a week</b></> : 'No verified changes yet'}{rec.testing > 0 ? ` · ${rec.testing} being tested` : ''}</span>
-                {rec.wins > 0 && <Claim k="book" />}
-              </div>
-            )}
-          </section>
-
-          {me.link && (
-            <section className="cv-sous-link" aria-label="Across pages">
-              <span className="cv-sous-over"><Icon name="Link2" size={13} />Connected across pages</span>
-              <p>{open === 'link' ? me.link.text : me.link.short}</p>
-              <button type="button" className="cv-sous-more" onClick={() => toggle('link')}>{open === 'link' ? 'Hide' : 'Show the whole picture'}</button>
-            </section>
-          )}
-
-          {turns.length === 0 && suggest.length > 0 && (
-            <div className="cv-sous-chips" aria-label={`Ask ${me.agent.name}`}>
+        <div className="cv-pass-bd">
+          {!turn && suggest.length > 0 && (
+            <div className="cv-sous-chips" aria-label="Things to ask">
               {suggest.map((q) => <button key={q} type="button" onClick={() => ask(q)}>{q}</button>)}
             </div>
           )}
 
-          {turns.length > 0 && (
-            <section className="cv-sous-talk" aria-live="polite" aria-label="Conversation with Sous">
-              {turns.map((t, i) => (
-                <div key={i} className="cv-sous-turn">
-                  <p className="q">{t.q}</p>
-                  {t.by && t.by !== SOUS.name && !t.pending && <span className="cv-sous-by"><Icon name="Sparkles" size={12} />{t.by}</span>}
-                  {t.pending ? <p className="a pending"><span className="cv-sous-dots" aria-hidden="true"><i /><i /><i /></span>Reading your records…</p>
-                    : <Answer t={t} last={i === turns.length - 1} onGo={leave} onAsk={ask} onDo={act} />}
+          {turn && (
+            <section className="cv-ticket answer" aria-live="polite" aria-label="Sous's answer">
+              <div className="cv-ticket-h">
+                <span className="who"><Icon name="Sparkles" size={13} />{turn.by || SOUS.name}</span>
+                <span className="q">{turn.q}</span>
+                <button type="button" className="cv-sous-more" onClick={() => setTurns([])}>Clear</button>
+              </div>
+              {turn.pending ? <p className="cv-pass-wait"><span className="cv-sous-dots" aria-hidden="true"><i /><i /><i /></span>Reading your records…</p>
+                : <Answer key={`${turns.length}:${shown}`} t={turn} last onGo={leave} onAsk={ask} onDo={act} />}
+              {turns.length > 1 && (
+                <div className="cv-pass-earlier">
+                  <span>Earlier</span>
+                  {turns.map((t, i) => (t === turn ? null : <button key={i} type="button" onClick={() => setShown(i)}>{t.q}</button>))}
                 </div>
-              ))}
-              <span ref={endRef} />
+              )}
             </section>
           )}
 
-          <div className="cv-folds">
-            {special && me.more.length > 0 && (
-              <Fold icon={icon} title={`More from ${me.agent.name}`} n={me.more.length} open={open === 'more'} onToggle={() => toggle('more')}>
-                <ul className="cv-sous-lines">
-                  {me.more.map((l) => (
-                    <li key={l.id}><button type="button" onClick={() => explain(l.label, l.text, l.go, l.claim)}><span className="tx"><b>{l.label}</b>{firstSentence(l.text)}</span><Icon name="ChevronRight" size={15} /></button></li>
-                  ))}
-                </ul>
-              </Fold>
-            )}
-            <Fold icon="Sparkles" title={`All of ${brief.room}`} open={open === 'brief'} onToggle={() => toggle('brief')}>
-              <p className="cv-sous-headline sm">{brief.headline}{remote?.engine === 'ai' && brief === remote.brief ? '' : ''}</p>
-              <ul className="cv-sous-lines">
-                {brief.lines.map((l) => (
-                  <li key={l.id}><button type="button" onClick={() => explain(l.label, local.facts.find((f) => f.id === l.id)?.text || l.text, l.go, l.claim)}><span className="tx"><b>{l.label}</b>{firstSentence(l.text)}</span><Icon name="ChevronRight" size={15} /></button></li>
-                ))}
-              </ul>
-            </Fold>
-            {others.length > 0 && (
-              <Fold icon="TriangleAlert" title={special ? 'Noticed on other pages' : 'Sous noticed'} n={others.length} open={open === 'noticed'} onToggle={() => toggle('noticed')}>
-                <ul className="cv-sous-noticed">
-                  {others.map((n) => (
-                    <li key={n.id}>
-                      <button type="button" className={n.tone} onClick={() => leave(n.go)} title={`Open ${CV_PAGES[n.go]?.title}`}>
-                        <span className="ic"><Icon name={CV_PAGES[n.go]?.icon || TONE_ICON[n.tone]} size={16} /></span>
-                        <span className="tx">{n.title}</span>
-                        <Icon name="ChevronRight" size={15} />
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </Fold>
-            )}
-            {(local.memory.resolved.length > 0 || local.memory.quiet > 0) && (
-              <Fold icon="BadgeCheck" title="What you told me" n={local.memory.resolved.length + local.memory.quiet} open={open === 'memory'} onToggle={() => toggle('memory')}>
-                {local.memory.resolved.map((r) => <p key={r.id} className="cv-sous-quiet"><Icon name="BadgeCheck" size={16} />Resolved: {r.title.charAt(0).toLowerCase() + r.title.slice(1)} is no longer showing.</p>)}
-                {local.memory.quiet > 0 && <p className="cv-sous-fine">{local.memory.quiet} {local.memory.quiet === 1 ? 'thing is' : 'things are'} quiet because you handled or set {local.memory.quiet === 1 ? 'it' : 'them'} aside. <button type="button" className="cv-sous-more" onClick={() => setMem({}, 'Sous: memory cleared')}>Bring everything back</button></p>}
-              </Fold>
-            )}
-            <Fold icon="Users" title="The team: one brain, a specialist on every page" open={open === 'team'} onToggle={() => toggle('team')}>
+          <div className="cv-pass-tabs" role="tablist" aria-label="The Pass">
+            {lanes.map(([k, label, n]) => <button key={k} type="button" role="tab" aria-selected={lane === k} className={lane === k ? 'on' : ''} onClick={() => setLane(k)}>{label}<i>{n}</i></button>)}
+          </div>
+
+          <div className="cv-pass-lanes" data-lane={lane}>
+            <section className="cv-lane now" aria-label="Do now">
+              <h2><Icon name="Flame" size={15} />Do now<i>{board.now.length}</i></h2>
+              {board.now.length === 0 && <p className="cv-lane-empty">Nothing needs you right now. I&apos;ll put it here when something does.</p>}
+              {board.now.map((m, i) => {
+                const a = agentFor(m.go === 'finding' ? 'plan' : m.go);
+                const isOpen = opened === m.id;
+                const n = m.noticedId ? local.noticed.find((x) => x.id === m.noticedId) : null;
+                const link = local.facts.find((f) => f.topic === 'link' && f.also?.includes(m.topic));
+                return (
+                  <article key={m.id} className={`cv-ticket${isOpen ? ' open' : ''}${m.source === 'noticed' ? ' warn' : ''}`}>
+                    <button type="button" className="cv-ticket-h" onClick={() => setOpen(isOpen ? '-' : m.id)} aria-expanded={isOpen}>
+                      <span className="who"><Icon name={CV_PAGES[a.id]?.icon || 'Sparkles'} size={13} />{a.name}</span>
+                      {m.go === me.agent.id && special && <span className="here">This page</span>}
+                      <Icon name={isOpen ? 'ChevronDown' : 'ChevronRight'} size={15} />
+                    </button>
+                    <p className="t">{m.title}</p>
+                    <Stake move={m} />
+                    {isOpen && (
+                      <div className="cv-ticket-why">
+                        <p>{m.why}</p>
+                        {link && <p className="link"><Icon name="Link2" size={14} />{link.short}</p>}
+                        {m.source === 'plan' && <p>This is a potential gain, not money saved. It counts only after a test verifies it.</p>}
+                      </div>
+                    )}
+                    <div className="cv-ticket-acts">
+                      <Button variant={i === 0 ? 'primary' : 'secondary'} icon={ACT[m.act.kind]?.icon} iconRight={ACT[m.act.kind] ? undefined : 'ArrowRight'} onClick={() => act(m)}>{ctaFor(m)}</Button>
+                      {isOpen && n && <button type="button" className="cv-sous-more" onClick={() => remember(n, 'handled')}>Already handled</button>}
+                      {isOpen && n && <button type="button" className="cv-sous-more" onClick={() => remember(n, 'dismissed')}>Not for us</button>}
+                    </div>
+                  </article>
+                );
+              })}
+              {board.more > 0 && <button type="button" className="cv-sous-more" onClick={() => leave('plan')}>{board.more} more on the plan</button>}
+            </section>
+
+            <section className="cv-lane watching" aria-label="Keeping an eye on">
+              <h2><Icon name="Eye" size={15} />Keeping an eye on<i>{board.watching.length}</i></h2>
+              {board.watching.length === 0 && <p className="cv-lane-empty">No tests running and nothing set aside.</p>}
+              {board.watching.map((w) => (
+                <article key={w.id} className="cv-ticket quiet">
+                  <div className="cv-ticket-h"><span className="who"><Icon name={w.kind === 'test' ? CV_PAGES[w.page]?.icon || 'Eye' : 'Check'} size={13} />{w.kind === 'test' ? 'Being tested' : w.kind === 'handled' ? 'Handled' : 'Set aside'}</span></div>
+                  <p className="t">{w.title}</p>
+                  {w.progress != null && <span className="cv-ticket-bar" aria-hidden="true"><i style={{ width: `${Math.max(4, Math.min(100, w.progress))}%` }} /></span>}
+                  <p className="note">{w.note}</p>
+                  <div className="cv-ticket-acts">
+                    {w.kind === 'test' ? <button type="button" className="cv-sous-more" onClick={() => leave(w.go, { id: w.goId })}>See the test</button>
+                      : <button type="button" className="cv-sous-more" onClick={() => forget(w.memId)}>Bring it back</button>}
+                  </div>
+                </article>
+              ))}
+            </section>
+
+            <section className="cv-lane proven" aria-label="Proven">
+              <h2><Icon name="BadgeCheck" size={15} />Proven<i>{board.proven.length}</i></h2>
+              {board.proven.length === 0 && <p className="cv-lane-empty">Nothing verified yet. A change lands here once a test proves it.</p>}
+              {board.proven.map((w) => (
+                <article key={w.id} className="cv-ticket good">
+                  <div className="cv-ticket-h"><span className="who"><Icon name={CV_PAGES[w.page]?.icon || 'BadgeCheck'} size={13} />{w.kind === 'win' ? agentFor(w.page).name : 'Resolved'}</span></div>
+                  <p className="t">{w.title}</p>
+                  {w.value && <span className="cv-stake"><b>{w.value}</b>{w.claim && <Claim k={w.claim} />}</span>}
+                  <p className="note">{w.note}</p>
+                  {w.go && <div className="cv-ticket-acts"><button type="button" className="cv-sous-more" onClick={() => leave(w.go, { id: w.goId })}>See the proof</button></div>}
+                </article>
+              ))}
+            </section>
+          </div>
+
+          <section className="cv-pass-room">
+            <p><b>{brief.room} right now.</b> {brief.headline}</p>
+            <button type="button" className="cv-sous-more" onClick={() => setTeam((x) => !x)} aria-expanded={team}>{team ? 'Hide the team' : 'Who is on the team'}</button>
+            {team && (
               <ul className="cv-sous-team">
                 {agentTeam(local.facts, local.noticed, local.record).map((a) => (
                   <li key={a.page}>
@@ -434,19 +430,15 @@ export function SousPanel({ onClose, go, role: shellRole = 'owner', tools = fals
                   </li>
                 ))}
               </ul>
-            </Fold>
-          </div>
+            )}
+          </section>
         </div>
 
-        <div className="cv-sous-foot">
-          <form className="cv-sous-form" onSubmit={(e) => { e.preventDefault(); ask(text); }}>
-            <input id="cv-sous-q" value={text} onChange={(e) => setText(e.target.value)} placeholder={special ? `Ask ${me.agent.name}` : `Ask Sous about ${brief.room}`} maxLength={500} autoComplete="off" aria-label={special ? `Ask ${me.agent.name}` : `Ask Sous about ${brief.room}`} />
-            <button type="submit" className="cv-sous-send" disabled={!text.trim() || busy} aria-label="Send"><Icon name="ArrowUp" size={18} /></button>
-          </form>
-          <span className="cv-sous-note">Answers come only from {brief.room}&apos;s records. Nothing is changed or sent without you.</span>
-          {tools && <span className="cv-sous-note">Engine: {!server ? 'built-in (browser preview)' : remote?.ai ? 'Claude Opus 5.5, checked against the records' : 'built-in (no AI key on the server)'}</span>}
-        </div>
-      </aside>
+        <footer className="cv-pass-foot">
+          <span>The Pass · every ticket comes from {brief.room}&apos;s own records. Nothing is changed or sent without you.</span>
+          {tools && <span>Engine: {!server ? 'built-in (browser preview)' : remote?.ai ? 'Claude Opus 5.5, checked against the records' : 'built-in (no AI key on the server)'}</span>}
+        </footer>
+      </div>
     </>
   );
 }

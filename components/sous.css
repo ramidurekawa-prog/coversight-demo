@@ -207,3 +207,96 @@
 
 /* A long page title gives way to the top bar's buttons on a phone instead of sliding under them. */
 @media (max-width: 640px) { .cv-top > .col { overflow: hidden; } .cv-top > .col > h1 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } }
+
+/* ---- the Pass: Sous's board ------------------------------------------------
+ * Called up center stage like a command bar, laid out like tickets on a
+ * kitchen rail: Do now, Keeping an eye on, Proven. One line to ask on top. */
+.cv-pass-scrim { position: fixed; inset: 0; z-index: var(--z-modal); background: rgba(16, 24, 36, 0.55); backdrop-filter: blur(3px); animation: fade var(--dur-base) var(--ease-out); }
+.cv-pass { position: fixed; z-index: calc(var(--z-modal) + 1); left: 50%; top: 6vh; transform: translateX(-50%); width: min(1080px, calc(100vw - 32px)); max-height: 88vh; display: flex; flex-direction: column; border-radius: 22px; background: var(--background); box-shadow: 0 40px 90px -30px rgba(10, 16, 26, 0.7), 0 0 0 1px rgba(23, 37, 54, 0.12); overflow: hidden; animation: cvPassIn 180ms var(--ease-out, ease); }
+@keyframes cvPassIn { from { opacity: 0; transform: translate(-50%, 10px) scale(0.985); } to { opacity: 1; transform: translate(-50%, 0) scale(1); } }
+@media (prefers-reduced-motion: reduce) { .cv-pass, .cv-pass-scrim { animation: none; } }
+
+.cv-pass-top { display: flex; align-items: center; gap: 12px; padding: 14px 16px; background: var(--side-bg); }
+.cv-pass-top .cv-sous-mark { width: 44px; height: 44px; }
+.cv-pass-top .iconbtn { color: #F6F1E7; }
+.cv-pass-top .iconbtn:hover { background: rgba(255, 255, 255, 0.1); }
+.cv-pass-ask { flex: 1; display: flex; align-items: center; gap: 8px; padding: 4px 4px 4px 18px; border-radius: 14px; background: rgba(255, 255, 255, 0.09); border: 1.5px solid transparent; }
+.cv-pass-ask:focus-within { border-color: var(--primary); background: rgba(255, 255, 255, 0.13); }
+.cv-pass-ask input { flex: 1; min-width: 0; height: 44px; border: 0; outline: none; background: none; font: 600 18px/1 var(--font-sans); color: #F6F1E7; }
+.cv-pass-ask input::placeholder { color: #9AA6B6; font-weight: 500; }
+.cv-pass-ask .cv-sous-send { background: var(--primary); color: #172536; border-radius: 11px; }
+
+.cv-pass-bd { display: flex; flex-direction: column; gap: 16px; padding: 18px 20px 20px; overflow-y: auto; }
+.cv-pass-wait { display: flex; align-items: center; gap: 10px; margin: 0; font: 500 15px/1.4 var(--font-sans); color: var(--fg-3); }
+
+.cv-pass-lanes { display: grid; grid-template-columns: 1.25fr 1fr 1fr; gap: 14px; align-items: start; }
+.cv-lane { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 12px; border-radius: 16px; background: var(--surface-sunken); }
+.cv-lane h2 { display: flex; align-items: center; gap: 7px; margin: 0 2px 2px; font: 800 13px/1.3 var(--font-sans); letter-spacing: 0.05em; text-transform: uppercase; color: var(--fg-2); }
+.cv-lane h2 i { margin-left: auto; min-width: 22px; height: 22px; padding: 0 7px; border-radius: 999px; background: var(--surface); font: 800 12.5px/22px var(--font-sans); font-style: normal; letter-spacing: 0; text-align: center; color: var(--fg-1); }
+.cv-lane.now h2 > svg { color: var(--primary); }
+.cv-lane.proven h2 > svg { color: var(--success-600); }
+.cv-lane-empty { margin: 0; padding: 14px 4px; font: 500 14.5px/1.5 var(--font-sans); color: var(--fg-3); }
+
+/* A ticket: who raised it on the tab, what to do, what it is worth, one button. */
+.cv-ticket { position: relative; display: flex; flex-direction: column; gap: 8px; padding: 12px 14px 14px; border-radius: 4px 4px 14px 14px; background: var(--surface); border: 1px solid var(--border); border-top: 3px solid var(--fg-3); box-shadow: 0 1px 0 rgba(23, 37, 54, 0.04), 0 10px 22px -20px rgba(23, 37, 54, 0.5); }
+.cv-lane.now .cv-ticket { border-top-color: var(--primary); }
+.cv-lane.now .cv-ticket.warn { border-top-color: var(--warning-500, #B97923); }
+.cv-ticket.good { border-top-color: var(--success-600); }
+.cv-ticket.answer { border-top-color: var(--side-bg); padding: 14px 18px 18px; }
+.cv-ticket-h { display: flex; align-items: center; gap: 8px; width: 100%; padding: 0; border: 0; background: none; font: inherit; color: var(--fg-3); text-align: left; }
+button.cv-ticket-h { cursor: pointer; }
+button.cv-ticket-h:focus-visible { outline: none; box-shadow: var(--ring); border-radius: 6px; }
+.cv-ticket-h > svg:last-child { margin-left: auto; }
+.cv-ticket-h .who { display: inline-flex; align-items: center; gap: 6px; font: 700 12px/1.3 var(--font-mono, ui-monospace, 'SF Mono', Menlo, monospace); letter-spacing: 0.04em; text-transform: uppercase; color: var(--fg-2); }
+.cv-ticket-h .here { padding: 2px 7px; border-radius: 999px; background: var(--cv-selected-bg, #FFE9DF); color: color-mix(in srgb, var(--primary) 55%, var(--fg-1)); font: 800 10.5px/1.3 var(--font-sans); letter-spacing: 0.05em; text-transform: uppercase; }
+.cv-ticket-h .q { flex: 1; min-width: 0; font: 600 14.5px/1.3 var(--font-sans); color: var(--fg-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cv-ticket-h .cv-sous-more { margin-left: auto; align-self: center; }
+.cv-ticket .t { margin: 0; font: 800 17px/1.3 var(--font-sans); letter-spacing: -0.012em; color: var(--fg-1); text-wrap: pretty; }
+.cv-ticket.quiet .t, .cv-ticket.good .t { font-size: 15.5px; font-weight: 700; }
+.cv-ticket .note { margin: 0; font: 500 13.5px/1.45 var(--font-sans); color: var(--fg-3); }
+.cv-ticket .cv-stake b { font-size: 24px; }
+.cv-ticket.good .cv-stake b { font-size: 20px; color: var(--success-700, var(--success-600)); }
+.cv-ticket-why { display: flex; flex-direction: column; gap: 8px; padding-top: 8px; border-top: 1px dashed var(--border-strong); }
+.cv-ticket-why p { margin: 0; font: 500 14.5px/1.5 var(--font-sans); color: var(--fg-2); }
+.cv-ticket-why .link { display: flex; gap: 7px; font-weight: 600; color: var(--fg-1); }
+.cv-ticket-why .link svg { flex: none; margin-top: 3px; color: var(--primary); }
+.cv-ticket-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; }
+.cv-ticket-acts .btn { min-height: 42px; border-radius: 11px; font-weight: 800; }
+.cv-ticket-acts .cv-sous-more { align-self: center; }
+.cv-ticket-bar { display: block; height: 6px; border-radius: 999px; background: var(--surface-sunken); overflow: hidden; }
+.cv-ticket-bar i { display: block; height: 100%; border-radius: 999px; background: var(--accent, var(--fg-1)); }
+
+/* The answer is a ticket too: one at a time, earlier ones a tap away. */
+.cv-ticket.answer .a { display: flex; flex-direction: column; gap: 10px; }
+.cv-ticket.answer .a p { margin: 0; font: 500 16px/1.55 var(--font-sans); color: var(--fg-1); text-wrap: pretty; }
+.cv-ticket.answer .a .short { font: 800 21px/1.35 var(--font-sans); letter-spacing: -0.015em; }
+.cv-pass-earlier { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding-top: 10px; border-top: 1px dashed var(--border-strong); font: 700 12px/1.3 var(--font-sans); letter-spacing: 0.05em; text-transform: uppercase; color: var(--fg-3); }
+.cv-pass-earlier button { max-width: 260px; padding: 5px 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface-sunken); font: 600 13px/1.2 var(--font-sans); letter-spacing: 0; text-transform: none; color: var(--fg-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+
+.cv-pass-room { display: flex; flex-direction: column; gap: 8px; }
+.cv-pass-room p { margin: 0; font: 500 15px/1.5 var(--font-sans); color: var(--fg-2); }
+.cv-pass-room p b { color: var(--fg-1); font-weight: 800; }
+.cv-pass-room .cv-sous-team { grid-template-columns: repeat(4, 1fr); }
+.cv-pass-foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 16px; padding: 10px 20px calc(10px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--border); background: var(--surface); font: 500 12.5px/1.4 var(--font-sans); color: var(--fg-3); }
+
+.cv-pass-tabs { display: none; }
+@media (max-width: 860px) {
+  .cv-pass { top: 0; left: 0; transform: none; width: 100%; max-height: none; height: 100dvh; border-radius: 0; animation: none; }
+  .cv-pass-bd { padding: 14px 14px 18px; flex: 1; }
+  .cv-pass-bd > .cv-sous-chips { flex-wrap: nowrap; overflow-x: auto; margin: 0 -14px; padding: 0 14px 2px; scrollbar-width: none; }
+  .cv-pass-bd > .cv-sous-chips button { flex: none; white-space: nowrap; }
+  .cv-pass-ask input { font-size: 16px; }
+  .cv-pass-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 4px; border-radius: 12px; background: var(--surface-sunken); }
+  .cv-pass-tabs button { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 40px; padding: 4px 6px; border: 0; border-radius: 9px; background: none; font: 700 13.5px/1.2 var(--font-sans); color: var(--fg-2); cursor: pointer; }
+  .cv-pass-tabs button.on { background: var(--surface); color: var(--fg-1); box-shadow: 0 1px 2px rgba(23, 37, 54, 0.12); }
+  .cv-pass-tabs i { font: 800 12px/1 var(--font-sans); font-style: normal; color: var(--fg-3); }
+  .cv-pass-lanes { grid-template-columns: 1fr; }
+  .cv-lane { display: none; padding: 0; background: none; }
+  .cv-lane h2 { display: none; }
+  .cv-pass-lanes[data-lane='now'] .cv-lane.now, .cv-pass-lanes[data-lane='watching'] .cv-lane.watching, .cv-pass-lanes[data-lane='proven'] .cv-lane.proven { display: flex; }
+  .cv-pass-room .cv-sous-team { grid-template-columns: 1fr 1fr; }
+  .cv-pass-foot { justify-content: center; text-align: center; }
+}
+[data-theme='dark'] .cv-pass { box-shadow: 0 40px 90px -30px #000, 0 0 0 1px #33405a; }
+[data-theme='dark'] .cv-pass-top { background: #1B2433; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) .cv-pass { box-shadow: 0 40px 90px -30px #000, 0 0 0 1px #33405a; } :root:not([data-theme='light']) .cv-pass-top { background: #1B2433; } }
