@@ -34,16 +34,18 @@ const fmtVal = (field, v) => (typeof v === 'number' && /price|cost|sales|refunds
    the last commit is kept here and shown when the editor comes back. */
 const done = { key: null, result: null };
 
-function Grid({ kind, rows, setRows, issues }) {
+function Grid({ kind, rows, setRows, issues, find = '', onRemove }) {
   const cols = SCHEMAS[kind].columns;
   const bad = (i, k) => issues.find((x) => x.row === i + 1 && (x.col === k || x.col == null) && x.level === 'error') || issues.find((x) => x.row === i + 1 && x.col === k);
+  const q = find.trim().toLowerCase();
+  const shows = (r) => !q || Object.values(r).some((v) => String(v ?? '').toLowerCase().includes(q));
   const set = (i, k, v) => setRows(rows.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
   return (
     <div className="cv-tablewrap" tabIndex={0} role="group" aria-label={`${SCHEMAS[kind].title} rows`} style={{ maxHeight: 460, overflowY: 'auto' }}>
       <table className={`cv-table cv-grid-edit ${s.gridTable}`}>
         <thead><tr><th style={{ width: 36 }}>#</th>{cols.map((c) => <th key={c.k} className={c.type === 'money' || c.type === 'number' ? 'r' : ''}>{c.label}{c.required ? '' : <span className="cv-faint" style={{ fontWeight: 400, textTransform: 'none' }}> · optional</span>}</th>)}<th style={{ width: 40 }}><span className="sr-only">Remove</span></th></tr></thead>
         <tbody>
-          {rows.map((r, i) => (
+          {rows.map((r, i) => (!shows(r) ? null : (
             <tr key={i}>
               <td className="cv-xs cv-faint cv-num">{i + 1}</td>
               {cols.map((c) => {
@@ -64,9 +66,10 @@ function Grid({ kind, rows, setRows, issues }) {
                   </td>
                 );
               })}
-              <td><button type="button" className="iconbtn" style={{ width: 28, height: 28 }} aria-label={`Remove row ${i + 1}`} onClick={() => setRows(rows.filter((_, j) => j !== i))}><Icon name="X" size={14} /></button></td>
+              <td><button type="button" className="iconbtn" style={{ width: 28, height: 28 }} aria-label={`Delete row ${i + 1}`} title="Delete this row" onClick={() => { setRows(rows.filter((_, j) => j !== i)); onRemove?.(); }}><Icon name="Trash2" size={14} /></button></td>
             </tr>
-          ))}
+          )))}
+          {q && !rows.some(shows) && <tr><td colSpan={cols.length + 2} className="cv-small cv-muted" style={{ padding: 16 }}>Nothing matches “{find}”.</td></tr>}
         </tbody>
       </table>
     </div>
@@ -259,7 +262,7 @@ function Verified({ r, onClose }) {
   );
 }
 
-export function Editor({ kind, seed, startMode }) {
+export function Editor({ kind, seed, startMode, lastEntry = null, onUndo, onHistory }) {
   const cv = useCv();
   const eng = useEngine();
   const server = eng.mode === 'server';
@@ -283,6 +286,7 @@ export function Editor({ kind, seed, startMode }) {
   const [replace, setReplace] = React.useState(() => !!eng.inputs[CV_D.id]?.[kind]?.opts?.replace);
   const opts = cleanOpts(kind, { replace });
   const fileRef = React.useRef(null);
+  const [find, setFind] = React.useState('');
 
   const parsed = React.useMemo(() => (mode === 'csv' && csv.trim() ? parseCSV(csv) : null), [mode, csv]);
   const autoMap = React.useMemo(() => (parsed ? mapColumns(parsed.headers, kind).map : {}), [parsed, kind]);
@@ -376,24 +380,36 @@ export function Editor({ kind, seed, startMode }) {
           <span className="cv-q-ico accent"><Icon name={schema.icon} size={18} /></span>
           <div className="cv-col" style={{ gap: 4 }}>
             <span className="cv-h4" id="inputs-editor-title">{schema.title} · {CV_ROOM.name}</span>
-            {seed && <span className="cv-xs cv-row" style={{ gap: 4 }}><Icon name="FileInput" size={12} /> From {seed.source}{seed.notes ? ` · ${seed.notes}` : ''}</span>}
-            <span className="cv-small cv-muted" style={{ maxWidth: '72ch' }}>{schema.blurb}</span>
+            {seed
+              ? <span className="cv-xs cv-row" style={{ gap: 4 }}><Icon name="FileInput" size={12} /> From {seed.source}{seed.notes ? ` · ${seed.notes}` : ''}</span>
+              : <span className="cv-small cv-muted">{plural(rows.length, 'row')}{eng.inputs[CV_D.id]?.[kind] ? ` · last changed ${eng.inputs[CV_D.id][kind].date}` : ' · sample data until you save your own'}</span>}
           </div>
         </div>
-        <Button variant="secondary" size="sm" icon="Download" onClick={() => download(`${kind}-${CV_D.id}-template.csv`, safeCSV(schema.columns.map((c) => c.k), templateRows(kind, room)))}>Template</Button>
       </div>
       {last && <Verified r={last} onClose={() => { done.key = null; setLast(null); }} />}
-      {!seed && <Tabs value={mode} onChange={(m) => { setMode(m); stale(); }} tabs={[{ value: 'grid', label: 'Type it in' }, { value: 'csv', label: 'Paste or upload' }]} />}
+      {!seed && (
+        <div className={s.toolbar} role="toolbar" aria-label={`Manage ${schema.title.toLowerCase()}`}>
+          {mode === 'grid' ? (
+            <>
+              {!schema.single && (
+                <label className={s.findBox}>
+                  <Icon name="Search" size={16} />
+                  <input value={find} onChange={(e) => setFind(e.target.value)} placeholder={`Find in ${schema.title.toLowerCase()}`} aria-label={`Find in ${schema.title.toLowerCase()}`} />
+                </label>
+              )}
+              {!schema.single && <Button size="sm" variant="secondary" icon="Plus" onClick={() => { setFind(''); setRows([...rows, blankRow()]); requestAnimationFrame(() => document.getElementById(cellId(kind, rows.length, schema.columns[0].k))?.focus()); }}>Add a row</Button>}
+              <Button size="sm" variant="ghost" icon="Upload" onClick={() => { setMode('csv'); stale(); }}>Replace from a file</Button>
+            </>
+          ) : <Button size="sm" variant="secondary" icon="ArrowLeft" onClick={() => { setMode('grid'); stale(); }}>Back to the table</Button>}
+          <Button size="sm" variant="ghost" icon="Download" onClick={() => download(`${kind}-${CV_D.id}.csv`, safeCSV(schema.columns.map((c) => c.k), templateRows(kind, room)))}>Download</Button>
+          {onUndo && <Button size="sm" variant="ghost" icon="Undo2" disabled={!lastEntry} title={lastEntry ? undefined : 'Nothing to undo yet'} onClick={() => onUndo(lastEntry)}>Undo last change</Button>}
+          {onHistory && <Button size="sm" variant="ghost" icon="History" onClick={() => onHistory(kind)}>History</Button>}
+        </div>
+      )}
       {mode === 'grid' ? (
         <>
-          <span className="cv-xs cv-faint">{kind === 'waste' ? `Each row adds to the log${eng.inputs[CV_D.id]?.waste?.rows?.length ? ` (${plural(eng.inputs[CV_D.id].waste.rows.length, 'entry', 'entries')} logged so far)` : ''}. A row already logged isn’t added twice.` : 'Pre-filled with what’s there now. Change what’s different.'}</span>
-          <Grid kind={kind} rows={rows} setRows={setRows} issues={result?.issues || []} />
-          {!schema.single && (
-            <div className="cv-row">
-              <Button size="sm" variant="ghost" icon="Plus" onClick={() => setRows([...rows, blankRow()])}>Add a row</Button>
-              <Button size="sm" variant="ghost" icon="Eraser" onClick={() => setRows([blankRow()])}>Start blank</Button>
-            </div>
-          )}
+          <span className="cv-xs cv-faint">{kind === 'waste' ? `Each row adds to the log${eng.inputs[CV_D.id]?.waste?.rows?.length ? ` (${plural(eng.inputs[CV_D.id].waste.rows.length, 'entry', 'entries')} logged so far)` : ''}. A row already logged isn’t added twice.` : 'Click any value to change it. Nothing is saved until you press Save.'}</span>
+          <Grid kind={kind} rows={rows} setRows={setRows} issues={result?.issues || []} find={find} onRemove={() => { if (schema.replace && !replace) setReplace(true); }} />
         </>
       ) : (
         <div className="cv-col" style={{ gap: 8 }}>

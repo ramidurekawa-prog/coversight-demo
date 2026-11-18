@@ -509,3 +509,9 @@ button.mRow.on { background: var(--accent-subtle); }
   .page .dataRow > .dataMain { grid-column: 1 / -1; }
   .manage { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* ---------------------------------------------------------------- manage: the data itself, with one toolbar */
+.toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.findBox { flex: 1; min-width: 200px; max-width: 340px; display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 12px; border-radius: 10px; background: var(--surface); box-shadow: 0 0 0 1px var(--border-strong); color: var(--fg-2); }
+.findBox:focus-within { box-shadow: var(--ring); }
+.findBox input { all: unset; flex: 1; min-width: 0; font-size: 15px; color: var(--fg-1); }

@@ -108,15 +108,14 @@ export function DataRows({ rows, items, sample, server, quiet, onOpen, onLink, o
             : `${sample ? 'Sample data' : 'Starter data'}${r.feed ? ` · updated ${r.feed.last}` : ''}`;
         return (
           <div key={k} className={s.dataRow} role="listitem">
-            <button type="button" className={s.dataMain} onClick={() => onDetails(k)} aria-label={`${r.schema.title}: ${st.label}. ${sub}. View details.`}>
+            <button type="button" className={s.dataMain} onClick={() => onDetails(k)} aria-label={`${r.schema.title}: ${st.label}. ${sub}. View and manage.`}>
               <span className={s.dataIco}><Icon name={r.schema.icon} size={20} /></span>
               <span className={s.dataText}><b>{r.schema.title}</b><span>{sub}</span></span>
               <Pill tone={st.tone} icon={st.icon}>{st.label}</Pill>
             </button>
-            <Button size="sm" variant="ghost" icon="Settings" onClick={() => onDetails(k)}>Manage</Button>
             {it
-              ? <FixAction it={it} primary={i === 0 && !quiet} server={server} onOpen={onOpen} onLink={onLink} />
-              : <Button size="sm" variant="secondary" icon="PencilLine" onClick={() => onOpen(k, 'grid')}>Update</Button>}
+              ? <><Button size="sm" variant="ghost" icon="PencilLine" onClick={() => onDetails(k)}>Manage</Button><FixAction it={it} primary={i === 0 && !quiet} server={server} onOpen={onOpen} onLink={onLink} /></>
+              : <><span /><Button size="sm" variant="secondary" icon="PencilLine" onClick={() => onDetails(k)}>Manage</Button></>}
           </div>
         );
       })}

@@ -85,7 +85,7 @@ function CvInputs() {
     } catch { cv.toast('Couldn’t start the download in this browser.'); }
   };
   const undoLast = async (e) => {
-    try { await undoEntry(e.id); cv.toast(`Undone. ${SCHEMAS[e.kind].title} is back to what it was before.`); roomHistory.reload(); setPanel(null); } catch (err) { cv.toast(`Couldn’t undo: ${err.message}`); }
+    try { await undoEntry(e.id); cv.toast(`Undone. ${SCHEMAS[e.kind].title} is back to what it was before.`); roomHistory.reload(); setPanel(null); closeEditor(); } catch (err) { cv.toast(`Couldn’t undo: ${err.message}`); }
   };
   const findingsFor = (k) => CV_D.candidates.filter((c) => dependsOn(k, c) && !c.prevent && c.value > 0)
     .map((c) => { const why = blockedWhy(c, room, CV_D.inputs || {}); return { id: c.id, title: c.title, value: c.value, claim: c.claim, held: why && (k === 'recipes' || c.needs === k) ? why : null }; })
@@ -124,7 +124,7 @@ function CvInputs() {
 
       <section className="cv-card" aria-label={`Data for ${CV_ROOM.short}`} id="inputs-next">
         <DataRows rows={rows} items={items} sample={sample} server={server} quiet={editing}
-          onOpen={open} onLink={() => add('connect')} onDetails={(k) => setPanel({ type: 'kind', kind: k })} />
+          onOpen={open} onLink={() => add('connect')} onDetails={(k) => open(k, 'grid')} />
       </section>
 
       <nav className={s.moreLinks} aria-label="More">
@@ -147,8 +147,9 @@ function CvInputs() {
       )}
 
       {editing && (
-        <SidePanel workspace over={CV_ROOM.short} title={seed ? 'Import a file' : 'Edit data'} onClose={closeEditor}>
-          <Editor key={`${CV_D.id}-${kind}-${seed?.id ?? ''}-${startMode ?? ''}`} kind={kind} seed={seed?.kind === kind ? seed : null} startMode={startMode} />
+        <SidePanel workspace over={CV_ROOM.short} title={seed ? 'Import a file' : 'Manage data'} onClose={closeEditor}>
+          <Editor key={`${CV_D.id}-${kind}-${seed?.id ?? ''}-${startMode ?? ''}`} kind={kind} seed={seed?.kind === kind ? seed : null} startMode={startMode}
+            lastEntry={lastFor(kind)} onUndo={undoLast} onHistory={(k) => { closeEditor(); setHistKind(k); setPanel({ type: 'hist' }); }} />
         </SidePanel>
       )}
       {!editing && panel?.type === 'kind' && (() => { const r = rows.find((x) => x.kind === panel.kind); return (
