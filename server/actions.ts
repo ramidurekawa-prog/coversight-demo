@@ -17,6 +17,16 @@ const id = z.string().min(1).max(120);
 const isoDate = z.string().max(40);
 const flags = z.record(id, isoDate);
 
+const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const forecastSignals = z.object({
+  events: z.array(z.object({ date: day, name: z.string().trim().min(1).max(80), lift: z.number().min(-100).max(500).nullable().optional(), by: z.string().max(80).optional() })).max(100).optional(),
+  closures: z.array(day).max(120).optional(),
+  weather: z.array(z.object({ date: day, rainIn: z.number().min(0).max(20), tempF: z.number().min(-60).max(140).nullable().optional() })).max(250).optional(),
+  reservations: z.array(z.object({ date: day, covers: z.number().int().min(0).max(5000), asOf: day })).max(250).optional(),
+  days: z.array(z.object({ date: day, covers: z.number().int().min(0).max(20_000).optional(), net: z.number().min(0).max(5_000_000).optional() })).max(250).optional(),
+  location: z.object({ lat: z.number().min(-90).max(90), lon: z.number().min(-180).max(180) }).nullable().optional(),
+});
+
 const layoutRole = z.object({ metrics: z.array(z.string().max(20)).max(6), widgets: z.array(z.string().max(20)).max(6) });
 
 export const ACTION_KEYS = {
@@ -56,6 +66,13 @@ export const ACTION_KEYS = {
   autonomy: { scope: 'room', schema: z.record(z.string().min(1).max(40), z.number().int().min(0).max(4)) },
   /** Pricing on the invoice: per room per month, and the fee on reconciled savings. */
   pricing: { scope: 'group', schema: z.object({ perRoomMonthlyCents: z.number().int().min(0).max(1_000_000), feePct: z.number().min(0).max(50) }) },
+  /**
+   * Covercast's hand-entered signals for a room: events (with the lift the
+   * manager expects, if any), closures, rain, reservations on the books, past
+   * days typed in where no feed has them, and where the room is (for the
+   * weather feed). Feeds add to these; a hand entry is never overwritten.
+   */
+  'forecast.signals': { scope: 'room', schema: forecastSignals },
   /** Weekly meeting: the room's slot (day of week, 0 = Sunday, local time, length) and who usually attends. */
   'meeting.schedule': { scope: 'room', schema: meetingSchemas.schedule },
 } as const;
