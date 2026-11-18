@@ -48,9 +48,9 @@ console.log('\nEach method alone (day ahead, normal days, covers):\n');
 console.log(`| Room | ${Object.values(METHODS).map((x) => x.label).join(' | ')} |\n|---|${Object.keys(METHODS).map(() => '---').join('|')}|`);
 for (const e of extra.filter((x) => x.label === 'Covers')) console.log(`| ${e.name} | ${Object.keys(METHODS).map((k) => pct(e.methods[k]?.wape)).join(' | ')} |`);
 
-// Shift Pulse (the Service page): Covercast against the page's old rules (mean of 4 same
+// The Service page: Covercast against the page's old rules (mean of 4 same
 // weekdays, raw pace, servers sized to the busiest of 4 weeks), per service, sample rooms.
-console.log('\nShift Pulse, covers, sample rooms (old rules → Covercast):\n');
+console.log('\nService page, covers, sample rooms (old rules → Covercast):\n');
 console.log('| Room | Service | Hour, day ahead | Rest of service (by cut) | Short hours | Idle server-hours |\n|---|---|---|---|---|---|');
 for (const id of Object.keys(ds.rooms)) {
   const room = ds.rooms[id];

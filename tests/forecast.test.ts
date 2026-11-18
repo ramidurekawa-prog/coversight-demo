@@ -214,7 +214,7 @@ describe('Covercast from Toast orders, and during service', () => {
   });
 });
 
-describe('Covercast runs Shift Pulse (the Service page)', () => {
+describe('Covercast runs the Service page', () => {
   const ccs = Object.fromEntries(ROOMS.map((id) => [id, covercastRoom(ds.rooms[id], { days: 7 }) as any]));
   it('beats the page’s old rules on every room: hours a day ahead, and the rest of service from every cut', () => {
     for (const id of ROOMS) {
