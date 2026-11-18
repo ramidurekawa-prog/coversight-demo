@@ -41,11 +41,14 @@ export function History({ server, onChanged, kindFilter = '' }) {
   // Nothing to show and no filter in play: one quiet line, not a card.
   if (!hist.entries.length && !hist.loading && !hist.error && !kind && scope === 'room') {
     return (
-      <div className={s.quietLine}>
-        <Icon name="History" size={16} />
-        <span><b>Recent activity.</b> Nothing yet at {CV_ROOM.short}. Imports, edits and connection changes will be listed here.</span>
-        {many && <Button size="sm" variant="ghost" onClick={() => setScope('all')}>See all locations</Button>}
-      </div>
+      <section className="cv-card" aria-labelledby="inputs-history">
+        <div className="cv-card-head"><span className="cv-h4" id="inputs-history">Recent activity</span></div>
+        <div className={s.quietLine}>
+          <Icon name="History" size={16} />
+          <span>Nothing yet at {CV_ROOM.short}. Imports, edits and connection changes will be listed here.</span>
+          {many && <Button size="sm" variant="ghost" onClick={() => setScope('all')}>See all locations</Button>}
+        </div>
+      </section>
     );
   }
 

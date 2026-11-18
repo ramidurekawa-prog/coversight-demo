@@ -184,27 +184,42 @@ export function Connections({ systems, onToastExports, onSettings, onReadNow, bu
   );
 }
 
-/* ------------------------------------------------------------------ coverage: one status per kind of data */
-export function CoverageMatrix({ rows, items, kind, sample, onPick }) {
+/* ------------------------------------------------------------------ ready: the kinds with nothing to fix */
+export function ReadyList({ rows, items, kind, sample, onPick }) {
+  const ready = STEP_ORDER.map((k) => rows.find((x) => x.kind === k)).filter((r) => kindStatus(r, items.find((x) => x.kind === r.kind)) === 'ready');
+  if (!ready.length) return null;
   return (
-    <div className={s.matrix} role="table" aria-label={`Data coverage for ${CV_ROOM.short}`}>
-      <div className={`${s.mRow} ${s.mHead}`} role="row">
-        <span role="columnheader">Data</span><span role="columnheader">Status</span><span role="columnheader">What it affects</span><span />
-      </div>
-      {STEP_ORDER.map((k) => {
-        const r = rows.find((x) => x.kind === k);
-        const st = READY[kindStatus(r, items.find((x) => x.kind === k))];
+    <div className={s.matrix} role="list" aria-label={`Data that is ready at ${CV_ROOM.short}`}>
+      {ready.map((r) => {
         const own = r.src.key === 'hand' || r.src.key === 'linked';
+        const from = own ? `${r.src.key === 'linked' ? 'Linked sheet' : 'Entered by your team'} · ${r.entry.date}` : `${sample ? 'Sample data' : 'Starter data'}${r.feed ? ` · updated ${r.feed.last}` : ''}`;
         return (
-          <button key={k} type="button" role="row" className={`${s.mRow} ${k === kind ? s.on : ''}`} onClick={() => onPick(k)}
-            aria-label={`${r.schema.title}: ${st.label}${!own && sample ? ', sample data' : ''}. Affects ${AFFECTS[k].toLowerCase()}. Show details.`}>
-            <span className={s.mName} role="cell"><Icon name={r.schema.icon} size={16} />{r.schema.title}</span>
-            <span className={s.mStatus} role="cell"><Pill tone={st.tone} icon={st.icon}>{st.label}</Pill>{!own && sample && st.tone === 'good' && <span className={s.mNote}>sample</span>}</span>
-            <span className={s.mFrom} role="cell">{AFFECTS[k]}</span>
-            <Icon name="ChevronRight" size={15} className={s.chev} />
+          <button key={r.kind} type="button" role="listitem" className={`${s.mRow} ${r.kind === kind ? s.on : ''}`} onClick={() => onPick(r.kind)}
+            aria-label={`${r.schema.title}: ready. ${from}. Used for ${AFFECTS[r.kind].toLowerCase()}. View or update.`}>
+            <span className={s.mName}><Icon name={r.schema.icon} size={16} />{r.schema.title}</span>
+            <span className={s.mFrom}>{from}</span>
+            <span className={s.mFrom}>{AFFECTS[r.kind]}</span>
+            <span className={s.mGo}>View or update<Icon name="ChevronRight" size={15} className={s.chev} /></span>
           </button>
         );
       })}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ the one way in: drop anything */
+export function DropStrip({ over, onFiles, onConnect, onType }) {
+  const ref = React.useRef(null);
+  return (
+    <div className={`${s.dropStrip} ${over ? s.dropOver : ''}`}>
+      <span className={s.dropStripIco}><Icon name="FileSpreadsheet" size={20} /></span>
+      <span className={s.dropStripText}><b>{over ? 'Drop it anywhere' : 'Drop any file, photo or PDF anywhere on this page'}</b><span>Coversight works out what it is and shows you before anything changes.</span></span>
+      <span className={s.sampleActs}>
+        <Button size="sm" variant="secondary" icon="Upload" onClick={() => ref.current?.click()}>Choose a file</Button>
+        <Button size="sm" variant="ghost" icon="PlugZap" onClick={onConnect}>Connect software or a sheet</Button>
+        <Button size="sm" variant="ghost" icon="PencilLine" onClick={onType}>Type it in</Button>
+      </span>
+      <input ref={ref} type="file" multiple style={{ display: 'none' }} aria-hidden="true" tabIndex={-1} onChange={(e) => { const f = [...e.target.files]; e.target.value = ''; if (f.length) onFiles(f); }} />
     </div>
   );
 }

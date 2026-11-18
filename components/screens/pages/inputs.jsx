@@ -8,7 +8,7 @@ import { CV_D, CV_DS, CV_ROOM, PageHead, Pill } from '../core';
 import { useEngine } from '../../engine';
 import { KINDS } from '../../../lib/data/ingest';
 import { SCHEMAS, attention, blockedWhy, dependsOn, pageState, stakes } from '../../../lib/data/page/inputs';
-import { Connections, CoverageMatrix, FixNext, Summary } from './inputs-visual';
+import { Connections, DropStrip, FixNext, ReadyList, Summary } from './inputs-visual';
 import { ToastImport } from '../toast-import';
 import { BringIn } from '../bring-in';
 import { boardRows } from './inputs-board';
@@ -36,7 +36,7 @@ function CvInputs() {
   const [seed, setSeed] = React.useState(null);
   const [startMode, setStartMode] = React.useState(null);
   const [editing, setEditing] = React.useState(false);
-  const [panel, setPanel] = React.useState(null); // { type, kind?, link?, start? }
+  const [panel, setPanel] = React.useState(null); // { type, kind?, link?, start?, files? }
   const [histKind, setHistKind] = React.useState('');
   const close = React.useCallback(() => setPanel(null), []);
   const { links, setLinks } = useLinks(server);
@@ -54,7 +54,15 @@ function CvInputs() {
   const open = (k, m = null) => { setPanel(null); setKind(k); setSeed(null); setStartMode(m); setEditing(true); setHash(k); };
   const closeEditor = React.useCallback(() => { setEditing(false); setSeed(null); setHash(''); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const review = (x) => { setPanel(null); setSeed(x); setKind(x.kind); setStartMode('csv'); setEditing(true); setHash(x.kind); };
-  const add = (start = null) => setPanel({ type: 'add', start });
+  const add = (start = null, files = null) => setPanel({ type: 'add', start, files });
+  // A file dragged anywhere onto the page goes straight to the reader.
+  const [dragging, setDragging] = React.useState(false);
+  const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes('Files');
+  const dropHandlers = editing || panel ? {} : {
+    onDragOver: (e) => { if (hasFiles(e)) { e.preventDefault(); setDragging(true); } },
+    onDragLeave: (e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDragging(false); },
+    onDrop: (e) => { if (hasFiles(e)) { e.preventDefault(); setDragging(false); const f = [...e.dataTransfer.files]; if (f.length) add('file', f); } },
+  };
 
   const room = CV_DS.rooms[CV_D.id];
   const rows = boardRows(links, roomHistory.entries);
@@ -86,11 +94,10 @@ function CvInputs() {
   const head = pageState({ sample, items, own: ownKinds, connected: systems.filter((x) => !x.sample && x.state !== 'off').length });
 
   return (
-    <div className={`cv-page wide ${s.page}`} data-page="inputs">
+    <div className={`cv-page wide ${s.page}`} data-page="inputs" {...dropHandlers}>
       <PageHead over={`Data & Connections · ${CV_ROOM.name}`} q={head.headline} sub={head.sub}
         right={<>
           <Pill tone={server ? 'good' : 'neutral'} icon={server ? 'Cloud' : 'HardDrive'}>{server ? 'Saved to your account' : 'Demo: saved in this browser only'}</Pill>
-          <Button size="sm" variant={items.length || editing ? 'secondary' : 'primary'} icon="Plus" onClick={() => add()}>Add data</Button>
         </>} />
       {sample && (
         <div className={s.sampleBar} role="note">
@@ -105,12 +112,21 @@ function CvInputs() {
       <Summary systems={systems} rows={rows} items={items}
         onConnections={() => scrollTo('inputs-conns')} onReadiness={() => setPanel({ type: 'ready' })} onIssues={() => scrollTo('inputs-next')} />
 
+      <DropStrip over={dragging} onFiles={(f) => add('file', f)} onConnect={() => add('connect')} onType={() => add('manual')} />
+
       <section className="cv-card" aria-labelledby="inputs-next-h" id="inputs-next" style={{ scrollMarginTop: 16 }}>
         <div className="cv-card-head">
-          <span className="cv-h4" id="inputs-next-h">Fix next</span>
-          {items.length > 0 && <span className="cv-xs cv-faint">Most important first</span>}
+          <div className="cv-col" style={{ gap: 2 }}>
+            <span className="cv-h4" id="inputs-next-h">Your data</span>
+            <span className="cv-xs cv-faint">Everything Coversight uses at {CV_ROOM.short}, each listed once</span>
+          </div>
         </div>
+        <span className={s.groupHead}><Icon name={items.length ? 'TriangleAlert' : 'CircleCheck'} size={15} color={items.length ? 'var(--warning-600)' : 'var(--success-600)'} />Needs you · {items.length}</span>
         <FixNext items={items} server={server} sample={sample} onOpen={open} onLink={() => add('connect')} onUnlocks={(k) => setPanel({ type: 'cap', kind: k })} quiet={editing} />
+        {items.length < rows.length && <>
+          <span className={s.groupHead}><Icon name="CircleCheck" size={15} color="var(--success-600)" />Ready · {rows.length - items.length}</span>
+          <ReadyList rows={rows} items={items} sample={sample} kind={editing ? kind : null} onPick={(k) => setPanel({ type: 'kind', kind: k })} />
+        </>}
       </section>
 
       <div className={s.split2}>
@@ -124,18 +140,9 @@ function CvInputs() {
           <Connections systems={systems} busy={linkBusy} onReadNow={readNow}
             onSettings={(l) => setPanel({ type: 'link', link: l })} onToastExports={() => setPanel({ type: 'toast' })} />
         </section>
-        <section className="cv-card" aria-labelledby="inputs-cover-h">
-          <div className="cv-card-head">
-            <div className="cv-col" style={{ gap: 2 }}>
-              <span className="cv-h4" id="inputs-cover-h">Data coverage</span>
-              <span className="cv-xs cv-faint">Each kind of data, and whether it&apos;s ready to use</span>
-            </div>
-          </div>
-          <CoverageMatrix rows={rows} items={items} sample={sample} kind={editing ? kind : null} onPick={(k) => setPanel({ type: 'kind', kind: k })} />
-        </section>
+        <div id="inputs-history-card" style={{ scrollMarginTop: 16 }}><History server={server} onChanged={roomHistory.reload} kindFilter={histKind} /></div>
       </div>
 
-      <div id="inputs-history-card" style={{ scrollMarginTop: 16 }}><History server={server} onChanged={roomHistory.reload} kindFilter={histKind} /></div>
       <div className={s.trust} aria-label={server ? 'How your data is kept' : 'About this demo'}>
         {server ? <>
           <span><Icon name="Cloud" size={15} />Saved to your account for your whole team</span>
@@ -165,7 +172,7 @@ function CvInputs() {
       {!editing && panel?.type === 'toast' && <SidePanel workspace over="Toast" title="Upload Toast data exports" onClose={close}><ToastImport /></SidePanel>}
       {!editing && panel?.type === 'add' && (
         <AddPanel key={panel.start || 'menu'} server={server} start={panel.start} onManual={(k) => open(k, 'grid')} onToastExports={() => setPanel({ type: 'toast' })} onClose={close}>
-          <BringIn setLinks={setLinks} onReview={review} />
+          <BringIn setLinks={setLinks} onReview={review} files={panel.files} />
         </AddPanel>
       )}
     </div>

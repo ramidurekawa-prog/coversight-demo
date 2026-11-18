@@ -63,7 +63,7 @@ function KindSelect({ value, onChange, label }) {
    kept here: committing one tab doesn't lose the rest of the list. */
 const keep = { found: null, picks: {}, link: '', room: null };
 
-export function BringIn({ onReview, setLinks = () => {} }) {
+export function BringIn({ onReview, setLinks = () => {}, files = null }) {
   const cv = useCv();
   const eng = useEngine();
   const server = eng.mode === 'server';
@@ -102,6 +102,7 @@ export function BringIn({ onReview, setLinks = () => {} }) {
       // Keep the File for photos so it can be shrunk and read later.
       r.media = r.media.map((m) => ({ ...m, file: read.find((x) => x.name === m.name)?.file }));
       take(r, files.length === 1 ? files[0].name : `${files.length} files`);
+      return r;
     } catch (e) { setErr(`Couldn’t read those files: ${e.message}`); } finally { setBusy(null); if (fileRef.current) fileRef.current.value = ''; if (camRef.current) camRef.current.value = ''; }
   };
   const onPasteText = (text) => { if (text && text.trim()) take(route([{ name: 'Pasted rows', text }]), 'your paste'); };
@@ -139,6 +140,18 @@ export function BringIn({ onReview, setLinks = () => {} }) {
     cv.toast(res?.failed?.length ? `Linked. ${res.committed.length} tab${res.committed.length === 1 ? '' : 's'} loaded; ${res.failed.length} need a fix (see below).` : `Linked to ${CV_ROOM.short}: ${res?.committed?.length ?? 0} tab${res?.committed?.length === 1 ? '' : 's'} loaded. It’s read again every morning.`);
   });
 
+  // Files dropped on the page itself arrive here once, already chosen.
+  const took = React.useRef(null);
+  React.useEffect(() => { if (files?.length && took.current !== files) { took.current = files;
+      onFiles(files).then((r) => {
+        // One table, recognized with no doubt: skip the list and go straight to the review.
+        if (!r || r.manual.length !== 1 || r.unknown.length || r.toast.length || r.media.length || r.errors.length) return;
+        const src = r.manual[0];
+        const csv = src.csv ?? toCSV(...(() => { const g = gridToTable(src.grid, src.headerRow); return [g.headers, g.rows]; })());
+        onReview({ kind: src.kind, csv, source: src.source, via: 'file', id: `${src.source}-${Date.now()}` });
+      });
+    } }, [files]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const nothing = found && !found.toast.length && !found.manual.length && !found.unknown.length && !found.media.length && !found.toastDone;
 
   return (
@@ -151,7 +164,7 @@ export function BringIn({ onReview, setLinks = () => {} }) {
         <Pill icon="ShieldCheck">Every lane, same checks</Pill>
       </div>
 
-      <div className={st.ways}>
+      {!(files?.length && found) && <div className={st.ways}>
         <div role="button" tabIndex={0} aria-label="Drop files here, or press Enter to choose files" className={`${st.drop} ${over ? st.over : ''}`}
           onClick={() => fileRef.current?.click()} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileRef.current?.click(); } }}
           onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)}
@@ -183,7 +196,7 @@ export function BringIn({ onReview, setLinks = () => {} }) {
             </span>
           </div>
         </div>
-      </div>
+      </div>}
 
       {!server && <span className="cv-xs cv-faint">Links and photo reading need the server; in this browser-only preview, drop files or paste instead.</span>}
       {server && photo && !photo.configured && <span className="cv-xs cv-faint">Photo reading is off until an admin turns it on for this server. Photos you drop are listed, and spreadsheets and pastes work as usual.</span>}
@@ -244,7 +257,7 @@ export function BringIn({ onReview, setLinks = () => {} }) {
         </div>
       )}
 
-      <details>
+      <details hidden={!!(files?.length && found)}>
         <summary className="cv-small" style={{ cursor: 'pointer', fontWeight: 600 }}>Every way in, by kind of data</summary>
         <div className="cv-tablewrap" tabIndex={0} role="group" aria-label="Ways in by kind of data" style={{ marginTop: 8 }}>
           <table className="cv-table" style={{ fontSize: 'var(--text-xs)' }}>
