@@ -54,7 +54,7 @@ function Sidebar({ page, role, onNavigate }) {
       <div className="sb-head">
         <div className="cv-brand">
           <span className="glyph">
-            <picture><source srcSet="/brand-mark.webp" type="image/webp" /><img src="/brand-mark-96.png" alt="" width="30" height="30" /></picture>
+            <picture><source srcSet="/brand-mark-persimmon.webp" type="image/webp" /><img src="/brand-mark-persimmon-96.png" alt="" width="30" height="30" /></picture>
           </span>
           <span className="wm">Coversight</span>
         </div>
