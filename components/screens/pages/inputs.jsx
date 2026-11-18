@@ -40,6 +40,7 @@ function CvInputs() {
   const [seed, setSeed] = React.useState(null);
   const [startMode, setStartMode] = React.useState(null);
   const [editing, setEditing] = React.useState(false);
+  const [quick, setQuick] = React.useState(false);
   const [panel, setPanel] = React.useState(null); // { type, kind?, link?, start?, files? }
   const [histKind, setHistKind] = React.useState('');
   const close = React.useCallback(() => setPanel(null), []);
@@ -54,9 +55,9 @@ function CvInputs() {
     return () => window.removeEventListener('hashchange', read);
   }, []);
   const setHash = (k) => { try { window.history.replaceState(null, '', k ? `#${k}` : window.location.pathname + window.location.search); } catch { /* no history */ } };
-  const open = (k, m = null) => { setPanel(null); setKind(k); setSeed(null); setStartMode(m); setEditing(true); setHash(k); };
+  const open = (k, m = null, q = false) => { setPanel(null); setKind(k); setSeed(null); setStartMode(m); setQuick(q); setEditing(true); setHash(q ? '' : k); };
   const closeEditor = React.useCallback(() => { setEditing(false); setSeed(null); setHash(''); }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  const review = (x) => { setPanel(null); setSeed(x); setKind(x.kind); setStartMode('csv'); setEditing(true); setHash(x.kind); };
+  const review = (x) => { setPanel(null); setQuick(false); setSeed(x); setKind(x.kind); setStartMode('csv'); setEditing(true); setHash(x.kind); };
   const add = (start = null, files = null) => setPanel({ type: 'add', start, files });
   // A file dragged anywhere onto the page goes straight to the reader.
   const [dragging, setDragging] = React.useState(false);
@@ -124,7 +125,8 @@ function CvInputs() {
 
       <section className="cv-card" aria-label={`Data for ${CV_ROOM.short}`} id="inputs-next">
         <DataRows rows={rows} items={items} sample={sample} server={server} quiet={editing}
-          onOpen={open} onLink={() => add('connect')} onDetails={(k) => open(k, 'grid')} />
+          onOpen={open} onLink={() => add('connect')} onDetails={(k) => open(k, 'grid')}
+          onQuick={(k) => open(k, 'grid', true)} onDownload={download} onUndo={undoLast} onHistory={(k) => { setHistKind(k); setPanel({ type: 'hist' }); }} />
       </section>
 
       <nav className={s.moreLinks} aria-label="More">
@@ -146,7 +148,12 @@ function CvInputs() {
         </SidePanel>
       )}
 
-      {editing && (
+      {editing && quick && (
+        <SidePanel wide over={CV_ROOM.short} title="Quick add" onClose={closeEditor}>
+          <Editor key={`${CV_D.id}-${kind}-quick`} kind={kind} seed={null} startMode="grid" quick />
+        </SidePanel>
+      )}
+      {editing && !quick && (
         <SidePanel workspace over={CV_ROOM.short} title={seed ? 'Import a file' : 'Manage data'} onClose={closeEditor}>
           <Editor key={`${CV_D.id}-${kind}-${seed?.id ?? ''}-${startMode ?? ''}`} kind={kind} seed={seed?.kind === kind ? seed : null} startMode={startMode}
             lastEntry={lastFor(kind)} onUndo={undoLast} onHistory={(k) => { closeEditor(); setHistKind(k); setPanel({ type: 'hist' }); }} />

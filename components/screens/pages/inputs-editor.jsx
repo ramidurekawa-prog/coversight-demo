@@ -34,18 +34,18 @@ const fmtVal = (field, v) => (typeof v === 'number' && /price|cost|sales|refunds
    the last commit is kept here and shown when the editor comes back. */
 const done = { key: null, result: null };
 
-function Grid({ kind, rows, setRows, issues, find = '', onRemove }) {
+function Grid({ kind, rows, setRows, issues, find = '', onRemove, only = null, cards = false, picks = {} }) {
   const cols = SCHEMAS[kind].columns;
   const bad = (i, k) => issues.find((x) => x.row === i + 1 && (x.col === k || x.col == null) && x.level === 'error') || issues.find((x) => x.row === i + 1 && x.col === k);
   const q = find.trim().toLowerCase();
-  const shows = (r) => !q || Object.values(r).some((v) => String(v ?? '').toLowerCase().includes(q));
+  const shows = (r, i) => (only != null ? i === only : true) && (!q || Object.values(r).some((v) => String(v ?? '').toLowerCase().includes(q)));
   const set = (i, k, v) => setRows(rows.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
   return (
-    <div className="cv-tablewrap" tabIndex={0} role="group" aria-label={`${SCHEMAS[kind].title} rows`} style={{ maxHeight: 460, overflowY: 'auto' }}>
-      <table className={`cv-table cv-grid-edit ${s.gridTable}`}>
+    <div className="cv-tablewrap" tabIndex={0} role="group" aria-label={`${SCHEMAS[kind].title} rows`} style={cards ? undefined : { maxHeight: 460, overflowY: 'auto' }}>
+      <table className={`cv-table cv-grid-edit ${s.gridTable} ${cards ? s.gridCards : ''}`}>
         <thead><tr><th style={{ width: 36 }}>#</th>{cols.map((c) => <th key={c.k} className={c.type === 'money' || c.type === 'number' ? 'r' : ''}>{c.label}{c.required ? '' : <span className="cv-faint" style={{ fontWeight: 400, textTransform: 'none' }}> · optional</span>}</th>)}<th style={{ width: 40 }}><span className="sr-only">Remove</span></th></tr></thead>
         <tbody>
-          {rows.map((r, i) => (!shows(r) ? null : (
+          {rows.map((r, i) => (!shows(r, i) ? null : (
             <tr key={i}>
               <td className="cv-xs cv-faint cv-num">{i + 1}</td>
               {cols.map((c) => {
@@ -61,17 +61,20 @@ function Grid({ kind, rows, setRows, issues, find = '', onRemove }) {
                         {c.options.map((o) => <option key={o} value={o}>{o}</option>)}
                       </select>
                     ) : (
-                      <input id={cellId(kind, i, c.k)} aria-label={label} aria-invalid={b?.level === 'error' || undefined} title={b?.msg} value={r[c.k] ?? ''} inputMode={num ? 'decimal' : 'text'} onChange={(e) => set(i, c.k, e.target.value)} className={cls} />
+                      <input id={cellId(kind, i, c.k)} aria-label={label} aria-invalid={b?.level === 'error' || undefined} title={b?.msg} value={r[c.k] ?? ''} inputMode={num ? 'decimal' : 'text'}
+                        type={c.k === 'date' ? 'date' : 'text'} list={picks[c.k]?.length ? `pick-${kind}-${c.k}` : undefined} autoComplete="off"
+                        onChange={(e) => set(i, c.k, e.target.value)} className={cls} />
                     )}
                   </td>
                 );
               })}
-              <td><button type="button" className="iconbtn" style={{ width: 28, height: 28 }} aria-label={`Delete row ${i + 1}`} title="Delete this row" onClick={() => { setRows(rows.filter((_, j) => j !== i)); onRemove?.(); }}><Icon name="Trash2" size={14} /></button></td>
+              <td>{only == null && <button type="button" className="iconbtn" style={{ width: 28, height: 28 }} aria-label={`Delete row ${i + 1}`} title="Delete this row" onClick={() => { setRows(rows.filter((_, j) => j !== i)); onRemove?.(); }}><Icon name="Trash2" size={14} /></button>}</td>
             </tr>
           )))}
-          {q && !rows.some(shows) && <tr><td colSpan={cols.length + 2} className="cv-small cv-muted" style={{ padding: 16 }}>Nothing matches “{find}”.</td></tr>}
+          {q && !rows.some((r, i) => shows(r, i)) && <tr><td colSpan={cols.length + 2} className="cv-small cv-muted" style={{ padding: 16 }}>Nothing matches “{find}”.</td></tr>}
         </tbody>
       </table>
+      {Object.entries(picks).map(([k, list]) => (list.length ? <datalist key={k} id={`pick-${kind}-${k}`}>{list.map((v) => <option key={v} value={v} />)}</datalist> : null))}
     </div>
   );
 }
@@ -262,7 +265,7 @@ function Verified({ r, onClose }) {
   );
 }
 
-export function Editor({ kind, seed, startMode, lastEntry = null, onUndo, onHistory }) {
+export function Editor({ kind, seed, startMode, lastEntry = null, onUndo, onHistory, quick = false }) {
   const cv = useCv();
   const eng = useEngine();
   const server = eng.mode === 'server';
@@ -273,7 +276,17 @@ export function Editor({ kind, seed, startMode, lastEntry = null, onUndo, onHist
   const doneKey = `${CV_D.id}/${kind}`;
   const [last, setLast] = React.useState(done.key === doneKey ? done.result : null);
   const [mode, setMode] = React.useState(seed ? 'csv' : startMode || 'grid');
-  const [rows, setRowsState] = React.useState(initialRows);
+  const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+  // Quick add: the rows that are there, plus one new one (the waste log only ever adds).
+  const quickRows = () => { const blank = { ...blankRow(), ...(schema.columns.some((c) => c.k === 'date') ? { date: today() } : {}) }; return kind === 'waste' ? [blank] : [...initialRows(), blank]; };
+  const [rows, setRowsState] = React.useState(quick ? quickRows : initialRows);
+  // Pick-lists: what's already in this room's data, per text column, so a name is chosen instead of retyped.
+  const picks = React.useMemo(() => {
+    const base = templateRows(kind, room);
+    const out = Object.fromEntries(schema.columns.filter((c) => c.type === 'text' && c.k !== 'date').map((c) => [c.k, [...new Set(base.map((r) => String(r[c.k] ?? '').trim()).filter(Boolean))].slice(0, 200)]));
+    if (kind === 'waste') out.item = [...new Set((room.counts || []).map((c) => c.label || c.item))];
+    return out;
+  }, [kind, room]); // eslint-disable-line react-hooks/exhaustive-deps
   const [csv, setCsvState] = React.useState(seed?.csv ?? '');
   const [file, setFile] = React.useState(seed ? { name: seed.source, source: seed.via || 'file' } : null);
   const [map, setMapState] = React.useState(null);
@@ -368,7 +381,7 @@ export function Editor({ kind, seed, startMode, lastEntry = null, onUndo, onHist
     reader.readAsText(f);
   };
 
-  const discard = () => { setRowsState(initialRows()); if (seed) setMode('csv'); setCsvState(seed?.csv ?? ''); setMapState(null); setMapOk(false); setResult(null); setA(null); setDirty(false); setYes(false); };
+  const discard = () => { setRowsState(quick ? quickRows() : initialRows()); if (seed) setMode('csv'); setCsvState(seed?.csv ?? ''); setMapState(null); setMapOk(false); setResult(null); setA(null); setDirty(false); setYes(false); };
   const needYes = !!a?.confirm.length;
   const mapBlocked = mode === 'csv' && (!parsed || missingCols.length > 0 || (review?.needsConfirm && !mapOk));
   const canCommit = result && !result.errors && a && (!needYes || yes) && !busy && !eng.saving;
@@ -379,15 +392,16 @@ export function Editor({ kind, seed, startMode, lastEntry = null, onUndo, onHist
         <div className="cv-row nowrap" style={{ gap: 12, alignItems: 'flex-start' }}>
           <span className="cv-q-ico accent"><Icon name={schema.icon} size={18} /></span>
           <div className="cv-col" style={{ gap: 4 }}>
-            <span className="cv-h4" id="inputs-editor-title">{schema.title} · {CV_ROOM.name}</span>
+            <span className="cv-h4" id="inputs-editor-title">{quick ? `Add to ${schema.title.toLowerCase()}` : `${schema.title} · ${CV_ROOM.name}`}</span>
             {seed
               ? <span className="cv-xs cv-row" style={{ gap: 4 }}><Icon name="FileInput" size={12} /> From {seed.source}{seed.notes ? ` · ${seed.notes}` : ''}</span>
+              : quick ? <span className="cv-small cv-muted">Fill in one row and save. Pick from the lists where you can.</span>
               : <span className="cv-small cv-muted">{plural(rows.length, 'row')}{eng.inputs[CV_D.id]?.[kind] ? ` · last changed ${eng.inputs[CV_D.id][kind].date}` : ' · sample data until you save your own'}</span>}
           </div>
         </div>
       </div>
       {last && <Verified r={last} onClose={() => { done.key = null; setLast(null); }} />}
-      {!seed && (
+      {!seed && !quick && (
         <div className={s.toolbar} role="toolbar" aria-label={`Manage ${schema.title.toLowerCase()}`}>
           {mode === 'grid' ? (
             <>
@@ -408,8 +422,8 @@ export function Editor({ kind, seed, startMode, lastEntry = null, onUndo, onHist
       )}
       {mode === 'grid' ? (
         <>
-          <span className="cv-xs cv-faint">{kind === 'waste' ? `Each row adds to the log${eng.inputs[CV_D.id]?.waste?.rows?.length ? ` (${plural(eng.inputs[CV_D.id].waste.rows.length, 'entry', 'entries')} logged so far)` : ''}. A row already logged isn’t added twice.` : 'Click any value to change it. Nothing is saved until you press Save.'}</span>
-          <Grid kind={kind} rows={rows} setRows={setRows} issues={result?.issues || []} find={find} onRemove={() => { if (schema.replace && !replace) setReplace(true); }} />
+          {!quick && <span className="cv-xs cv-faint">{kind === 'waste' ? `Each row adds to the log${eng.inputs[CV_D.id]?.waste?.rows?.length ? ` (${plural(eng.inputs[CV_D.id].waste.rows.length, 'entry', 'entries')} logged so far)` : ''}. A row already logged isn’t added twice.` : 'Click any value to change it. Nothing is saved until you press Save.'}</span>}
+          <Grid kind={kind} rows={rows} setRows={setRows} issues={result?.issues || []} find={find} picks={picks} only={quick ? rows.length - 1 : null} cards={quick} onRemove={() => { if (schema.replace && !replace) setReplace(true); }} />
         </>
       ) : (
         <div className="cv-col" style={{ gap: 8 }}>
@@ -436,7 +450,7 @@ export function Editor({ kind, seed, startMode, lastEntry = null, onUndo, onHist
             : <Mapping kind={kind} review={review} map={curMap} setMap={setMap} confirmed={mapOk} setConfirmed={(v) => { setMapOk(v); stale(); }} />)}
         </div>
       )}
-      {schema.replace && (
+      {schema.replace && !quick && (
         <label className="cv-row cv-small" style={{ gap: 8, alignItems: 'flex-start', cursor: 'pointer', flexWrap: 'nowrap' }}>
           <input type="checkbox" checked={replace} onChange={(e) => { setReplace(e.target.checked); stale(); }} style={{ marginTop: 3 }} />
           <span className="cv-col" style={{ gap: 2 }}><b>{schema.replace.label}</b><span className="cv-xs cv-faint">{replace ? schema.replace.note : 'Off: your rows update matching sample rows, and new names are added.'}</span></span>

@@ -93,8 +93,35 @@ export function Connections({ systems, onToastExports, onSettings, onReadNow, bu
   );
 }
 
-/* ------------------------------------------------------------------ the page: one row per kind of data, one button each */
-export function DataRows({ rows, items, sample, server, quiet, onOpen, onLink, onDetails }) {
+/* ------------------------------------------------------------------ a small dropdown of quick actions */
+function Menu({ label, items }) {
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef(null);
+  React.useEffect(() => {
+    if (!open) return undefined;
+    const out = (e) => { if (!ref.current?.contains(e.target)) setOpen(false); };
+    const key = (e) => { if (e.key === 'Escape') { e.stopPropagation(); setOpen(false); ref.current?.querySelector('button')?.focus(); } };
+    document.addEventListener('mousedown', out); document.addEventListener('keydown', key, true);
+    return () => { document.removeEventListener('mousedown', out); document.removeEventListener('keydown', key, true); };
+  }, [open]);
+  return (
+    <div className={s.menuWrap} ref={ref}>
+      <Button size="sm" variant="ghost" aria-haspopup="menu" aria-expanded={open} aria-label={label} onClick={() => setOpen(!open)}>More<Icon name={open ? 'ChevronUp' : 'ChevronDown'} size={15} /></Button>
+      {open && (
+        <div className={s.menu} role="menu" aria-label={label}>
+          {items.filter(Boolean).map((it) => (
+            <button key={it.label} type="button" role="menuitem" disabled={it.disabled} onClick={() => { setOpen(false); it.run(); }}>
+              <Icon name={it.icon} size={16} /><span>{it.label}{it.note && <small>{it.note}</small>}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ the page: one row per kind of data, one button and one menu each */
+export function DataRows({ rows, items, sample, server, quiet, onOpen, onLink, onDetails, onQuick, onDownload, onUndo, onHistory }) {
   const order = [...items.map((it) => it.kind), ...STEP_ORDER.filter((k) => !items.some((it) => it.kind === k))];
   return (
     <div className={s.dataRows} role="list">
@@ -113,9 +140,17 @@ export function DataRows({ rows, items, sample, server, quiet, onOpen, onLink, o
               <span className={s.dataText}><b>{r.schema.title}</b><span>{sub}</span></span>
               <Pill tone={st.tone} icon={st.icon}>{st.label}</Pill>
             </button>
+            <Menu label={`More actions for ${r.schema.title.toLowerCase()}`} items={[
+              !r.schema.single && { icon: 'Plus', label: 'Quick add a row', run: () => onQuick(k) },
+              { icon: 'PencilLine', label: 'Open the table', run: () => onDetails(k) },
+              { icon: 'Upload', label: 'Upload a new file', run: () => onOpen(k, 'csv') },
+              { icon: 'Download', label: 'Download', run: () => onDownload(k) },
+              { icon: 'Undo2', label: 'Undo last change', note: r.last ? null : 'Nothing to undo yet', disabled: !r.last, run: () => onUndo(r.last) },
+              { icon: 'History', label: 'History', run: () => onHistory(k) },
+            ]} />
             {it
-              ? <><Button size="sm" variant="ghost" icon="PencilLine" onClick={() => onDetails(k)}>Manage</Button><FixAction it={it} primary={i === 0 && !quiet} server={server} onOpen={onOpen} onLink={onLink} /></>
-              : <><span /><Button size="sm" variant="secondary" icon="PencilLine" onClick={() => onDetails(k)}>Manage</Button></>}
+              ? <FixAction it={it} primary={i === 0 && !quiet} server={server} onOpen={onOpen} onLink={onLink} />
+              : <Button size="sm" variant="secondary" icon="PencilLine" onClick={() => onDetails(k)}>Manage</Button>}
           </div>
         );
       })}
@@ -123,7 +158,6 @@ export function DataRows({ rows, items, sample, server, quiet, onOpen, onLink, o
   );
 }
 
-/* ------------------------------------------------------------------ the one way in: drop anything */
 const ADD_WAYS = [
   { id: 'file', icon: 'Upload', title: 'Upload a file', sub: 'Excel, CSV or a Toast export' },
   { id: 'photo', icon: 'Camera', title: 'Take a photo', sub: 'Invoice, count sheet or statement' },
