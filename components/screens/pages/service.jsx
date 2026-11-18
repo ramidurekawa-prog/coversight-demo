@@ -37,7 +37,7 @@ const MEAL_ICON = { lunch: 'Sun', dinner: 'Moon', day: 'CalendarDays' };
 const HANDOFF = { gm: 'GM', floor: 'floor manager' };
 
 /* Coversight's own names for the parts of this page. */
-const NAMES = { page: 'Shift Pulse', call: 'Right-Size Call', pace: 'Pace Line', map: 'Staffing Map', guard: 'Floor Guard', proof: 'Clock-in Proof', brief: 'Pre-shift Brief' };
+const NAMES = { page: 'Covercast', call: 'Right-Size Call', pace: 'Pace Line', map: 'Staffing Map', guard: 'Floor Guard', proof: 'Clock-in Proof', brief: 'Pre-shift Brief' };
 const ROLES = [['owner', 'Owner'], ['gm', 'GM'], ['floor', 'Floor manager']];
 /** The promise each role buys this page for, in the page head. */
 const PROMISE = {
@@ -647,7 +647,7 @@ function CvService() {
   return (
     <div className="cv-page">
       <div className={s.lead}>
-        <PageHead over={`${CV_ROOM.name} · ${dayOf(day)}${isToday ? ` · ${clockLabel(nowMin)}` : ` · ${niceDate(date)}`}`} q={PROMISE[role]} />
+        <PageHead over={`${NAMES.page} · ${CV_ROOM.name} · ${dayOf(day)}${isToday ? ` · ${clockLabel(nowMin)}` : ` · ${niceDate(date)}`}`} q={PROMISE[role]} />
         <div className={s.when}>
           {tools && <Seg label="View as" value={role} onChange={(k) => setView({ role: k })} options={ROLES} />}
           <Seg label="Which day" value={view.when === 'today' || view.when === 'tomorrow' ? view.when : 'date'} onChange={(k) => setView({ when: k })} options={[['today', 'Today'], ['tomorrow', 'Tomorrow']]} />
