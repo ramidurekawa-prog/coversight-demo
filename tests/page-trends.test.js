@@ -4,7 +4,7 @@ import { SEED } from '../lib/data/seed.js';
 import { deriveRoom, deriveGroup, bankedStats, proofList } from '../lib/data/model.js';
 import {
   CAUSES, JUDGE_WEEKS, METHOD, METRICS, MIN_BASELINE, RUN, availableMetrics, cleanNotes, describeSignal, directionOf, explainSignal,
-  dollarsOf, groupSeries, groupTrend, holidaysIn, leaksOf, isExplained, lastYearIndex, limitsOf, noteKey, rangesFor, signalKey, signalsOf, trendsCsv, trendsFor, windows,
+  dollarsOf, driversOf, groupSeries, groupTrend, holidaysIn, leaksOf, isExplained, lastYearIndex, limitsOf, noteKey, rangesFor, resultsOf, signalKey, signalsOf, trendsCsv, trendsFor, windows,
 } from '../lib/data/page/trends.js';
 
 /**
@@ -212,6 +212,35 @@ describe('Trends: Leak Watch in dollars', () => {
     const W = leaksOf(trendsFor(w.d.hist.rows), w.ctx);
     expect(W.leakWeek).toBe(0);
     expect(W.winWeek).toBeGreaterThan(0);
+  });
+});
+
+describe('Trends: analysis adds up', () => {
+  it('what moved contribution: the parts add up exactly to the change, for every sample room', () => {
+    for (const id of ['oakland', 'berkeley', 'walnut']) {
+      const D = driversOf(trendsFor(deriveRoom(SEED, id).hist.rows));
+      expect(D.parts.map((p) => p.key)).toEqual(['covers', 'check', 'food', 'labour']);
+      expect(D.parts.reduce((a, p) => a + p.v, 0)).toBeCloseTo(D.change, 6);
+      expect(D.recent - D.base).toBeCloseTo(D.change, 6);
+    }
+  });
+
+  it('a food share 2 points higher shows as food, not as guests or labor', () => {
+    const rows = rowsOf(wiggle(52)).map((r, i) => ({ ...r, food: r.net * (0.3 + (i >= 39 ? 0.02 : 0)), earned: r.net * (0.45 - (i >= 39 ? 0.02 : 0)) }));
+    const D = driversOf(trendsFor(rows));
+    const by = Object.fromEntries(D.parts.map((p) => [p.key, p.v]));
+    expect(by.food).toBeLessThan(0);
+    expect(Math.abs(by.labour)).toBeLessThan(1e-6);
+  });
+
+  it('Coversight results: the running total ends at the savings ledger figure, and only verified changes book', () => {
+    for (const id of ['oakland', 'berkeley', 'walnut']) {
+      const d = deriveRoom(SEED, id);
+      const R = resultsOf(d.proofs, d.hist.rows);
+      expect(R.toDate).toBeCloseTo(bankedStats(d.proofs).toDate, 6);
+      expect(R.total.at(-1) ?? 0).toBeCloseTo(R.toDate, 6);
+      expect(R.series.every((sr) => ['verified', 'limited'].includes(sr.outcome))).toBe(true);
+    }
   });
 });
 

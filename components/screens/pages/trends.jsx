@@ -9,7 +9,7 @@ import { dataEnd } from '../../../lib/data/readers';
 import {
   CAUSES, JUDGE_WEEKS, METHOD, METRIC, METRICS, METRIC_GROUPS, MIN_BASELINE, RUN,
   availableMetrics, cleanNotes, explainSignal, fmtChange, fmtMetric,
-  isExplained, lastYearIndex, leaksOf, noteKey, rangesFor, signalKey, trendsCsv, trendsFor,
+  directionOf, driversOf, isExplained, lastYearIndex, leaksOf, noteKey, rangesFor, resultsOf, signalKey, trendsCsv, trendsFor,
 } from '../../../lib/data/page/trends';
 import { Spark, TrendChart } from './trends-chart';
 import { useTodayTheme } from './today.themes';
@@ -132,101 +132,114 @@ function Progress({ have, need }) {
   return <span className={s.progress} role="progressbar" aria-valuemin={0} aria-valuemax={need} aria-valuenow={have} aria-label="Weeks of history"><span style={{ width: `${pct}%` }} /></span>;
 }
 
-/* ------------------------------------------------------------- leak watch */
+/* ------------------------------------------------------------- analysis */
 
-/** What the dollar conversion needs from the room: dishes sold a week and the average wage. */
+const usd = (v) => `$${Math.round(Math.abs(v)).toLocaleString('en-US')}`;
+const signedUsd = (v) => `${v < 0 ? '−' : '+'}${usd(v)}`;
+/** What the dollar figures on each change need from the room: dishes sold a week and the average wage. */
 function ctxOf(d) {
   const staff = d?.room?.staff ?? [];
   const hours = staff.reduce((a, p) => a + (p.hours || 0), 0);
   return { dishes: d?.menu?.units || null, wage: hours ? staff.reduce((a, p) => a + (p.hours || 0) * (p.rate || 0), 0) / hours : null };
 }
-const usd = (v) => `$${Math.round(Math.abs(v)).toLocaleString('en-US')}`;
-const signedUsd = (v) => `${v < 0 ? '−' : '+'}${usd(v)}`;
 
-/**
- * The answer first: how much is leaking out of this room each week, how much
- * the changes that are working bring in, and the last 13 weeks in total.
- * Totals never count one move twice (see leaksOf).
- */
-function LeakHero({ t, L, name }) {
-  const have = Math.max(0, MIN_BASELINE + 1 - t.w.needWeeks);
-  if (!t.w.ready) {
-    return (
-      <section className={`cv-card ${s.verdict}`} data-state="unknown">
-        <div className={s.vPart}>
-          <span className={s.vIcon}><Icon name="Hourglass" size={26} /></span>
-          <span className="cv-col" style={{ gap: 4, minWidth: 0 }}>
-            <span className={s.vWord}>Learning {name}&apos;s normal week</span>
-            <p className={s.vNote}>Leak Watch needs {MIN_BASELINE + 1} weeks of this room&apos;s own data before it can tell a leak from an ordinary week.</p>
-          </span>
-        </div>
-        <div className={s.vStat}>
-          <span className="cv-xs cv-faint">History</span>
-          <span className={s.big}>{have}<small> / {MIN_BASELINE + 1} weeks</small></span>
-          <Progress have={have} need={MIN_BASELINE + 1} />
-        </div>
-      </section>
-    );
-  }
-  const leaking = L.leakWeek > 0;
-  const nLeaks = L.leaks.filter((e) => e.s.ongoing && e.counted).length;
-  const nWins = L.wins.filter((e) => e.s.ongoing && e.counted).length;
-  const net13 = L.win13 - L.leak13;
-  const title = leaking ? <>{name} is losing about <span className={s.heroLoss}>{usd(L.leakWeek)}</span> a week</> : <>No slow leaks in {name} right now</>;
-  const note = leaking
-    ? `${plural(nLeaks, 'slow change')} ${nLeaks === 1 ? 'is' : 'are'} costing money every week, about ${usd(L.leak13)} over the last ${L.weeks} weeks. Fix the first one below.`
-    : L.winWeek > 0
-      ? `Nothing is costing money week after week. ${plural(nWins, 'change')} ${nWins === 1 ? 'is' : 'are'} bringing in about ${usd(L.winWeek)} a week: keep ${nWins === 1 ? 'it' : 'them'} going.`
-      : 'Nothing is costing money week after week. Every number is back within its normal swings.';
+const KPIS = ['earned', 'net', 'covers', 'prime'];
+/** Four headline numbers: the last 13 weeks' average against the room's usual, with a 26-week line. */
+function KpiStrip({ t, onPick }) {
+  const n = t.rows.length;
+  const recentAvg = (k) => { const v = t.metrics[k].vals.slice(t.w.judgeFrom).filter((x, j) => x != null && !t.holidays[t.w.judgeFrom + j].length); return v.length ? v.reduce((a, x) => a + x, 0) / v.length : null; };
   return (
-    <section className={`cv-card ${s.verdict} ${s.hero}`} data-state={leaking ? 'slipping' : 'improving'} aria-labelledby="leak-answer">
-      <div className={s.vPart}>
-        <span className={`${s.vIcon} ${leaking ? 'cv-down' : 'cv-up'}`}><Icon name={leaking ? 'TrendingDown' : 'CircleCheck'} size={26} /></span>
-        <span className="cv-col" style={{ gap: 6, minWidth: 0 }}>
-          <span className={s.vWord} id="leak-answer">{title}</span>
-          <p className={s.vNote}>{note}</p>
-        </span>
+    <div className={s.kpis}>
+      {KPIS.filter((k) => t.metrics[k].available).map((k) => {
+        const x = t.metrics[k], m = METRIC[k];
+        const r = t.w.ready ? recentAvg(k) : x.latest;
+        return (
+          <button key={k} type="button" className={`cv-card ${s.kpi}`} onClick={() => onPick(k)} aria-label={`${m.label}: open the chart`}>
+            <span className={s.kpiLabel}>{{ earned: 'Contribution', covers: 'Guests' }[k] ?? m.label}<span className={s.kpiPer}>{m.unit === 'pct' ? 'of sales' : 'a week'}</span></span>
+            <span className={s.kpiVal}>{fmtMetric(k, r)}</span>
+            {x.lim ? <Delta metric={k} a={r} b={x.lim.mean} suffix="vs usual" /> : <span className="cv-xs cv-faint">Usual level not set yet</span>}
+            <Spark vals={x.vals.slice(Math.max(t.w.from, n - 26))} lim={x.lim} height={40} ariaLabel={`${m.label}, last 26 weeks`} />
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+const OUTCOME_CHIPS = [
+  { k: 'verified', label: 'verified', icon: 'BadgeCheck', cls: 'chipGood' },
+  { k: 'testing', label: 'in test', icon: 'FlaskConical', cls: '' },
+  { k: 'reversed', label: 'reversed', icon: 'Undo2', cls: 'chipBad' },
+  { k: 'other', label: 'not proven yet', icon: 'CircleMinus', cls: '' },
+];
+
+/** What Coversight's changes have added: verified dollars to date, the running total, and every change by where it stands. */
+function Results({ t, R, name }) {
+  const cv = useCv();
+  const n = t.rows.length;
+  const first = R.total.findIndex((v) => v != null);
+  const start = first < 0 ? Math.max(t.w.from, n - 13) : Math.max(t.w.from, first - 2);
+  const chips = OUTCOME_CHIPS.filter((c) => R.counts[c.k] > 0);
+  return (
+    <section className={`cv-card ${s.results}`} aria-labelledby="trends-results">
+      <div className={s.resultsHead}>
+        <div className={s.resultsFig}>
+          <span className={s.kpiLabel}>Verified so far</span>
+          <span className={`${s.big} ${R.toDate > 0 ? s.gain : ''}`}>{usd(R.toDate)}</span>
+          <span className="cv-xs cv-faint">{R.week > 0 ? `${signedUsd(R.week)} a week now, from ${plural(R.series.length, 'change')}` : `No change in ${name} is verified yet`}</span>
+        </div>
+        <div className={s.resultsChips}>
+          <span className={s.kpiLabel}>{plural(R.tried, 'change')} tried</span>
+          <span className={s.chips}>
+            {chips.map((c) => <span key={c.k} className={`${s.chip} ${s[c.cls] ?? ''}`}><Icon name={c.icon} size={14} />{R.counts[c.k]} {c.label}</span>)}
+          </span>
+          <Button size="sm" variant="ghost" iconRight="ArrowRight" onClick={() => cv.go('proof')}>See every change</Button>
+        </div>
+        {R.toDate > 0 && <Claim k="book" />}
       </div>
-      <div className={s.heroFigs}>
-        <div className={s.heroFig}>
-          <span className={s.heroLabel}>Leaking now</span>
-          <span className={`${s.big} ${leaking ? s.loss : ''}`}>{leaking ? `−${usd(L.leakWeek)}` : '$0'}<small> a week</small></span>
-        </div>
-        <div className={s.heroFig}>
-          <span className={s.heroLabel}>Gaining now</span>
-          <span className={`${s.big} ${L.winWeek > 0 ? s.gain : ''}`}>{L.winWeek > 0 ? `+${usd(L.winWeek)}` : '$0'}<small> a week</small></span>
-        </div>
-        <div className={s.heroFig}>
-          <span className={s.heroLabel}>Last {L.weeks} weeks</span>
-          <span className={`${s.big} ${net13 < 0 ? s.loss : net13 > 0 ? s.gain : ''}`}>{net13 ? signedUsd(net13) : '$0'}</span>
-          <span className="cv-xs cv-faint">{usd(L.win13)} gained, {usd(L.leak13)} leaked</span>
-        </div>
-      </div>
-      <span className={s.heroClaim}><Claim k="est" /><span>Estimates. Each change is measured against its own usual level, in contribution (what&apos;s left of sales after food and labor).</span></span>
+      {first >= 0 ? (
+        <>
+          <TrendChart labels={t.rows.map((r) => r.label)} series={[{ key: 'total', label: 'Verified so far', color: 'var(--t-good)', vals: R.total }]} start={start} end={n - 1}
+            fmt={(v) => usd(v)} height={200} yLabel="US$, running total" ariaLabel={`Verified results in ${name}, running total by week`}
+            tip={{ title: (i) => `Week of ${shortDate(t.rows[i].iso) || t.rows[i].label}`, extra: (i) => <span className="cv-faint">{R.series.filter((sr) => sr.vals[i] != null).map((sr) => sr.title).join(' · ')}</span> }} />
+          <ul className={s.resultList}>
+            {R.series.map((sr) => <li key={sr.id}><span className={s.resultDot} /><span className={s.resultTitle}>{sr.title}</span><span className="cv-xs cv-faint">since {sr.since}</span><b className={s.gain}>{signedUsd(sr.bookable)}/wk</b></li>)}
+          </ul>
+        </>
+      ) : <p className={s.howTo}>Results appear here as soon as a change passes its test window. Only verified changes count.</p>}
     </section>
   );
 }
 
-/**
- * Normal noise: how much this room's contribution swings in an ordinary week,
- * so one bad week inside that band isn't mistaken for a leak.
- */
-function NoiseLine({ t, name }) {
-  const lim = t.metrics.earned.lim;
-  if (!t.w.ready || !lim) return null;
-  const last = t.metrics.earned.latest;
-  const inside = last != null && last >= lim.lcl && last <= lim.ucl;
+/** What moved contribution: usual week → each driver → recent week, as bars that add up. */
+function Drivers({ D, name }) {
+  if (!D) return null;
+  const max = Math.max(...D.parts.map((p) => Math.abs(p.v)), 1);
+  const show = (p) => (p.key === 'food' || p.key === 'labour' ? `${p.from.toFixed(1)}% → ${p.to.toFixed(1)}%` : p.key === 'check' ? `${fmtMetric('check', p.from)} → ${fmtMetric('check', p.to)}` : `${Math.round(p.from).toLocaleString('en-US')} → ${Math.round(p.to).toLocaleString('en-US')} a week`);
+  const top = [...D.parts].sort((a, b) => Math.abs(b.v) - Math.abs(a.v))[0];
   return (
-    <div className={`cv-card ${s.noise}`}>
-      <span className={s.noiseIco}><Icon name="Activity" size={20} /></span>
-      <span className="cv-col" style={{ gap: 4, minWidth: 0 }}>
-        <span className={s.noiseTitle}>Normal ups and downs: {usd(lim.lcl)} to {usd(lim.ucl)} a week</span>
-        <span className={s.headSub}>
-          That&apos;s how far {name}&apos;s contribution swings in an ordinary week. One bad week inside that band is noise, not a leak: no need to react.
-          {last != null && ` This week: ${usd(last)}, ${inside ? 'inside' : 'outside'} the band.`}
-        </span>
-      </span>
-    </div>
+    <section className={`cv-card ${s.drivers}`} aria-labelledby="trends-drivers">
+      <div className={s.driversEnds}>
+        <span className="cv-col" style={{ gap: 4 }}><span className={s.kpiLabel}>Usual week</span><span className={s.kpiVal}>{usd(D.base)}</span></span>
+        <Icon name="ArrowRight" size={20} className="cv-faint" />
+        <span className="cv-col" style={{ gap: 4 }}><span className={s.kpiLabel}>Last {D.weeks} weeks</span><span className={s.kpiVal}>{usd(D.recent)}</span></span>
+        <span className={`${s.driversChange} ${D.change >= 0 ? s.gain : s.loss}`}>{signedUsd(D.change)}<small> a week</small></span>
+        <Claim k={D.claim} />
+      </div>
+      <div className={s.bars} role="list">
+        {D.parts.map((p) => (
+          <div key={p.key} className={s.barRow} role="listitem">
+            <span className={s.barLabel}>{p.label}<span className="cv-xs cv-faint">{show(p)}</span></span>
+            <span className={s.barTrack} aria-hidden="true">
+              <span className={s.barMid} />
+              <span className={`${s.bar} ${p.v >= 0 ? s.barUp : s.barDown}`} style={{ width: `${(Math.abs(p.v) / max) * 50}%`, [p.v >= 0 ? 'left' : 'right']: '50%' }} />
+            </span>
+            <b className={`${s.barVal} ${Math.abs(p.v) < 0.5 ? '' : p.v > 0 ? s.gain : s.loss}`}>{Math.abs(p.v) < 0.5 ? '$0' : signedUsd(p.v)}</b>
+          </div>
+        ))}
+      </div>
+      <p className={s.howTo}>{top && Math.abs(top.v) >= 0.5 ? `${top.label} did the most: ${signedUsd(top.v)} a week in ${name}. ` : ''}Each bar is that one thing&apos;s effect on contribution, with everything else held at its usual level. The bars add up to the change.</p>
+    </section>
   );
 }
 
@@ -237,23 +250,27 @@ function NoiseLine({ t, name }) {
  * whether that room is improving, steady or slipping and how many changes are
  * waiting, so the owner can see where to go next without opening each one.
  */
+const STATE = {
+  improving: { word: 'Improving', icon: 'TrendingUp', kind: 'ok' },
+  steady: { word: 'Steady', icon: 'CircleMinus', kind: 'steady' },
+  slipping: { word: 'Slipping', icon: 'TrendingDown', kind: 'loss' },
+  unknown: { word: 'Learning', icon: 'Hourglass', kind: 'wait' },
+};
 function LocationSwitch({ current, onPick }) {
   const rooms = CV_GROUP.rooms ?? [];
   if (rooms.length < 2) return null;
   return (
     <div className={s.locs} role="group" aria-label="Location">
       {rooms.map((d) => {
-        const t = trendsFor(d.hist.rows);
-        const L = leaksOf(t, ctxOf(d));
+        const dir = directionOf(trendsFor(d.hist.rows));
+        const st = STATE[dir.state];
         const name = d.profile?.short || d.id;
-        const kind = !t.w.ready ? 'wait' : L.leakWeek > 0 ? 'loss' : 'ok';
-        const fig = kind === 'wait' ? 'Learning' : kind === 'loss' ? `−${usd(L.leakWeek)}/wk` : 'No leaks';
         return (
-          <button key={d.id} type="button" className={s.loc} data-kind={kind} aria-pressed={d.id === current} onClick={() => onPick(d.id)}
-            aria-label={`${name}: ${kind === 'loss' ? `losing about ${usd(L.leakWeek)} a week` : kind === 'ok' ? 'no slow leaks' : 'still learning its normal week'}`}>
-            <span className={s.locIco}><Icon name={kind === 'loss' ? 'TrendingDown' : kind === 'ok' ? 'CircleCheck' : 'Hourglass'} size={16} /></span>
+          <button key={d.id} type="button" className={s.loc} data-kind={st.kind} aria-pressed={d.id === current} onClick={() => onPick(d.id)}
+            aria-label={`${name}: contribution ${st.word.toLowerCase()}${dir.change ? `, ${dir.change.text} on its usual` : ''}`}>
+            <span className={s.locIco}><Icon name={st.icon} size={16} /></span>
             <span className={s.locName}>{name}</span>
-            <span className={s.locFig}>{fig}</span>
+            <span className={s.locFig}>{dir.change?.text ?? st.word}</span>
           </button>
         );
       })}
@@ -396,7 +413,7 @@ function LeakList({ items, t, notes, setNotes, name, good }) {
   const live = keyed.filter((x) => x.e.s.ongoing && (x.e.counted || !x.e.$));
   const ended = keyed.filter((x) => !live.includes(x));
   const list = [...live, ...(showEnded ? ended : [])];
-  const firstKey = good ? null : live.find((x) => !isExplained(notes[x.key]))?.key;
+  const firstKey = good ? null : live.find((x) => !x.e.s.good && !isExplained(notes[x.key]))?.key;
   const save = (sig, key) => (v) => {
     setNotes((cur) => ({ ...cleanNotes(cur), [key]: { ...v, at: new Date().toISOString() } }), `Trends note: ${METRIC[sig.metric].label}, week of ${t.rows[sig.from]?.label} (${CAUSES.find((c) => c.value === v.cause)?.label})`);
     setEditing(null);
@@ -415,7 +432,7 @@ function LeakList({ items, t, notes, setNotes, name, good }) {
       {!live.length && (
         <div className={`cv-card ${s.emptyRow}`}>
           <span className={good ? '' : 'cv-up'}><Icon name={good ? 'CircleMinus' : 'CircleCheck'} size={22} /></span>
-          <span>{good ? `Nothing in ${name} is running above its usual right now.` : `Nothing in ${name} is leaking right now.`}</span>
+          <span>{`Nothing in ${name} is moving more than normal right now.`}</span>
         </div>
       )}
       {ended.length > 0 && <button type="button" className={s.more} onClick={() => setShowEnded((v) => !v)} aria-expanded={showEnded}>{showEnded ? 'Show less' : `Show ${ended.length} more: ${[ended.some((x) => x.e.s.ongoing) && 'part of the same change', ended.some((x) => !x.e.s.ongoing) && `${good ? 'ended' : 'stopped'} in the last ${t.rows.length - t.w.judgeFrom} weeks`].filter(Boolean).join(', or ')}`}</button>}
@@ -503,15 +520,17 @@ function DataTable({ t, metric, start, end, cmp }) {
 function RoomView({ t, notes, setNotes }) {
   const n = t.rows.length;
   const L = React.useMemo(() => leaksOf(t, ctxOf(CV_D)), [t]);
+  const R = React.useMemo(() => resultsOf(CV_D.proofs, t.rows), [t]);
+  const D = React.useMemo(() => driversOf(t), [t]);
+  const moved = React.useMemo(() => [...L.leaks, ...L.wins].sort((a, b) => Number(b.s.ongoing) - Number(a.s.ongoing) || Number(a.s.good) - Number(b.s.good) || Math.abs(b.$?.perWeek ?? 0) - Math.abs(a.$?.perWeek ?? 0)), [L]);
   const metrics = availableMetrics(t);
   const ranges = rangesFor(t);
   const [metric, setMetric] = React.useState(metrics.find((mm) => mm.key === 'earned')?.key ?? metrics[0]?.key ?? 'net');
   const [range, setRange] = React.useState(ranges.at(-1)?.v ?? n);
-  const [cmpMode, setCmp] = React.useState('none');
+  const [cmpMode, setCmp] = React.useState('ly');
   const [sel, setSel] = React.useState(null);
   const [focus, setFocus] = React.useState(null);
   const [table, setTable] = React.useState(false);
-  const [explore, setExplore] = React.useState(false);
   const chartRef = React.useRef(null);
   const m = METRIC[metric] ?? METRIC.net;
   const x = t.metrics[m.key];
@@ -529,10 +548,10 @@ function RoomView({ t, notes, setNotes }) {
   const cmp = cmpMode === 'ly' && hasLy ? { label: 'Last year', vals: lyVals } : cmpMode === 'prev' && hasPrev ? { label: `${span} weeks earlier`, vals: prevVals } : null;
   const events = [
     ...t.holidays.map((h, i) => (h.length ? { i, kind: 'holiday', label: h.join(', ') } : null)).filter(Boolean),
-    ...CV_D.proofs.filter((p) => (p.outcome === 'verified' || p.outcome === 'limited') && p.since).map((p) => {
+    ...CV_D.proofs.filter((p) => p.since).map((p) => {
       let i = -1;
       for (let k = n - 1; k >= t.w.from; k--) if (t.rows[k].label === p.since) { i = k; break; }
-      return i < 0 ? null : { i, kind: 'proof', label: `Verified change started: ${p.title}` };
+      return i < 0 ? null : { i, kind: 'proof', label: `Change started (${p.outcome === 'limited' ? 'verified' : p.outcome}): ${p.title}` };
     }).filter(Boolean),
   ];
   const toChart = () => chartRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
@@ -555,22 +574,13 @@ function RoomView({ t, notes, setNotes }) {
   const roomName = CV_ROOM.short || CV_ROOM.name;
   return (
     <>
-      <LeakHero t={t} L={L} name={roomName} />
+      <KpiStrip t={t} onPick={(k) => { pickMetric(k); toChart(); }} />
 
-      {t.w.ready && (
-        <>
-          <Step n={1} id="trends-leaks" title="Leaks to fix" sub="Slow changes costing money every week, biggest first. Each one has one thing to do." />
-          <LeakList items={L.leaks} t={t} notes={notes} setNotes={setNotes} name={roomName} />
+      <Step n={1} id="trends-results" title={`What Coversight has added in ${roomName}`} sub="Money from changes that passed their test, added up week by week." />
+      <Results t={t} R={R} name={roomName} />
 
-          <Step n={2} id="trends-wins" title="What's working" sub="Changes bringing in more than usual. Find out why, so you keep them." />
-          <LeakList items={L.wins} t={t} notes={notes} setNotes={setNotes} name={roomName} good />
-
-          <NoiseLine t={t} name={roomName} />
-        </>
-      )}
-
-      <details className={`cv-card ${s.disclosure}`} open={explore} onToggle={(e) => setExplore(e.currentTarget.open)}>
-        <summary><Icon name="ChevronDown" size={16} className={s.chev} />Explore any number, week by week</summary>
+      <Step n={2} id="trends-chart" title="What's been going on" sub="Any number, week by week, against its usual range and last year. Change starts and holidays are marked." />
+      <section className="cv-card">
         <div className={s.explore} ref={chartRef}>
           <div className={s.toolbar}>
             <span className="cv-row" style={{ gap: 8, flexWrap: 'wrap' }}>
@@ -592,7 +602,7 @@ function RoomView({ t, notes, setNotes }) {
               {Object.values(marks).includes('good') && <span><i className={`${s.dot} ${s.dotGood}`} />Good way</span>}
               {cmp && <span><i className={s.legendLine} style={{ borderColor: CMP_COLOR, borderTopStyle: 'dashed' }} />{cmp.label}</span>}
               {events.some((e) => e.kind === 'holiday' && e.i >= start) && <span><i className={s.legendHoliday} />Holiday</span>}
-              {events.some((e) => e.kind === 'proof' && e.i >= start) && <span><i className={s.legendProof} />Verified change</span>}
+              {events.some((e) => e.kind === 'proof' && e.i >= start) && <span><i className={s.legendProof} />Coversight change started</span>}
             </div>
             <span className="cv-row" style={{ gap: 8 }}>
               {(hasPrev || hasLy) && <Seg label="Compare with" value={cmpMode} onChange={setCmp} items={[{ v: 'none', label: 'No compare' }, ...(hasPrev ? [{ v: 'prev', label: 'Before' }] : []), ...(hasLy ? [{ v: 'ly', label: 'Last year' }] : [])]} />}
@@ -603,7 +613,21 @@ function RoomView({ t, notes, setNotes }) {
           {table && <DataTable t={t} metric={m.key} start={start} end={end} cmp={cmp} />}
           {selected != null && <WeekPanel t={t} i={selected} metric={m.key} setMetric={pickMetric} notes={notes} metrics={metrics} onClose={() => setSel(null)} />}
         </div>
-      </details>
+      </section>
+
+      {D && (
+        <>
+          <Step n={3} id="trends-drivers" title="What's driving it" sub={`Why contribution moved over the last ${D.weeks} weeks, against a usual week.`} />
+          <Drivers D={D} name={roomName} />
+        </>
+      )}
+
+      {t.w.ready && (
+        <>
+          <Step n={D ? 4 : 3} id="trends-moved" title="What moved more than normal" sub="Changes bigger than ordinary week-to-week swings, in dollars a week." />
+          <LeakList items={moved} t={t} notes={notes} setNotes={setNotes} name={roomName} />
+        </>
+      )}
 
       <details className={`cv-card ${s.disclosure}`}>
         <summary><Icon name="ChevronDown" size={16} className={s.chev} />About this data</summary>
@@ -648,9 +672,9 @@ function CvTrends() {
   };
   return (
     <div className={`cv-page wide ${s.page}`}>
-      <PageHead over={`Leak Watch · ${own ? 'your Toast data' : 'sample data'} through ${shortDate(last?.iso)}`}
-        q="Catch the slow leaks before your P&L does"
-        sub="Small changes look fine week to week, then cost thousands by the time the monthly P&L arrives. Leak Watch puts each one in dollars and tells you what to do."
+      <PageHead over={`Trends · ${own ? 'your Toast data' : 'sample data'} through ${shortDate(last?.iso)}`}
+        q="How your business is trending, and why"
+        sub="What Coversight has added, what's been going on week by week, and what's driving it."
         right={<Button variant="secondary" size="sm" icon="Download" onClick={exportCsv}>CSV</Button>} />
       <LocationSwitch current={eng.room} onPick={(id) => engine.setRoom(id)} />
       <RoomView key={eng.room} t={t} notes={notes} setNotes={setNotes} />
