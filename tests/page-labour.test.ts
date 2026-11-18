@@ -5,6 +5,7 @@ import { deriveRoom } from '../lib/data/model.js';
 import {
   changeText, checkEntry, costByRole, coverage, dayOfTitle, entryTotals, gapGrid, groupShare, hourLabel, loadGridFromHeat, loadGridFromPlans, moves, peakCell, planServices, sampleServices, serverWage, shortPhrase,
   splitMoves, stageOf, topIssue, trustOf, weekDays, weekSummary, weekTotals, withEntry,
+  checkCrew, deptSplit, followUps, kitchenLoad, lineCheck, loadGridFromServices, mathChecks, needFor,
 } from '../lib/data/page/labour.js';
 import { buildSeed } from '../lib/data/seed.js';
 import { ACTION_KEYS } from '../server/actions';
@@ -167,5 +168,118 @@ describe('Labor page', () => {
     expect(ACTION_KEYS['labour.moves'].schema.safeParse({ 'cover:sat': { s: 'done', at: 'x' } }).success).toBe(false);
     expect(ACTION_KEYS['labour.view'].schema.safeParse('ops').success).toBe(true);
     expect(ACTION_KEYS['labour.view'].schema.safeParse('chef').success).toBe(false);
+  });
+
+  test('servers needed follows one rule in every hour: guests ÷ pace, rounded up', () => {
+    for (const id of rooms) {
+      const L = ds.rooms[id].labour;
+      for (const svc of sampleServices(L)) for (const h of svc.hours) expect(needFor(h.covers, L.kpis.rate), `${id} ${svc.key} ${h.label}`).toBe(h.need);
+    }
+    expect(needFor(0, 5)).toBe(1);
+    expect(needFor(11, 5)).toBe(3);
+    expect(needFor(10, 0)).toBeNull();
+  });
+
+  test('the guests-per-server grid comes from the same services as the chart', () => {
+    for (const id of rooms) {
+      const L = ds.rooms[id].labour, svcs = sampleServices(L), g = loadGridFromServices(svcs);
+      expect(g.rows.length).toBe(7);
+      for (const r of g.rows) {
+        const svc = svcs.find((x: any) => x.day === r.day)!;
+        r.cells.forEach((v: number | null, i: number) => {
+          const h = svc.hours.find((x: any) => x.label === g.hours[i].label);
+          expect(v).toBe(h ? Math.round((h.covers / h.sched) * 10) / 10 : null);
+          /* above the pace exactly when the hour is short */
+          if (h) expect(h.covers / h.sched > L.kpis.rate).toBe(h.sched < h.need);
+        });
+      }
+    }
+  });
+
+  test('the page checks its own math, and the sample passes', () => {
+    for (const id of rooms) {
+      const room = ds.rooms[id], d: any = deriveRoom(ds, id), svcs = sampleServices(room.labour);
+      const checks = mathChecks({ services: svcs, rate: room.labour.kpis.rate, roles: costByRole(room.staff), weekLabour: d.week.labour, totals: weekTotals(weekDays(svcs)), kpis: room.labour.kpis, feed: { state: 'healthy', last: 'now' } });
+      expect(checks.map((c: any) => c.key)).toEqual(['need', 'week', 'roles', 'feed']);
+      for (const c of checks) expect(c.ok, `${id} ${c.key}: ${c.detail}`).toBe(true);
+    }
+    const bad = mathChecks({ services: [{ day: 'Mon', hours: [{ label: '5 PM', covers: 30, sched: 3, need: 3 }] }], rate: 5, feed: { state: 'stale', last: '18 hours ago' } } as any);
+    expect(bad[0].ok).toBe(false);
+    expect(bad[0].detail).toContain('Mon 5 PM');
+    expect(bad.at(-1)!.ok).toBe(false);
+    expect(mathChecks({})[0].ok).toBeNull();
+  });
+
+  test('recorded plans are followed up against the latest data', () => {
+    const list = [{ id: 'cover:sat', title: 'Add 1 server', where: 'Saturday dinner', day: 'Sat' }];
+    const f = followUps({ 'cover:sat': { s: 'planned', at: 'x' }, 'cover:mon': { s: 'planned', at: 'y', t: 'Add 2 servers' }, 'spare:tue': { s: 'skipped', at: 'z' } }, list);
+    expect(f.waiting.map((x: any) => x.id)).toEqual(['cover:sat']);
+    expect(f.closed).toEqual([{ id: 'cover:mon', title: 'Add 2 servers', at: 'y' }]);
+    expect(ACTION_KEYS['labour.moves'].schema.safeParse({ 'cover:sat': { s: 'planned', at: '2026-10-27T00:00:00Z', t: 'Add 1 server' } }).success).toBe(true);
+  });
+
+  test('front of house and kitchen split adds up to the week', () => {
+    for (const id of rooms) {
+      const room = ds.rooms[id], d: any = deriveRoom(ds, id);
+      const depts = deptSplit(room.staff, { net: d.week.net, covers: d.week.covers }, room.levers.ot);
+      expect(depts.map((x: any) => x.key)).toEqual(['foh', 'boh']);
+      expect(depts.reduce((t: number, x: any) => t + x.cost, 0)).toBeCloseTo(d.week.labour, 0);
+      expect(depts.reduce((t: number, x: any) => t + x.share, 0)).toBeCloseTo(1, 3);
+      expect(depts.reduce((t: number, x: any) => t + x.ofSales, 0)).toBeCloseTo(d.week.labourRate, 3);
+      for (const x of depts) {
+        expect(x.wage).toBeCloseTo(x.cost / x.hours, 2);
+        expect(x.perGuest).toBeCloseTo(x.cost / d.week.covers, 2);
+        expect(x.roles.reduce((t: number, r: any) => t + r.people, 0)).toBe(x.people);
+      }
+      expect(depts[1].otHours).toBe(Math.round((room.levers.ot.boh.at(-1) / 60) * 10) / 10);
+      expect(depts[1].roles.map((r: any) => r.role)).toContain('Line cook');
+    }
+    expect(deptSplit([], {})).toEqual([]);
+  });
+
+  test('kitchen speed by hour marks every hour over target and finds the slowest run', () => {
+    const k: any = kitchenLoad([
+      { dow: 'Fri', hour: 18, tickets: 10, ticketMin: 13 }, { dow: 'Fri', hour: 18, tickets: 14, ticketMin: 15 },
+      { dow: 'Fri', hour: 19, tickets: 20, ticketMin: 18 }, { dow: 'Fri', hour: 20, tickets: 18, ticketMin: 16 },
+      { dow: 'Sat', hour: 19, tickets: 22, ticketMin: 15 }, { dow: 'Sat', hour: 20, tickets: 0, ticketMin: 0 },
+    ], 14);
+    expect(k.hours.map((h: any) => h.label)).toEqual(['6 PM', '7 PM', '8 PM']);
+    expect(k.rows.map((r: any) => r.day)).toEqual(['Fri', 'Sat']);
+    expect(k.rows[0].cells[0]).toEqual({ hour: 18, label: '6 PM', tickets: 12, min: 14, over: 0 });
+    expect(k.rows[0].cells[1].over).toBe(4);
+    expect(k.rows[1].cells[2]).toBeNull();
+    expect(k.lateHours).toBe(3);
+    expect(k.worst).toEqual({ day: 'Fri', from: '7 PM', to: '9 PM', hours: 2, min: 18 });
+    expect(kitchenLoad([], 14)).toBeNull();
+    expect(kitchenLoad([{ dow: 'Fri', hour: 18, tickets: 10, ticketMin: 13 }], 0)).toBeNull();
+    for (const id of rooms) {
+      const real: any = kitchenLoad(densify(ds.rooms[id])!.hours, ds.rooms[id].tickets.target);
+      expect(real.rows.length).toBe(7);
+      expect(real.lateHours).toBe(real.rows.reduce((t: number, r: any) => t + r.cells.filter((c: any) => c?.over).length, 0));
+    }
+  });
+
+  test('cooks by the hour tell a people problem from a station problem', () => {
+    const cells = [
+      { hour: 17, label: '5 PM', tickets: 12, min: 12, over: 0 },
+      { hour: 18, label: '6 PM', tickets: 16, min: 13, over: 0 },
+      { hour: 19, label: '7 PM', tickets: 24, min: 18, over: 4 },
+      { hour: 20, label: '8 PM', tickets: 12, min: 16, over: 2 },
+      { hour: 21, label: '9 PM', tickets: 8, min: 15, over: 1 },
+    ];
+    const l = lineCheck(cells, { 17: 3, 18: 4, 19: 4, 20: 4 } as any);
+    expect(l.usual).toBe(4);
+    expect(l.stretched.map((r: any) => r.label)).toEqual(['7 PM']);
+    expect(l.station.map((r: any) => r.label)).toEqual(['8 PM']);
+    expect(l.rows.at(-1)).toMatchObject({ cooks: null, perCook: null, read: null });
+    expect(lineCheck(cells, null as any).usual).toBeNull();
+    expect(checkCrew({ 17: '3', 18: '4.2', 19: '' })).toEqual({ ok: true, crew: { 17: 3, 18: 4 } });
+    expect(checkCrew({ 17: '99' }).ok).toBe(false);
+    expect(checkCrew({}).ok).toBe(false);
+    const schema = ACTION_KEYS['labour.crew'].schema;
+    expect(schema.safeParse({ Fri: { 17: 3, 18: 4.5 } }).success).toBe(true);
+    expect(schema.safeParse({ Friday: { 17: 3 } }).success).toBe(false);
+    expect(schema.safeParse({ Fri: { 25: 3 } }).success).toBe(false);
+    expect(schema.safeParse({ Fri: { 17: 99 } }).success).toBe(false);
   });
 });

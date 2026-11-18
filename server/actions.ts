@@ -63,7 +63,9 @@ export const ACTION_KEYS = {
   /** Labor: which view one person opens the page in (GM, owner or operations). Never changes a figure. */
   'labour.view': { scope: 'person', schema: z.enum(['gm', 'owner', 'ops']) },
   /** Labor: what the operator said about each suggested move (planned or not for us). Advice only: never changes a schedule. */
-  'labour.moves': { scope: 'room', schema: z.record(id, z.object({ s: z.enum(['planned', 'skipped']), at: isoDate })) },
+  'labour.moves': { scope: 'room', schema: z.record(id, z.object({ s: z.enum(['planned', 'skipped']), at: isoDate, t: z.string().max(160).optional() })) },
+  /** Labor: cooks on the line by hour for each weekday, entered by hand when no schedule feed carries kitchen roles. Read-only analysis: never changes a schedule. */
+  'labour.crew': { scope: 'room', schema: z.record(z.string().regex(/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)$/), z.record(z.string().regex(/^([01]?\d|2[0-3])$/), z.number().min(0).max(40))) },
 } as const;
 
 export type ActionKey = keyof typeof ACTION_KEYS;

@@ -8,11 +8,11 @@ import { tonightPlan } from '../week';
 import { weeklySeries } from '../../../lib/data/readers';
 import { HOURLY_WEEKS } from '../../../lib/data/dense';
 import {
-  checkEntry, costByRole, coverage, DAYS, dayName, dayOfTitle, entryTotals, gapGrid, groupShare, listOf, loadGridFromHeat, loadGridFromPlans, moves as movesOf, planServices,
-  salesGridFromHeat, sampleServices, serverWage, shortPhrase, splitMoves, STAGES, stageOf, STATUS, trustOf, weekDays, weekSummary, weekTotals, withEntry,
+  checkCrew, checkEntry, costByRole, DAYS, dayName, dayOfTitle, deptSplit, entryTotals, followUps, gapGrid, groupShare, kitchenLoad, lineCheck, listOf, loadGridFromPlans, loadGridFromServices,
+  mathChecks, moves as movesOf, planServices, sampleServices, serverWage, shortPhrase, splitMoves, STAGES, stageOf, STATUS, trustOf, weekDays, weekSummary, weekTotals, withEntry,
 } from '../../../lib/data/page/labour';
 import { useCv, cvMoney, cvApproval, CV_D, CV_GROUP, CV_NOW, CV_ROOM, Claim } from '../core';
-import { heat, useDense } from '../dense-ui';
+import { useDense } from '../dense-ui';
 import { useTodayTheme } from './today.themes';
 import s from './labour.module.css';
 
@@ -32,11 +32,18 @@ import s from './labour.module.css';
  * Colors have fixed meanings: persimmon = action and the selected thing,
  * red = short, amber = spare or caution, green = verified, navy = structure.
  * Every figure is read from the room (lib/data/page/labour.js). Moves are
- * advice: recording a plan never changes a live schedule. */
+ * advice: recording a plan never changes a live schedule.
+ *
+ * Depth pass (2026-11-18): "needed" follows one rule everywhere (guests ÷ pace);
+ * the pattern grid reads the same services as the chart; front of house and
+ * kitchen each get their own cost, hours and productivity; the kitchen has its
+ * own hour-by-hour view (ticket times against target, late tickets by station,
+ * and cooks on the line entered by hand to tell a people problem from a
+ * station problem); and the page lists the checks it runs on its own math. */
 
 const MOVE_ICON = { risk: 'UserPlus', ready: 'CalendarClock', potential: 'Sigma', check: 'UserMinus' };
 const VIEWS = [['gm', 'GM'], ['owner', 'Owner'], ['ops', 'Operations']];
-const MODES = { cps: 'Covers per server', gap: 'Short or spare', sales: 'Sales per server-hour' };
+const MODES = { cps: 'Covers per server', gap: 'Short or spare' };
 const fmtDay = (iso) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 const addDays = (iso, n) => new Date(Date.parse(`${iso}T12:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
 const pct1 = (v) => `${(v * 100).toFixed(1)}%`;
@@ -213,6 +220,7 @@ function MovePanel({ m, svc, trust, state, own, plan, task, onPlan, onSkip, onUn
           [m.kind === 'candidate' ? 'Projected impact' : m.cost != null && m.cost < 0 ? 'Projected impact' : 'Estimated cost', impactText(m) && <span className={s.factMoney}>{impactText(m)} <Claim k={m.kind === 'candidate' ? m.claim : 'est'} /></span>],
           m.kind === 'candidate' && !m.prevent && ['Likely range', m.lo < 0 ? `From losing ${cvMoney(-m.lo)} to gaining ${cvMoney(m.hi)}` : `${cvMoney(m.lo)} to ${cvMoney(m.hi)} a week`],
           ['Expected outcome', m.outcome],
+          m.cost != null && ['Cost basis', 'Hours × the average server wage. Wages only: payroll taxes, tips and overtime are not included.'],
           ['Risk', m.risk],
           m.minutes > 0 && ['Your time', `About ${m.minutes} minutes`],
         ]} />
@@ -328,6 +336,79 @@ function DataPanel({ feed, own, entries, today, weekFrom, weekTo, onSave, onRemo
   );
 }
 
+/** Average ticket minutes by hour for one day, against the target. Hours over target are red. */
+function KitchenChart({ cells, target }) {
+  const rows = cells.filter(Boolean);
+  const max = Math.max(...rows.map((c) => c.min), target) * 1.08;
+  return (
+    <div className={s.kWrap} role="group" aria-label={`Average ticket time by hour, target ${target} minutes`}>
+      <span className={s.kTarget} style={{ bottom: `calc(26px + (100% - 50px) * ${target / max})` }}><i>Target {target} min</i></span>
+      <div className={s.kBars}>
+        {rows.map((c) => (
+          <span key={c.hour} className={s.kCol} role="img" aria-label={`${c.label}: ${c.min} minutes a ticket, ${c.tickets} tickets${c.over ? `, ${c.over} over target` : ''}`}>
+            <span className={`${s.kVal} ${c.over ? s.gapShort : ''}`}>{c.min.toFixed(0)}</span>
+            <span className={s.kTrack}><span className={`${s.kBar} ${c.over ? s.kBarOver : ''}`} style={{ height: `${(c.min / max) * 100}%` }} /></span>
+            <span className={s.barLbl}>{c.label.replace(' ', '')}</span>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function KitchenPanel({ day, cells, target, crew, weeks, onSave, onClear, onClose }) {
+  const [f, setF] = React.useState(() => Object.fromEntries(Object.entries(crew || {}).map(([k, v]) => [k, String(v)])));
+  const [err, setErr] = React.useState(null);
+  const line = lineCheck(cells, crew);
+  const submit = (e) => { e.preventDefault(); const r = checkCrew(f); if (!r.ok) { setErr(r.error); return; } setErr(null); onSave(r.crew); };
+  return (
+    <Panel over={`${dayName(day)} · Kitchen · Average of the last ${weeks} weeks`} title="Kitchen, hour by hour" onClose={onClose}>
+      <p className={s.blockText}>Enter the cooks on the line for each hour. A slow hour where each cook carried more tickets than usual is a <b>people problem</b>. A slow hour at a normal load is a <b>station problem</b>, and another cook won’t fix it.</p>
+      <form onSubmit={submit}>
+        <table className={s.table}>
+          <thead><tr><th>Hour</th><th className={s.r}>Tickets</th><th className={s.r}>Ticket time</th><th className={s.r}>Cooks</th><th className={s.r}>Per cook</th><th>Reads as</th></tr></thead>
+          <tbody>{line.rows.map((c) => (
+            <tr key={c.hour}><td>{c.label}</td><td className={s.r}>{c.tickets}</td><td className={`${s.r} ${c.over ? s.tShort : ''}`}>{c.min} min</td>
+              <td className={s.r}><input className={s.cookIn} type="number" inputMode="decimal" min="0" max="40" step="0.5" aria-label={`Cooks on the line at ${c.label}`} value={f[c.hour] ?? ''} onChange={(e) => setF((x) => ({ ...x, [c.hour]: e.target.value }))} /></td>
+              <td className={s.r}>{c.perCook ?? '—'}</td>
+              <td>{c.read === 'stretched' ? <Chip tone="bad">People</Chip> : c.read === 'station' ? <Chip tone="warn">Station</Chip> : c.over ? <span className={s.tMute}>Add cooks</span> : '—'}</td></tr>
+          ))}</tbody>
+        </table>
+        <div className={s.crewActs}>
+          <button type="submit" className={s.outBtn}><Icon name="Check" size={15} />Save {dayName(day)}’s line</button>
+          {crew && <button type="button" className={s.textBtn} onClick={() => { setF({}); onClear(); }}>Clear this day</button>}
+        </div>
+        {err && <p className={s.entryErr} role="alert">{err}</p>}
+      </form>
+      {line.usual != null && <p className={s.blockNote}>Usual load on {dayName(day)}: {line.usual} tickets per cook an hour (the middle of the hours you entered).</p>}
+      <p className={s.blockNote}>Tickets and ticket times are observed, averaged over the last {weeks} weeks. Cooks on the line are entered by hand until a schedule feed carries kitchen roles. Target: {target} minutes a ticket. Nothing here changes a schedule.</p>
+    </Panel>
+  );
+}
+
+function ChecksPanel({ checks, own, weeks, onClose }) {
+  return (
+    <Panel over="The page checking its own math" title="How these numbers are checked" onClose={onClose}>
+      <ul className={s.checks}>
+        {checks.map((c) => (
+          <li key={c.key}>
+            <span className={c.ok ? s.ckOk : c.ok === false ? s.ckBad : s.ckNa}><Icon name={c.ok ? 'CircleCheck' : c.ok === false ? 'TriangleAlert' : 'CircleDashed'} size={18} /></span>
+            <span><b>{c.label}</b><small>{c.ok ? 'Passes. ' : c.ok === false ? 'Doesn’t pass. ' : 'Not run. '}{c.detail}</small></span>
+          </li>
+        ))}
+      </ul>
+      <Block title="What this page does not do yet">
+        <Facts rows={[
+          ['Demand', own ? 'Uses your typical guests by hour from past weeks. It is not a forecast, so a holiday or event week is not anticipated.' : 'Uses this week’s actual guests by hour. It is not a forecast, so a holiday or event week is not anticipated.'],
+          ['Cost', 'Hours × average wage. Payroll taxes, tips and overtime premiums are not included, so real cost is higher.'],
+          ['Kitchen staffing', `Ticket times are observed (${weeks}-week average). Cooks by the hour are entered by hand.`],
+          ['Confidence', 'High needs 8 or more weeks behind the hour and a current schedule. Medium needs 4. It is a rule of thumb, not a measured error rate.'],
+        ]} />
+      </Block>
+    </Panel>
+  );
+}
+
 function Empty({ title, text, cta, on }) {
   return (
     <div className={s.empty}>
@@ -366,7 +447,8 @@ function CvLabour() {
 
   const [saved, setSaved] = useSaved('labour.moves', {});
   const [entries, setEntries] = useSaved('labour.entries', []);
-  const [open, setOpen] = React.useState(null); // { kind: 'move' | 'cost' | 'data', id? }
+  const [crew, setCrew] = useSaved('labour.crew', {});
+  const [open, setOpen] = React.useState(null); // { kind: 'move' | 'cost' | 'data' | 'kitchen' | 'checks', id? }
   const [showAll, setShowAll] = React.useState(false);
   const [patterns, setPatterns] = React.useState(false);
   const [mode, setMode] = React.useState('cps');
@@ -406,20 +488,29 @@ function CvLabour() {
   const banked = results.find((r) => r.stage === 'verified' && r.fig > 0) || null;
 
   const grids = {
-    cps: own ? loadGridFromPlans(plans) : dense ? loadGridFromHeat(heat(dense.hours)) : null,
+    cps: own ? loadGridFromPlans(plans) : services.length ? loadGridFromServices(services) : null,
     gap: services.length ? gapGrid(services) : null,
-    sales: !own && dense ? salesGridFromHeat(heat(dense.hours)) : null,
   };
+
+  const depts = deptSplit(room.staff, { net: d.week.net, covers: d.week.covers }, room.levers?.ot);
+  const kit = kitchenLoad(dense?.hours, room.tickets?.target);
+  const kitDay = kit?.rows.find((r) => r.day === sel.day) || null;
+  const dayCrew = crew?.[sel.day] || null;
+  const line = kitDay && dayCrew ? lineCheck(kitDay.cells, dayCrew) : null;
+  const stations = room.tickets?.stations || [];
+  const checks = mathChecks({ services: own ? [] : services, rate, roles, weekLabour: d.week.labour, totals: own ? null : totals, kpis: own ? null : room.labour?.kpis, feed });
+  const ran = checks.filter((c) => c.ok != null);
+  const follow = followUps(saved, all);
   const modes = Object.keys(MODES).filter((k) => grids[k]?.rows.length);
   const gmode = modes.includes(mode) ? mode : modes[0];
   const grid = gmode ? grids[gmode] : null;
-  const gfmt = (v, long) => (gmode === 'cps' ? `${v.toFixed(1)}${long ? ' covers per server-hour' : ''}` : gmode === 'sales' ? `$${v}${long ? ' of sales per server-hour' : ''}` : v === 0 ? (long ? 'on track' : '0') : long ? `${Math.abs(v)} ${v < 0 ? 'short' : 'spare'}` : `${v < 0 ? '−' : '+'}${Math.abs(v)}`);
+  const gfmt = (v, long) => (gmode === 'cps' ? `${v.toFixed(1)}${long ? ' covers per server-hour' : ''}` : v === 0 ? (long ? 'on track' : '0') : long ? `${Math.abs(v)} ${v < 0 ? 'short' : 'spare'}` : `${v < 0 ? '−' : '+'}${Math.abs(v)}`);
   const gsel = grid && cell && grid.rows[cell.ri]?.day === cell.day && grid.rows[cell.ri].cells[cell.ci] != null ? cell : null;
   const weak = week.filter((x) => x.cov?.short).sort((a, b) => b.cov.short - a.cov.short).slice(0, 2);
 
   const pickDay = (day) => { setDayPick(day); setHourSel(null); setCell(null); };
   const toChart = () => document.getElementById('labor-hours')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  const mark = (m, st) => setSaved((cur) => { const next = { ...(cur || {}) }; if (st) next[m.id] = { s: st, at: new Date().toISOString() }; else delete next[m.id]; return next; }, `Labor: ${st ? (st === 'planned' ? 'recorded a plan for' : 'not for us:') : 'reopened'} "${m.title}"`);
+  const mark = (m, st) => setSaved((cur) => { const next = { ...(cur || {}) }; if (st) next[m.id] = { s: st, at: new Date().toISOString(), t: String(m.title).slice(0, 160) }; else delete next[m.id]; return next; }, `Labor: ${st ? (st === 'planned' ? 'recorded a plan for' : 'not for us:') : 'reopened'} "${m.title}"`);
   const cutTask = (m) => { const p = plans?.[m.svc]; const id = p?.cutFrom != null ? `cut:${m.svc}:${p.cutFrom}` : null; return id ? { id, task: (eng.tasks || []).find((t) => t.roomId === d.id && t.approvalId === id && t.status !== 'cancelled') } : { id: null, task: null }; };
   const onPlan = async (m, { cut } = {}) => {
     if (cut) {
@@ -618,10 +709,86 @@ function CvLabour() {
           ))}
         </ul>
       )}
+      {(follow.waiting.length > 0 || follow.closed.length > 0) && (
+        <>
+          <h3 className={s.listHead}>Plans you recorded</h3>
+          <ul className={s.follow}>
+            {follow.waiting.map((f) => <li key={f.id}><Chip tone="mute" icon="Hourglass">Checking</Chip><span><b>{f.title}</b><small>{f.where}. The gap is still in the latest numbers. This is checked again when the next {dayName(f.day)} comes in.</small></span></li>)}
+            {follow.closed.map((f) => <li key={f.id}><Chip tone="good" icon="CircleCheck">Gap closed</Chip><span><b>{f.title}</b><small>The latest numbers no longer show this gap. It isn’t a saving until a test verifies it.</small></span></li>)}
+          </ul>
+        </>
+      )}
       <div className={s.cardFoot}>
         <span className={s.sumSub}>This location’s labor changes.</span>
         <button type="button" className={s.textLink} onClick={() => cv.go('proof')}>Full history<Icon name="ChevronRight" size={15} /></button>
       </div>
+    </section>
+  );
+
+  const deptBlock = depts.length ? (
+    <section key="depts" className={s.card} aria-label="Front of house and kitchen">
+      <div className={s.cardHead}>
+        <div><h2 className={s.cardTitle}>Front of house and kitchen</h2><p className={s.cardSub}>{period} · Hourly labor, wages paid</p></div>
+        <Claim k="obs" />
+      </div>
+      <div className={s.depts}>
+        {depts.map((dp) => { const top = dp.roles[0]?.cost || 1; return (
+          <div key={dp.key} className={s.dept}>
+            <span className={s.deptName}>{dp.label}</span>
+            <span className={s.deptFig}>{cvMoney(Math.round(dp.cost))}</span>
+            <span className={s.deptLine}>{dp.ofSales != null ? `${pct1(dp.ofSales)} of sales · ` : ''}{Math.round(dp.share * 100)}% of hourly labor</span>
+            <dl className={s.deptStats}>
+              <div><dt>Hours</dt><dd>{Math.round(dp.hours)} h<small>{dp.people} people</small></dd></div>
+              <div><dt>Average wage</dt><dd>${dp.wage.toFixed(2)}<small>an hour</small></dd></div>
+              {dp.perGuest != null && <div><dt>Cost per guest</dt><dd>${dp.perGuest.toFixed(2)}</dd></div>}
+              {dp.guestsPerHour != null && <div><dt>Guests per labor hour</dt><dd>{dp.guestsPerHour.toFixed(1)}</dd></div>}
+              {dp.otHours != null && <div><dt>Overtime</dt><dd className={dp.otHours >= 4 ? s.tSpare : undefined}>{dp.otHours} h<small>latest week</small></dd></div>}
+            </dl>
+            <ul className={s.roles}>
+              {dp.roles.map((r) => (
+                <li key={r.role}><span className={s.roleName}>{r.role}<small>{Math.round(r.hours)} h · ${r.wage.toFixed(2)}/h · {r.people} {r.people === 1 ? 'person' : 'people'}</small></span>
+                  <span className={s.roleTrack}><i style={{ width: `${(r.cost / top) * 100}%` }} /></span><b>{cvMoney(Math.round(r.cost))}</b></li>
+              ))}
+            </ul>
+          </div>
+        ); })}
+      </div>
+      <div className={s.cardFoot}><span className={s.sumSub}>Wages only. Payroll taxes, tips and salaried managers are not included.</span></div>
+    </section>
+  ) : null;
+
+  const kitchenBlock = (
+    <section key="kitchen" className={s.card} aria-label="Kitchen by the hour">
+      <div className={s.cardHead}>
+        <div><h2 className={s.cardTitle}>Kitchen: is the line keeping up?</h2><p className={s.cardSub}>{dayName(sel.day)} · Average ticket time by hour{kit ? `, last ${HOURLY_WEEKS} weeks · Target ${kit.target} min` : ''}</p></div>
+        <Chip tone="mute" icon="ChefHat">Kitchen</Chip>
+      </div>
+      {!kit || !kitDay ? <Empty title="No kitchen ticket times yet" text="This needs tickets and ticket times by the hour from your kitchen display. Once they arrive, slow hours show here." cta="Add labor data" on={() => setOpen({ kind: 'data' })} /> : (
+        <>
+          <div className={s.kitGrid}>
+            <KitchenChart cells={kitDay.cells} target={kit.target} />
+            {stations.length > 0 && (
+              <div className={s.stations}>
+                <span className={s.signalTitle}>Where late tickets wait</span>
+                <ul className={s.roles}>
+                  {stations.map(([name, share]) => <li key={name}><span className={s.roleName}>{name}</span><span className={s.roleTrack}><i className={name === room.tickets.bottleneck ? s.trackBad : undefined} style={{ width: `${(share / stations[0][1]) * 100}%` }} /></span><b>{share}%</b></li>)}
+                </ul>
+                <span className={s.sumSub}><Claim k="obs" />Share of late tickets, Friday and Saturday dinner</span>
+              </div>
+            )}
+          </div>
+          <div className={s.cardFoot}>
+            <div>
+              <span className={s.sumStrong}>{kit.worst ? `Slowest: ${dayName(kit.worst.day)} ${kit.worst.from} to ${kit.worst.to}, up to ${kit.worst.min} minutes a ticket. ${hrs(kit.lateHours)} a week run over target.` : 'Every hour runs inside the ticket-time target.'}</span>
+              <span className={s.sumSub}>{line ? (line.stretched.length || line.station.length
+                ? `${dayName(sel.day)}: ${[line.stretched.length && `${hrs(line.stretched.length)} look like a people problem (more than the usual ${line.usual} tickets per cook)`, line.station.length && `${hrs(line.station.length)} look like a station problem (normal load per cook)`].filter(Boolean).join(', and ')}.`
+                : `${dayName(sel.day)}: no slow hours with cooks entered.`)
+                : 'Add the cooks on the line by hour to see whether a slow hour is a people problem or a station problem.'}</span>
+            </div>
+            <button type="button" className={s.outBtn} onClick={() => setOpen({ kind: 'kitchen' })}><Icon name={dayCrew ? 'ChevronRight' : 'Plus'} size={15} />{dayCrew ? 'Hour by hour' : 'Add cooks by hour'}</button>
+          </div>
+        </>
+      )}
     </section>
   );
 
@@ -658,18 +825,18 @@ function CvLabour() {
           <Grid grid={grid} mode={gmode} fmt={gfmt} day={sel.day} sel={gsel} onSel={(c) => { setCell(c); if (c.day !== sel.day) { setDayPick(c.day); setHourSel(null); } }} />
           <div className={s.scale}>
             {gmode === 'gap' ? <><span className={s.key}><span><i className={s.kShort} />Short</span><span><i className={s.kSpare} />Spare</span></span></> : <><span>Lower</span><i /><span>Higher</span></>}
-            <span className={s.scaleNote}>{gmode === 'cps' ? 'A high number can mean a productive hour or a stretched one. Never cut from this alone.' : gmode === 'sales' ? 'Sales divided by servers on the floor.' : 'Servers scheduled minus servers needed.'}</span>
+            <span className={s.scaleNote}>{gmode === 'cps' ? `Covers divided by servers scheduled${rate ? `. Above your pace of ${rate.toFixed(2)} means the hour was short` : ''}.` : 'Servers scheduled minus servers needed.'}</span>
           </div>
           <div className={s.cardFoot}>
             <span className={s.sumStrong}>{gsel ? `${dayName(gsel.day)} ${grid.hours[gsel.ci].label}: ${gfmt(grid.rows[gsel.ri].cells[gsel.ci], true)}` : `${dayName(sel.day)} is highlighted. Pick any cell.`}</span>
-            <span className={s.sumSub}>{gmode === 'gap' ? <Claim k="mod" /> : <Claim k="obs" />}{gmode === 'gap' ? (own ? 'Typical week' : period) : own ? 'From your clock-ins and covers' : `Average of the last ${HOURLY_WEEKS} weeks`}</span>
+            <span className={s.sumSub}>{gmode === 'gap' ? <Claim k="mod" /> : <Claim k="obs" />}{own ? (gmode === 'gap' ? 'Typical week' : 'From your clock-ins and covers') : period}</span>
           </div>
         </>
       ))}
     </section>
   );
 
-  const order = { gm: [workBlock, tilesBlock, resultsBlock], owner: [tilesBlock, resultsBlock, workBlock, locsBlock], ops: [locsBlock, tilesBlock, workBlock, resultsBlock] }[view] || [];
+  const order = { gm: [workBlock, kitchenBlock, tilesBlock, deptBlock, resultsBlock], owner: [tilesBlock, deptBlock, resultsBlock, workBlock, kitchenBlock, locsBlock], ops: [locsBlock, tilesBlock, deptBlock, workBlock, kitchenBlock, resultsBlock] }[view] || [];
   const handDays = entryTotals(entries, weekFrom, weekTo).days;
 
   return (
@@ -695,11 +862,16 @@ function CvLabour() {
       <p className={s.status}>
         <Icon name={held ? 'TriangleAlert' : 'Info'} size={16} className={held ? s.icWarn : undefined} />
         <span>{own ? `From your Toast clock-ins and covers through ${room.fromToast.end}.` : 'Sample restaurant group.'} {feed ? `Schedules: 7shifts, ${feed.state === 'off' ? 'not connected' : feed.last}.` : ''} {handDays > 0 ? `${handDays} days entered by hand this week.` : ''}</span>
+        {ran.length > 0 && <button type="button" className={s.textLink} onClick={() => setOpen({ kind: 'checks' })}><Icon name={ran.every((c) => c.ok) ? 'CircleCheck' : 'TriangleAlert'} size={15} />{ran.filter((c) => c.ok).length} of {ran.length} math checks pass</button>}
         <button type="button" className={s.textLink} onClick={() => setOpen({ kind: 'data' })}>Where the numbers come from<Icon name="ChevronRight" size={15} /></button>
       </p>
 
       {openMove && <MovePanel m={openMove} svc={moveSvc(openMove)} trust={trust(openMove)} state={saved?.[openMove.id]?.s} own={own} plan={plans?.[openMove.svc]} task={cutTask(openMove).task} cv={cv}
         onPlan={onPlan} onSkip={(m) => { mark(m, 'skipped'); setOpen(null); }} onUndo={(m) => mark(m, null)} onClose={() => setOpen(null)} />}
+      {open?.kind === 'checks' && <ChecksPanel checks={checks} own={own} weeks={HOURLY_WEEKS} onClose={() => setOpen(null)} />}
+      {open?.kind === 'kitchen' && kitDay && <KitchenPanel key={sel.day} day={sel.day} cells={kitDay.cells} target={kit.target} crew={dayCrew} weeks={HOURLY_WEEKS} onClose={() => setOpen(null)}
+        onSave={(c) => { setCrew((cur) => ({ ...(cur || {}), [sel.day]: c }), `Labor: entered the kitchen line for ${dayName(sel.day)}`); cv.toast(`Saved ${dayName(sel.day)}’s line.`); }}
+        onClear={() => setCrew((cur) => { const n = { ...(cur || {}) }; delete n[sel.day]; return n; }, `Labor: cleared the kitchen line for ${dayName(sel.day)}`)} />}
       {open?.kind === 'cost' && <CostPanel d={d} target={target} group={group} onClose={() => setOpen(null)} />}
       {open?.kind === 'data' && <DataPanel feed={feed} own={own} entries={entries || []} today={CV_NOW.iso} weekFrom={weekFrom} weekTo={weekTo} cv={cv} onClose={() => setOpen(null)}
         onSave={(e) => { setEntries((cur) => withEntry(cur, e), `Labor: entered ${e.date} by hand`); cv.toast(`Saved ${fmtDay(e.date)}, entered by hand.`); }}

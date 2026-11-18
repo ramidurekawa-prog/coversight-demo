@@ -367,3 +367,54 @@ button.sumCell:disabled { cursor: default; }
   .fold { flex-direction: column; align-items: flex-start; }
   .roles li { grid-template-columns: 120px minmax(0, 1fr) 60px; }
 }
+
+/* ---- depth pass: front of house and kitchen, kitchen by the hour, checks */
+.depts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s5, 24px); }
+.dept { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 18px 20px; border-radius: 12px; background: var(--surface-sunken); }
+.deptName { font-size: 15px; font-weight: 700; color: var(--fg-2); }
+.deptFig { font-size: 36px; font-weight: 700; line-height: 1.1; letter-spacing: -0.02em; color: var(--fg-1); font-variant-numeric: tabular-nums; }
+.deptLine { font-size: 15px; color: var(--fg-2); }
+.deptStats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px 16px; margin: 6px 0 10px; padding: 12px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.deptStats div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.deptStats dt { font-size: 13.5px; font-weight: 600; color: var(--fg-2); }
+.deptStats dd { margin: 0; font-size: 20px; font-weight: 700; color: var(--fg-1); font-variant-numeric: tabular-nums; }
+.deptStats dd small { margin-left: 5px; font-size: 13.5px; font-weight: 500; color: var(--fg-2); }
+.dept .roleTrack { background: var(--surface); }
+.trackBad { background: var(--error-600) !important; }
+
+.kitGrid { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 4fr); gap: var(--s5, 24px); align-items: start; }
+.stations { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.stations .roles li { grid-template-columns: 104px minmax(0, 1fr) 44px; }
+.kWrap { position: relative; height: 220px; }
+.kBars { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 6px; height: 100%; }
+.kCol { display: grid; grid-template-rows: 20px minmax(0, 1fr) 22px; gap: 2px; min-width: 0; text-align: center; }
+.kVal { font-size: 13.5px; font-weight: 700; color: var(--fg-2); }
+.kTrack { display: flex; align-items: flex-end; justify-content: center; }
+.kBar { width: 100%; max-width: 30px; min-height: 4px; border-radius: 5px 5px 0 0; background: var(--fg-1); opacity: 0.32; }
+.kBarOver { background: var(--error-600); opacity: 1; }
+.kTarget { position: absolute; left: 0; right: 0; z-index: 1; border-top: 1.5px dashed var(--fg-2); pointer-events: none; }
+.kTarget i { position: absolute; right: 0; bottom: 3px; padding: 0 5px; border-radius: 4px; background: var(--surface); font-size: 12.5px; font-style: normal; font-weight: 600; color: var(--fg-2); }
+
+.cookIn { width: 64px; min-height: 36px; padding: 0 8px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); font: inherit; font-size: 16px; text-align: right; color: var(--fg-1); }
+.cookIn:focus-visible { outline: none; box-shadow: var(--ring); }
+.crewActs { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 14px; }
+.tMute { font-size: 13.5px; color: var(--fg-2); }
+
+.checks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+.checks li { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 10px; align-items: start; }
+.checks b { display: block; font-size: 16px; font-weight: 600; color: var(--fg-1); }
+.checks small { display: block; margin-top: 2px; font-size: 14.5px; line-height: 1.45; color: var(--fg-2); }
+.ckOk { color: var(--success-600); }
+.ckBad { color: var(--error-600); }
+.ckNa { color: var(--fg-2); }
+
+.follow { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.follow li { display: flex; align-items: flex-start; gap: 10px; }
+.follow b { display: block; font-size: 16px; font-weight: 600; color: var(--fg-1); }
+.follow small { display: block; font-size: 14.5px; line-height: 1.45; color: var(--fg-2); }
+
+@media (max-width: 860px) {
+  .depts, .kitGrid { grid-template-columns: minmax(0, 1fr); }
+  .kWrap { height: 190px; }
+  .deptFig { font-size: 30px; }
+}
