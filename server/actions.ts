@@ -81,6 +81,8 @@ export const ACTION_KEYS = {
   'meeting.schedule': { scope: 'room', schema: meetingSchemas.schedule },
   /** Service: tonight's count entered by hand when no live feed is on (covers so far, servers on), per night. */
   'service.manual': { scope: 'room', schema: z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), entries: z.array(z.object({ meal: z.enum(['lunch', 'dinner']), at: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/), covers: z.number().int().min(0).max(5000), servers: z.number().int().min(0).max(200).nullable(), saved: z.string().max(40) })).max(24) }) },
+  /** This week: weeks marked reviewed, keyed by the data week's first day, with an optional note. Who reviewed comes from the row's user. */
+  'week.review': { scope: 'room', schema: z.record(z.string().regex(/^\d{4}-\d{2}-\d{2}$/), z.object({ at: isoDate, note: z.string().trim().max(1000).optional() })).refine((r) => Object.keys(r).length <= 26, 'keeps at most 26 weeks') },
 } as const;
 
 export type ActionKey = keyof typeof ACTION_KEYS;

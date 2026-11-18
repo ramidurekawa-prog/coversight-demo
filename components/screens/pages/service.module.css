@@ -242,13 +242,13 @@
    problem. Fixed ink so the card reads the same in both themes. */
 .ms_bad { background: color-mix(in srgb, var(--error-600) 14%, transparent); color: var(--error-600); }
 .ms_warn { background: var(--warning-50); color: var(--warning-700); }
-.mark { color: var(--primary); background: linear-gradient(transparent 62%, color-mix(in srgb, var(--primary) 26%, transparent) 62%); padding: 0 2px; }
+.mark { color: var(--primary); }
 .h_act { background: #172536; color: #fff; box-shadow: 0 24px 50px -28px rgba(23, 37, 54, 0.75); }
 .h_act .heroKicker { align-self: flex-start; padding: 5px 12px; border-radius: 99px; background: var(--primary); color: #172536; }
 .h_act .heroKicker svg { color: #172536; }
 .h_act .heroOutcome { color: #fff; }
 .h_act .heroSub { color: rgba(255, 255, 255, 0.74); }
-.h_act .mark { color: #FF9A70; background: linear-gradient(transparent 62%, rgba(255, 128, 80, 0.3) 62%); }
+.h_act .mark { color: #FF9A70; }
 .h_act .heroActions :global(.btn):not(.cta) { color: #fff; background: transparent; border-color: rgba(255, 255, 255, 0.32); }
 .h_act .heroActions :global(.btn):not(.cta):hover { background: rgba(255, 255, 255, 0.08); }
 .h_act .handoff { border-color: rgba(255, 255, 255, 0.2); }
