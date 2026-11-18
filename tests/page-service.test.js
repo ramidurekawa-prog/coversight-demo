@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { bandSpread, calibratedBand, clockLabel, clockMinutes, cutApprovalId, cutExecution, fencesOf, isCutFor, lastOrderAt, liveNight, localNow, manualNight, pacing, serviceCall, serviceHealth, servicePlan, serversOn, serviceWindow, slotCovers } from '../lib/data/page/service.js';
+import { addDays, dayOfDate, dayOutlook, hourRows, mealOf, slotRows, toCsv, bandSpread, calibratedBand, clockLabel, clockMinutes, cutApprovalId, cutExecution, fencesOf, isCutFor, lastOrderAt, liveNight, localNow, manualNight, pacing, serviceCall, serviceHealth, servicePlan, serversOn, serviceWindow, slotCovers } from '../lib/data/page/service.js';
 
 const hours = (day, rows) => rows.flatMap(([hour, covers, servers]) => [0, 1, 2, 3].map((week) => ({ week, day, hour, covers, servers })));
 // 24+ busy hours so the room's pace can be measured; Thursday has a spare server from 8 pm.
@@ -193,4 +193,50 @@ describe('manualNight (no live feed)', () => {
     expect(r.tone).toBe('warn'); expect(r.staff).toBe('short');
   });
   it('refuses a bad count', () => { expect(manualNight({ plan, covers: -1, servers: null, atMin: 1100 })).toBeNull(); });
+});
+
+describe('lunch, dinner and the full day', () => {
+  const room = { levers: { serviceHours: [
+    ...[0, 1, 2, 3].flatMap((week) => [[11, 20, 3], [12, 30, 3], [13, 22, 3], [14, 8, 3]].map(([hour, covers, servers]) => ({ week, day: 'Tue', hour, covers, servers }))),
+    ...[0, 1, 2, 3].flatMap((week) => [[17, 20, 5], [18, 40, 5], [19, 44, 5], [20, 24, 5], [21, 10, 5]].map(([hour, covers, servers]) => ({ week, day: 'Tue', hour, covers, servers }))),
+  ] } };
+  it('plans each service on its own hours', () => {
+    const lunch = servicePlan(room, 'Tue', null, 'lunch');
+    const dinner = servicePlan(room, 'Tue', null, 'dinner');
+    expect(lunch.hours.map((h) => h.hour)).toEqual([11, 12, 13, 14]);
+    expect(dinner.hours.map((h) => h.hour)).toEqual([17, 18, 19, 20, 21]);
+    expect(lunch.meal).toBe('lunch');
+    const o = dayOutlook({ lunch, dinner });
+    expect(o.usual).toBe(80 + 138);
+    expect(o.services).toBe(2);
+  });
+  it('a service with no history is missing, never zero', () => {
+    const o = dayOutlook({ lunch: null, dinner: servicePlan(room, 'Tue', null, 'dinner') });
+    expect(o.lunch).toBeNull();
+    expect(o.usual).toBe(138);
+    expect(servicePlan(room, 'Wed', null, 'lunch')).toBeNull();
+  });
+  it('hour rows carry spare, short and guests per server', () => {
+    const rows = hourRows(servicePlan(room, 'Tue', null, 'dinner'));
+    expect(rows).toHaveLength(5);
+    for (const r of rows) { expect(Number.isFinite(r.perServer)).toBe(true); expect(r.spare * r.short).toBe(0); }
+  });
+  it('the lunch window stays inside lunch', () => {
+    const orders = [{ Opened: '2026-10-20 10:40:00', '# of Guests': '2' }, { Opened: '2026-10-20 18:10:00', '# of Guests': '4' }];
+    const w = serviceWindow([{ day: '2026-10-20', orders }], 'lunch');
+    expect(w.start).toBe(10 * 60);
+    expect(w.end).toBe(15 * 60);
+    expect(slotCovers(orders, '2026-10-20', w).reduce((a, b) => a + b, 0)).toBe(2);
+  });
+  it('15-minute rows split served from expected, and CSV quotes what needs it', () => {
+    const r = slotRows({ comp: [2, 4, 4, 2], actual: [3, 5], now: 2, factor: 1.25, spread: 0.2, start: 17 * 60 });
+    expect(r[0].served).toBe(3);
+    expect(r[0].expected).toBeNull();
+    expect(r[2]).toMatchObject({ served: null, expected: 5, low: 4, high: 6 });
+    expect(toCsv([{ a: 'x,y', b: null }])).toBe('a,b\n"x,y",');
+    expect(dayOfDate('2026-10-27')).toBe('Tue');
+    expect(addDays('2026-10-31', 1)).toBe('2026-11-01');
+    expect(mealOf(12)).toBe('lunch');
+    expect(mealOf(17)).toBe('dinner');
+  });
 });

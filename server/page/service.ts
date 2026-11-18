@@ -10,7 +10,7 @@
 import { and, desc, eq, gte, inArray, lt } from 'drizzle-orm';
 import { z } from 'zod';
 
-import { cutApprovalId, clockLabel, DAYS, DEFAULT_TZ, hhmm, isCutFor, LIVE_CADENCE_MIN, liveNight, localNow, servicePlan, SLOT_MIN } from '../../lib/data/page/service.js';
+import { cutApprovalId, clockLabel, DAYS, DEFAULT_TZ, hhmm, isCutFor, LIVE_CADENCE_MIN, liveNight, localNow, MEALS, mealOf, servicePlan, SLOT_MIN } from '../../lib/data/page/service.js';
 import { mapToastDay } from '../../lib/data/toast-api.js';
 import { loadDataset } from '../dataset';
 import type { Db } from '../db/client';
@@ -26,16 +26,19 @@ type V = Pick<Viewer, 'orgId' | 'userId' | 'role' | 'rooms'>;
 type Fetch = typeof fetch;
 type Rows = Record<string, string>[];
 type Night = NonNullable<ReturnType<typeof liveNight>>;
+export type Meal = 'lunch' | 'dinner';
+const asMeal = (m: unknown): Meal => (m === 'lunch' ? 'lunch' : 'dinner');
 export type Live =
-  | { live: true; tz: string; date: string; day: string; nowMin: number; night: Night; fetchedAt: string; cadenceMin: number }
-  | { live: false; tz: string; date: string; day: string; nowMin: number; why: 'not-connected' | 'no-history' | 'error'; message?: string };
+  | { live: true; tz: string; date: string; day: string; nowMin: number; meal: Meal; night: Night; fetchedAt: string; cadenceMin: number }
+  | { live: false; tz: string; date: string; day: string; nowMin: number; meal: Meal; why: 'not-connected' | 'no-history' | 'error'; message?: string };
 
 /** How long one pull of tonight is reused for a room. */
 export const LIVE_TTL_MS = 120_000;
 /** Same weekdays read for the comparable night. */
 const COMPARABLE_WEEKS = 4;
 const cache = new Map<string, { at: number; value: Live }>();
-export function clearServiceCache() { cache.clear(); }
+const pulls = new Map<string, { at: number; date: string; m: { orders: Rows; time: Rows } }>();
+export function clearServiceCache() { cache.clear(); pulls.clear(); }
 
 const addDays = (iso: string, n: number) => new Date(Date.parse(`${iso}T12:00:00Z`) + n * 864e5).toISOString().slice(0, 10);
 
@@ -54,10 +57,10 @@ async function fencesFor(db: Db, orgId: string, roomId: string) {
 }
 
 /** The plan's inputs for a room: its covers per server-hour and blended wage, from the same dataset the browser reads. */
-async function planFor(db: Db, orgId: string, roomId: string, day: string, fences: unknown) {
+async function planFor(db: Db, orgId: string, roomId: string, day: string, fences: unknown, meal: Meal) {
   const loaded = await loadDataset(db, orgId);
   const room = loaded?.ds.rooms[roomId];
-  return room ? servicePlan(room, day, fences) : null;
+  return room ? servicePlan(room, day, fences, meal) : null;
 }
 
 /** Tonight's approved cut for a room, if any: its time and the servers on before it (from the task's own steps). */
@@ -72,17 +75,18 @@ async function tonightCut(db: Db, orgId: string, roomId: string, date: string) {
   return { at: +m[1]! * 60 + +m[2]!, before: +before[1]!, status: t.status };
 }
 
-/** Tonight for one room, live from Toast when it's connected for that room. */
-export async function liveService(db: Db, v: V, roomIdRaw: unknown, { now = new Date(), fetchImpl = fetch as Fetch, fresh = false } = {}): Promise<Live> {
+/** One service today (lunch or dinner) for one room, live from Toast when it's connected for that room. */
+export async function liveService(db: Db, v: V, roomIdRaw: unknown, { now = new Date(), fetchImpl = fetch as Fetch, fresh = false, meal: mealRaw = 'dinner' as unknown } = {}): Promise<Live> {
   const roomId = await roomFor(db, v, roomIdRaw);
+  const meal = asMeal(mealRaw);
   const [c] = await db.select().from(toastConnections).where(eq(toastConnections.orgId, v.orgId));
   const r = c?.restaurants.find((x) => x.roomId === roomId);
   const tz = r?.tz || DEFAULT_TZ;
   const { date, day, minutes: nowMin } = localNow(now, tz);
-  const head = { tz, date, day, nowMin };
+  const head = { tz, date, day, nowMin, meal };
   if (!c || !r || c.status === 'disconnected') return { live: false, ...head, why: 'not-connected' };
 
-  const key = `${v.orgId}:${roomId}`;
+  const key = `${v.orgId}:${roomId}:${meal}`;
   const hit = cache.get(key);
   if (!fresh && hit && now.getTime() - hit.at < LIVE_TTL_MS && hit.value.date === date) return { ...hit.value, nowMin };
 
@@ -95,17 +99,26 @@ export async function liveService(db: Db, v: V, roomIdRaw: unknown, { now = new 
 
   let value: Live;
   try {
-    const token = await toastLogin(c.host, c.clientId, unseal(c.secretSealed), fetchImpl);
-    const api = toastClient(c.host, token, fetchImpl);
-    const [orders, timeEntries, employees, jobs] = await Promise.all([
-      api.orders(r.guid, date), api.list(`/labor/v1/timeEntries?businessDate=${date.replace(/-/g, '')}`, r.guid),
-      api.list('/labor/v1/employees', r.guid), api.list('/labor/v1/jobs', r.guid),
-    ]);
-    const m = mapToastDay({ orders: orders as never[], timeEntries: timeEntries as never[], refs: { employees, jobs } as never, tz });
+    // One Toast pull serves both lunch and dinner for the cache's life.
+    const pk = `${v.orgId}:${roomId}`;
+    const got = pulls.get(pk);
+    let m: { orders: Rows; time: Rows };
+    if (!fresh && got && now.getTime() - got.at < LIVE_TTL_MS && got.date === date) m = got.m;
+    else {
+      const token = await toastLogin(c.host, c.clientId, unseal(c.secretSealed), fetchImpl);
+      const api = toastClient(c.host, token, fetchImpl);
+      const [orders, timeEntries, employees, jobs] = await Promise.all([
+        api.orders(r.guid, date), api.list(`/labor/v1/timeEntries?businessDate=${date.replace(/-/g, '')}`, r.guid),
+        api.list('/labor/v1/employees', r.guid), api.list('/labor/v1/jobs', r.guid),
+      ]);
+      const mapped = mapToastDay({ orders: orders as never[], timeEntries: timeEntries as never[], refs: { employees, jobs } as never, tz });
+      m = { orders: mapped.orders as Rows, time: mapped.time as Rows };
+      pulls.set(pk, { at: now.getTime(), date, m });
+    }
     const fences = await fencesFor(db, v.orgId, roomId);
-    const plan = await planFor(db, v.orgId, roomId, day, fences);
+    const plan = await planFor(db, v.orgId, roomId, day, fences, meal);
     const cut = await tonightCut(db, v.orgId, roomId, date);
-    const night = liveNight({ today: { day: date, orders: m.orders, time: m.time }, comparable, nowMin, rate: plan?.rate ?? null, wage: plan?.wage ?? null, fences, cut });
+    const night = liveNight({ today: { day: date, orders: m.orders, time: m.time }, comparable, nowMin, rate: plan?.rate ?? null, wage: plan?.wage ?? null, fences, cut: cut && mealOf(Math.floor(cut.at / 60)) === meal ? cut : null, meal });
     value = night ? { live: true, ...head, night, fetchedAt: now.toISOString(), cadenceMin: LIVE_CADENCE_MIN } : { live: false, ...head, why: 'no-history' };
   } catch (e) {
     const message = e instanceof SyncError ? e.message : 'Couldn’t reach Toast just now. The plan from your recent weeks still holds.';
@@ -118,17 +131,17 @@ export async function liveService(db: Db, v: V, roomIdRaw: unknown, { now = new 
     const call = value.night.call;
     await notify(db, {
       orgId: v.orgId, roomId, kind: 'service.cut', severity: 'info',
-      title: `Tonight: one fewer server from ${clockLabel(call.at!)} looks safe`,
+      title: `${MEALS[meal].label}: one fewer server from ${clockLabel(call.at!)} looks safe`,
       body: `Covers are pacing ${Math.abs(call.pace)}% ${call.pace < 0 ? 'under' : 'over'} a comparable ${DAYS[dow]}. Even at the top of the band, ${call.serversNow! - 1} servers cover the rest of the night.`,
-      link: '/service', dedupe: `service-cut:${roomId}:${date}`,
+      link: '/service', dedupe: `service-cut:${roomId}:${date}${meal === 'lunch' ? ':lunch' : ''}`,
     }).catch(() => null);
   }
   // After a release: confirmed from clock-ins once, and a guardrail warning once if covers need the server back.
   const ex = value.live ? value.night.execution : null;
   if (ex?.state === 'confirmed') {
-    await notify(db, { orgId: v.orgId, roomId, kind: 'service.cut', severity: 'good', title: 'Tonight’s release is confirmed in Toast', body: ex.text, link: '/service', dedupe: `service-cut-confirmed:${roomId}:${date}` }).catch(() => null);
+    await notify(db, { orgId: v.orgId, roomId, kind: 'service.cut', severity: 'good', title: 'Tonight’s release is confirmed in Toast', body: ex.text, link: '/service', dedupe: `service-cut-confirmed:${roomId}:${date}${meal === 'lunch' ? ':lunch' : ''}` }).catch(() => null);
   } else if (ex?.state === 'breach') {
-    await notify(db, { orgId: v.orgId, roomId, kind: 'service.guardrail', severity: 'warn', title: 'Covers are running above the band since the release', body: ex.text, link: '/service', dedupe: `service-breach:${roomId}:${date}` }).catch(() => null);
+    await notify(db, { orgId: v.orgId, roomId, kind: 'service.guardrail', severity: 'warn', title: 'Covers are running above the band since the release', body: ex.text, link: '/service', dedupe: `service-breach:${roomId}:${date}${meal === 'lunch' ? ':lunch' : ''}` }).catch(() => null);
   }
   return value;
 }
@@ -146,29 +159,37 @@ const cutBody = z.object({
  * Exported so any other path that creates a `cut:<date>:` task can call it.
  */
 export async function refuseCut(db: Db, v: V, input: { roomId: string; date: string; at: string }, opts: { now?: Date; fetchImpl?: Fetch } = {}) {
-  // Revalidate on fresh data: the page may be up to two minutes old.
-  const live = await liveService(db, v, input.roomId, { ...opts, fresh: true });
+  // Revalidate on fresh data: the page may be up to two minutes old. The time says which service.
+  const [hh, mi] = input.at.split(':').map(Number) as [number, number];
+  const meal = mealOf(hh) as Meal;
+  const live = await liveService(db, v, input.roomId, { ...opts, fresh: true, meal });
   if (input.date !== live.date) throw new InputError(`A same-night cut can only be approved for tonight (${live.date}).`);
   const done = await db.select({ approvalId: tasks.approvalId }).from(tasks)
     .where(and(eq(tasks.orgId, v.orgId), eq(tasks.roomId, input.roomId), inArray(tasks.status, ['open', 'done', 'verified', 'mismatch'])));
   const tonight = done.find((t) => isCutFor(t.approvalId, live.date));
-  if (tonight && tonight.approvalId !== `cut:${input.date}:${input.at}`) throw new InputError('Tonight already has an approved cut. One change per service.');
+  if (tonight && tonight.approvalId !== `cut:${input.date}:${input.at}`) throw new InputError('Today already has an approved send-home. One change a day.');
 
   if (live.live) {
     const call = live.night.call;
-    const [h, mm] = input.at.split(':').map(Number) as [number, number];
-    const want = h * 60 + mm;
+    const want = hh * 60 + mi;
     // A later release than the call's is at least as safe (fewer hours short); an earlier one isn't checked.
     if (call.mode !== 'cut' || want < call.at! || want % SLOT_MIN !== 0 || want > call.fences.cutBy) throw new InputError('Tonight’s numbers moved since this was shown. Look again before approving.');
     return { live, title: `${live.day} ${live.date}: release one server from ${clockLabel(want)} to close`, servers: call.serversNow! };
   }
   const fences = await fencesFor(db, v.orgId, input.roomId);
-  const plan = await planFor(db, v.orgId, input.roomId, live.day, fences);
-  if (!plan) throw new InputError(`Not enough ${live.day} dinners with servers on the floor to plan tonight.`);
+  const plan = await planFor(db, v.orgId, input.roomId, live.day, fences, meal);
+  if (!plan) throw new InputError(`Not enough ${live.day} ${MEALS[meal].label.toLowerCase()}s with servers on the floor to plan it.`);
   if (plan.cutFrom == null) throw new InputError(plan.blocked?.text ?? `Every hour to close has used its servers on recent ${live.day}s.`);
   if (hhmm(plan.cutFrom * 60) !== input.at) throw new InputError('Tonight’s plan moved since this was shown. Look again before approving.');
   const top = Math.round(plan.hours.find((h) => h.hour === plan.cutFrom)!.servers);
   return { live, title: `${live.day} ${live.date}: one fewer server from ${clockLabel(plan.cutFrom * 60)} to close`, servers: top };
+}
+
+/** Both services today for one room: lunch and dinner from one Toast pull. */
+export async function liveDay(db: Db, v: V, roomId: unknown, opts: { now?: Date; fetchImpl?: Fetch; fresh?: boolean } = {}) {
+  const dinner = await liveService(db, v, roomId, { ...opts, meal: 'dinner' });
+  const lunch = await liveService(db, v, roomId, { ...opts, meal: 'lunch', fresh: false });
+  return { lunch, dinner };
 }
 
 /** Approve tonight's cut: checked on the server, then a guided task on Today (7shifts steps). */
@@ -182,6 +203,7 @@ export async function approveCut(db: Db, v: V, raw: unknown, opts: { now?: Date;
   const label = `${ok.live.day} ${clockLabel(h * 60 + m)} to close`;
   const a = { roomId, approvalId, title: ok.title, system: '7shifts', diff: [[label, `${ok.servers} servers`, `${ok.servers - 1} servers`]] as [string, string, string][] };
   const task = await createTask(db, v, a);
-  cache.delete(`${v.orgId}:${roomId}`);
+  for (const m of Object.keys(MEALS)) cache.delete(`${v.orgId}:${roomId}:${m}`);
+  pulls.delete(`${v.orgId}:${roomId}`);
   return { task, approval: a };
 }

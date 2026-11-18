@@ -7,7 +7,7 @@ import { saveAction } from '../server/actions';
 import type { Db } from '../server/db/client';
 import { notifications, posDays, tasks, users } from '../server/db/schema';
 import { commitInput, createSampleOrg } from '../server/org';
-import { approveCut, clearServiceCache, liveService } from '../server/page/service';
+import { approveCut, clearServiceCache, liveDay, liveService } from '../server/page/service';
 import { connectToast } from '../server/toast-conn';
 import { fakeToastApi, GUID, ordersFor, timeFor } from './helpers/fake-toast';
 import { freshDb } from './helpers/db';
@@ -77,6 +77,23 @@ describe('Service: tonight live', () => {
     expect(JSON.stringify(r)).not.toContain('super-secret-value');
   });
 
+  it('serves lunch and dinner from one Toast pull, each on its own window', async () => {
+    const api = fakeToastApi();
+    await connectToast(db, owner(), { host: 'ws-api.toasttab.com', clientId: 'client-abcdef', secret: 'super-secret-value', restaurants: [{ guid: GUID, roomId: 'oakland' }] }, api.f);
+    await syncedThursdays();
+    const before = api.calls.length;
+    const day = await liveDay(db, owner(), 'oakland', { now: NOW, fetchImpl: api.f });
+    const pulls = api.calls.length - before;
+    expect(day.dinner.meal).toBe('dinner');
+    expect(day.lunch.meal).toBe('lunch');
+    if (day.dinner.live) expect(day.dinner.night.win.start).toBeGreaterThanOrEqual(16 * 60);
+    if (day.lunch.live) expect(day.lunch.night.win.end).toBeLessThanOrEqual(16 * 60);
+    // The second service reuses the first one's pull.
+    await liveService(db, owner(), 'oakland', { now: NOW, fetchImpl: api.f, meal: 'lunch', fresh: false });
+    expect(api.calls.length - before).toBe(pulls);
+    expect(JSON.stringify(day)).not.toContain('super-secret-value');
+  });
+
   it('turns a Toast failure into a message and falls back to the plan', async () => {
     const api = fakeToastApi();
     await connectToast(db, owner(), { host: 'ws-api.toasttab.com', clientId: 'client-abcdef', secret: 'super-secret-value', restaurants: [{ guid: GUID, roomId: 'oakland' }] }, api.f);
@@ -114,7 +131,7 @@ describe('Service: approving tonight’s cut', () => {
     expect(again.task.id).toBe(task.id);
     await db.insert(tasks).values({ orgId, roomId: 'oakland', approvalId: 'cut:2026-10-29:21:00', title: 'x', system: '7shifts', steps: [], expect: { type: 'manual' } });
     await db.delete(tasks).where(eq(tasks.approvalId, `cut:2026-10-29:${at}`));
-    await expect(approveCut(db, owner(), { roomId: 'oakland', date: '2026-10-29', at }, { now: NOW })).rejects.toThrow(/One change per service/);
+    await expect(approveCut(db, owner(), { roomId: 'oakland', date: '2026-10-29', at }, { now: NOW })).rejects.toThrow(/One change a day/);
   });
 
   it('refuses a cut the fences don’t allow, whatever the page sent', async () => {

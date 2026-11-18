@@ -57,11 +57,13 @@ export const ACTION_KEYS = {
   /** Pricing on the invoice: per room per month, and the fee on reconciled savings. */
   pricing: { scope: 'group', schema: z.object({ perRoomMonthlyCents: z.number().int().min(0).max(1_000_000), feePct: z.number().min(0).max(50) }) },
   /** Service: tonight's answer to the one staffing call, per night (the room's local date). */
-  'service.night': { scope: 'room', schema: z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), answer: z.enum(['ask', 'yes', 'no']), at: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable(), approvalId: z.string().max(120).optional() }) },
+  'service.night': { scope: 'room', schema: z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), answer: z.enum(['ask', 'yes', 'no', 'later']), at: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable(), approvalId: z.string().max(120).optional(), meal: z.enum(['lunch', 'dinner']).optional(), until: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(), to: z.enum(['gm', 'floor']).optional(),
+    /** The last decisions, newest first, so the page can show what was decided and what came of it. */
+    past: z.array(z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), meal: z.enum(['lunch', 'dinner']).optional(), answer: z.enum(['yes', 'no', 'later', 'ask']), at: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable(), approvalId: z.string().max(120).optional(), to: z.enum(['gm', 'floor']).optional(), when: z.string().max(40) })).max(30).optional() }) },
   /** Weekly meeting: the room's slot (day of week, 0 = Sunday, local time, length) and who usually attends. */
   'meeting.schedule': { scope: 'room', schema: meetingSchemas.schedule },
   /** Service: tonight's count entered by hand when no live feed is on (covers so far, servers on), per night. */
-  'service.manual': { scope: 'room', schema: z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), at: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/), covers: z.number().int().min(0).max(5000), servers: z.number().int().min(0).max(200).nullable() }) },
+  'service.manual': { scope: 'room', schema: z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), entries: z.array(z.object({ meal: z.enum(['lunch', 'dinner']), at: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/), covers: z.number().int().min(0).max(5000), servers: z.number().int().min(0).max(200).nullable(), saved: z.string().max(40) })).max(24) }) },
 } as const;
 
 export type ActionKey = keyof typeof ACTION_KEYS;
