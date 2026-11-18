@@ -253,3 +253,192 @@ describe('page agents', () => {
     expect(facts.find((f) => f.id === 'today-first').text).toMatch(/check before you act/);
   });
 });
+
+// ---- moves, memory, links, track record -------------------------------------
+import { REMEMBER, agentRecord, moveFor, noticedSig, sousMoves, sousRemember, vendorDraft } from '../lib/ai/moves.js';
+import { ROLE_VOICE } from '../lib/ai/agents.js';
+import { sousLinks } from '../lib/ai/sous.js';
+
+describe('what the agents recommend', () => {
+  const rooms = Object.keys(SEED.rooms);
+  const world = (roomId, role = 'owner', mem = {}, now = Date.now()) => {
+    const d = deriveRoom(SEED, roomId);
+    const today = sousToday(d);
+    const memory = sousRemember(sousNoticed(d), mem, now);
+    const facts = sousFacts(d, { role, noticed: memory.active, card: today.card, open: today.open, group: deriveGroup(SEED) });
+    const moves = sousMoves(d, { noticed: memory.active, card: today.card, role, quietIds: memory.quietIds });
+    return { d, memory, facts, moves, read: (page) => agentRead(page, facts, memory.active, { role, moves }) };
+  };
+
+  it('every move says what to do, and every figure in it is in the records or the room', () => {
+    for (const roomId of rooms) {
+      const { d, facts, moves } = world(roomId);
+      expect(moves.length).toBeGreaterThan(3);
+      const known = `${sousSheet(facts)} ${JSON.stringify(d.plan.sorted)} ${JSON.stringify(d.queue)} ${JSON.stringify(d.inv.invoices)} ${JSON.stringify(d.tokens)}`;
+      for (const m of moves) {
+        expect(m.title.length, m.id).toBeGreaterThan(8);
+        expect(['email', 'approve', 'go']).toContain(m.act.kind);
+        if (m.value) expect(m.claim, `${m.id} has a figure with no claim`).toBeTruthy();
+        expect(numbersOk(`${m.title} ${m.value || ''}`, known), `${roomId}/${m.id}: ${m.title} ${m.value}`).toBe(true);
+      }
+    }
+  });
+
+  it('a supplier increase becomes an email draft with the invoice figures, never a send', () => {
+    const { d, read } = world('oakland');
+    const m = read('purchasing').move;
+    expect(m).toMatchObject({ source: 'noticed', noticedId: 'vendor:price', claim: 'obs', value: '$873' });
+    expect(m.act.kind).toBe('email');
+    expect(m.act.body).toContain('$11.40 to $13.65');
+    expect(m.act).toEqual({ kind: 'email', ...vendorDraft(d.inv.invoices[0], d) });
+  });
+
+  it('a potential gain is never called saved', () => {
+    for (const roomId of rooms) for (const m of world(roomId).moves.filter((x) => x.source === 'plan')) {
+      expect(m.unit).toBe('potential a week');
+      expect(`${m.title} ${m.why}`).not.toMatch(/\bsaved\b/i);
+    }
+  });
+
+  it('a price change is only offered for approval when nothing blocks it', () => {
+    const { moves, d } = world('oakland');
+    const salmon = moves.find((m) => m.id === 'do:plan:salmon');
+    const ribeye = moves.find((m) => m.id === 'do:plan:ribeye');
+    expect(salmon.act.kind).toBe('go'); // rests on recipe costs that are out of date
+    expect(ribeye.act).toEqual({ kind: 'approve', id: `price:ribeye:${d.plan.sorted.find((c) => c.id === 'ribeye').to}` });
+  });
+
+  it('holds back tonight’s cut while the schedule feed is stale: go and check, no approval', () => {
+    const m = world('oakland').read('service').move;
+    expect(m.title).toMatch(/^Check who is on/);
+    expect(m.act).toEqual({ kind: 'go', page: 'today' });
+  });
+
+  it('each role gets its own voice and only moves that are theirs to make', () => {
+    expect(world('oakland', 'accountant').moves.every((m) => ROLE_MOVES_OK.accountant.includes(m.topic))).toBe(true);
+    expect(world('oakland', 'floor').moves.some((m) => m.source === 'plan')).toBe(false);
+    expect(world('oakland', 'floor').read('ledger').voice).toBe(ROLE_VOICE.floor.word);
+    expect(world('oakland', 'floor').read('menu').lead.id).toBe('today-first');
+    expect(world('oakland', 'accountant').read('accountant').move?.source).not.toBe('today');
+    for (const role of Object.keys(ROLE_VOICE)) expect(agentBrief('menu', 'Menu', role)).toContain(ROLE_VOICE[role].say);
+  });
+  const ROLE_MOVES_OK = { accountant: ['data', 'saved', 'tests'] };
+
+  it('pages that share an agent still open with their own record and job', () => {
+    const { read } = world('oakland');
+    const pages = ['sources', 'connect', 'inputs', 'data'];
+    expect(new Set(pages.map((p) => read(p).agent.job)).size).toBe(pages.length);
+    expect(read('connect').lead.id).toBe('data-off');
+    expect(read('fences').lead.id).not.toBe(read('proof').lead.id);
+  });
+
+  it('"what should I do here?" answers with the move itself: one sentence, its figure, its button', () => {
+    const { facts, read } = world('oakland');
+    const move = read('purchasing').move;
+    const a = agentAnswer('purchasing', 'What should I do here?', facts, { move });
+    expect(a.short).toBe(`${move.title}.`);
+    expect(a.move).toBe(move);
+    expect(a.cites[0].go).toBe('purchasing');
+    // Any other question gets one sentence first and the records behind it.
+    const b = agentAnswer('purchasing', 'How did last week go?', facts, { move });
+    expect(b.short.length).toBeLessThan(b.text.length);
+    expect(b.text.startsWith(b.short.replace(/\.$/, ''))).toBe(true);
+  });
+});
+
+describe('what Sous remembers', () => {
+  const d = deriveRoom(SEED, 'oakland');
+  const noticed = sousNoticed(d);
+  const price = noticed.find((n) => n.id === 'vendor:price');
+  const t0 = Date.parse('2026-10-27T00:00:00Z');
+  const said = (how, extra = {}) => ({ [price.id]: { at: new Date(t0).toISOString(), how, sig: noticedSig(price), title: price.title, ...extra } });
+
+  it('handled stays quiet for two weeks, then comes back saying so', () => {
+    const soon = sousRemember(noticed, said('handled'), t0 + 3 * 864e5);
+    expect(soon.active.some((n) => n.id === price.id)).toBe(false);
+    expect(soon).toMatchObject({ quiet: 1, quietIds: [price.id] });
+    const later = sousRemember(noticed, said('handled'), t0 + (REMEMBER.handledDays + 1) * 864e5);
+    const back = later.active.find((n) => n.id === price.id);
+    expect(back.back).toBe(true);
+    expect(back.text).toMatch(/You marked this handled on Oct 27, and it is still showing\.$/);
+  });
+
+  it('"not for us" stays quiet until the numbers change', () => {
+    expect(sousRemember(noticed, said('dismissed'), t0 + 864e5).active.some((n) => n.id === price.id)).toBe(false);
+    const moved = sousRemember(noticed, said('dismissed', { sig: 'old' }), t0 + 864e5).active.find((n) => n.id === price.id);
+    expect(moved.text).toMatch(/has changed since you set it aside/);
+  });
+
+  it('reports what was handled and is no longer showing', () => {
+    const r = sousRemember(noticed.filter((n) => n.id !== price.id), said('handled'), t0 + 864e5);
+    expect(r.resolved).toEqual([{ id: price.id, title: price.title, at: new Date(t0).toISOString() }]);
+  });
+
+  it('once handled, the same thing is not suggested again from the plan', () => {
+    const memory = sousRemember(noticed, said('handled'), t0 + 864e5);
+    const moves = sousMoves(d, { noticed: memory.active, quietIds: memory.quietIds });
+    expect(moves.some((m) => m.noticedId === price.id)).toBe(false);
+    expect(moves.some((m) => m.id === 'do:plan:vendor')).toBe(false);
+    expect(sousMoves(d, { noticed }).some((m) => m.id === 'do:plan:vendor')).toBe(true);
+  });
+
+  it('survives a damaged memory', () => {
+    for (const bad of [null, 'x', { 'vendor:price': null }, { 'vendor:price': { at: 'never', how: 'handled' } }]) expect(sousRemember(noticed, bad).active).toHaveLength(noticed.length);
+  });
+});
+
+describe('connections across pages', () => {
+  it('ties one ingredient to its supplier price, its usage and its dish, without adding the figures', () => {
+    const d = deriveRoom(SEED, 'oakland');
+    const [l] = sousLinks(d);
+    expect(l).toMatchObject({ id: 'link:salmon-fillet', topic: 'link', also: ['purchasing', 'stock', 'menu', 'plan'] });
+    expect(l.text).toMatch(/\$873 over the invoice period \(observed\)/);
+    expect(l.text).toMatch(/about \$314 since the last count \(estimated\)/);
+    expect(l.text).toMatch(/Grilled Salmon/);
+    expect(l.text).not.toMatch(/\$1,187/); // 873 + 314 is never shown: different certainty
+    expect(sousLinks(d).length).toBeLessThanOrEqual(2);
+  });
+
+  it('every room’s links hold only figures from that room, and each agent in the chain sees the link', () => {
+    for (const roomId of Object.keys(SEED.rooms)) {
+      const d = deriveRoom(SEED, roomId);
+      const noticed = sousNoticed(d);
+      const facts = sousFacts(d, { noticed });
+      for (const l of sousLinks(d)) {
+        expect(numbersOk(l.text, JSON.stringify([d.inv.invoices, d.usage.flagged, d.menu.menu, d.plan.sorted.map((c) => c.title), d.tokens]).replace(/(\d+\.\d)\d+/g, '$1') + sousSheet(facts.filter((f) => f.topic !== 'link')) + l.text.match(/\d+(\.\d+)?%/g).join(' '))).toBe(true);
+        for (const page of l.also.map((t) => ({ purchasing: 'purchasing', stock: 'inventory', menu: 'menu', plan: 'plan' })[t])) expect(agentRead(page, facts, noticed).link?.id, `${roomId}/${page}`).toBeTruthy();
+      }
+    }
+  });
+
+  it('a "why" question in any linked area is answered with the connection first', () => {
+    const d = deriveRoom(SEED, 'oakland');
+    const facts = sousFacts(d, { noticed: sousNoticed(d) });
+    expect(agentAnswer('menu', 'Why is food cost up?', facts).used[0]).toBe('link:salmon-fillet');
+  });
+});
+
+describe('track record', () => {
+  it('counts verified changes at their bookable rate, by the area that earned them', () => {
+    for (const roomId of Object.keys(SEED.rooms)) {
+      const d = deriveRoom(SEED, roomId);
+      const r = agentRecord(d);
+      expect(r.all.wins).toBe(d.banked.live.length);
+      expect(Math.round(r.all.week)).toBe(Math.round(d.banked.week));
+      const parts = Object.entries(r).filter(([k]) => k !== 'all').map(([, v]) => v);
+      expect(parts.reduce((s, v) => s + v.wins, 0)).toBe(r.all.wins);
+      expect(parts.reduce((s, v) => s + v.testing, 0)).toBe(r.all.testing);
+    }
+  });
+
+  it('a change of what an agent says changes its fingerprint, and nothing else does', () => {
+    const d = deriveRoom(SEED, 'oakland');
+    const noticed = sousNoticed(d);
+    const facts = sousFacts(d, { noticed });
+    const moves = sousMoves(d, { noticed });
+    const a = agentRead('purchasing', facts, noticed, { moves }).sig;
+    expect(agentRead('purchasing', facts, noticed, { moves }).sig).toBe(a);
+    expect(agentRead('purchasing', facts, noticed.filter((n) => n.id !== 'vendor:price'), { moves: moves.filter((m) => m.noticedId !== 'vendor:price') }).sig).not.toBe(a);
+    expect(moveFor({ id: 'x', page: 'x', topics: ['nope'] }, moves)).toBeNull();
+  });
+});

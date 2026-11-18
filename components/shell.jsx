@@ -465,14 +465,14 @@ function AppShell({ children }) {
           <div className="content">
             <TopBar page={page} loc={loc} onLoc={chooseLoc} role={role} onRole={chooseRole} go={go} onMenu={() => setNavOpen(true)} onAsk={() => setAsk({})} tools={tools} />
             <main className="scroll" ref={scrollRef} tabIndex={0} aria-label="Screen">
-              <PageAgent page={page} role={role} onOpen={(q) => setAsk({ q: q || '' })} />
+              <PageAgent key={`${eng.room}:${page}`} page={page} role={role} onOpen={(q, run) => (run && run.act.kind === 'approve' ? setApproval({ id: run.act.id }) : run && run.act.kind === 'go' ? go(run.act.page, run.act.goId ? { id: run.act.goId } : undefined) : setAsk({ q: q || '', run: run || null }))} />
               <React.Fragment key={`${eng.room}-${eng.version}`}>{children}</React.Fragment>
             </main>
           </div>
         </div>
       </div>
       </div>
-      {ask && <SousPanel onClose={() => setAsk(null)} go={go} role={role} tools={tools} page={page} first={ask.q || ''} turns={sousTurns} setTurns={setSousTurns} />}
+      {ask && <SousPanel onClose={() => setAsk(null)} go={go} role={role} tools={tools} page={page} first={ask.q || ''} run={ask.run || null} turns={sousTurns} setTurns={setSousTurns} />}
       {deriv && <DerivDrawer id={deriv} onClose={() => setDeriv(null)} />}
       {approval && (
         <ApprovalModal

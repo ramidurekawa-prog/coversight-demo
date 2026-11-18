@@ -9,6 +9,7 @@ import { z } from 'zod';
 
 import { numbersOk, sousBrief, sousCites, sousFacts, sousHash, sousNoticed, sousRole, sousSheet, sousSuggest, sousToday } from '../../lib/ai/sous.js';
 import { agentAnswer, agentBrief, agentFor, agentRead } from '../../lib/ai/agents.js';
+import { agentRecord, sousMoves, sousRemember } from '../../lib/ai/moves.js';
 import { deriveGroup, deriveRoom } from '../../lib/data/model.js';
 import { CV_PAGES } from '../../lib/pages.js';
 import { loadActions } from '../actions';
@@ -46,7 +47,7 @@ const ANSWER_SCHEMA = {
   additionalProperties: false,
   required: ['answer', 'answered', 'used', 'follow_up'],
   properties: {
-    answer: { type: 'string', description: 'The reply, in two to five short sentences. Lead with the answer; end with the next step when the records support one.' },
+    answer: { type: 'string', description: 'The reply: one or two short sentences. The first sentence is the answer or the thing to do; the second, only if needed, is the reason with its figure. The person can open the records for more, so do not list them.' },
     answered: { type: 'boolean', description: 'False when the records do not answer the question.' },
     used: { type: 'array', items: { type: 'string' }, description: 'The ids of the records the answer draws on.' },
     follow_up: { type: 'string', description: 'One short question the person would naturally ask next that the records can answer, or an empty string.' },
@@ -82,14 +83,17 @@ async function context(db: Db, v: V, roomRaw: unknown, now: Date) {
     db.select({ roomId: testWindows.roomId, lever: testWindows.lever, title: testWindows.title, status: testWindows.status }).from(testWindows).where(and(eq(testWindows.orgId, v.orgId), eq(testWindows.roomId, roomId))),
     listTasks(db, v.orgId, v.rooms),
   ]);
-  const saved = (acts[roomId] ?? {}) as { queue?: unknown; findings?: unknown };
+  const saved = (acts[roomId] ?? {}) as { queue?: unknown; findings?: unknown; sous?: Record<string, { at: string; how: 'handled' | 'dismissed'; sig: string; title?: string }> };
   const role = sousRole(v.role);
   const today = sousToday(d, { stored: saved.queue ?? null, dismissed: saved.findings ?? {}, windows: wins, tasks, now: now.getTime() });
-  const noticed = sousNoticed(d);
+  // What the room already answered stays quiet until it is due again or its numbers change.
+  const memory = sousRemember(sousNoticed(d), saved.sous ?? {}, now.getTime());
+  const noticed = memory.active;
   // The group is the viewer's own rooms only (the dataset is already scoped), so a manager never reads another room.
   const facts = sousFacts(d, { role, windows: wins, card: today.card, open: today.open, noticed, group: deriveGroup(loaded.ds) }) as Fact[];
   const brief = sousBrief(d, { role, facts, noticed, card: today.card, open: today.open }) as Brief;
-  return { org: loaded.org as { sample?: boolean }, roomId, d, role, noticed, facts, brief };
+  const moves = sousMoves(d, { noticed, card: today.card, role, quietIds: memory.quietIds });
+  return { org: loaded.org as { sample?: boolean }, roomId, d, role, noticed, facts, brief, moves, memory };
 }
 
 const records = (facts: Fact[]) => `Records for this restaurant:\n${sousSheet(facts)}`;
@@ -144,7 +148,7 @@ export async function loadSous(db: Db, v: V, roomRaw: unknown, { fetchImpl, now 
       await db.insert(auditLog).values({ orgId: v.orgId, userId: v.userId, action: 'sous.brief', detail: { roomId: c.roomId, role: c.role, engine: written ? 'ai' : 'builtin' } });
     }
   }
-  return { roomId: c.roomId, role: c.role, engine, ai: aiConfigured(), brief, suggest: sousSuggest(c.facts, c.role) as string[], agent: agentRead(pageId(page), c.facts, c.noticed) };
+  return { roomId: c.roomId, role: c.role, engine, ai: aiConfigured(), brief, suggest: sousSuggest(c.facts, c.role) as string[], agent: agentRead(pageId(page), c.facts, c.noticed, { role: c.role, moves: c.moves }), record: agentRecord(c.d), resolved: c.memory.resolved };
 }
 
 /** A page id the app really has; anything else is Sous with no specialty. */
@@ -166,7 +170,8 @@ export async function askSous(db: Db, v: V, raw: unknown, { fetchImpl, now = new
   const c = await context(db, v, p.data.roomId, now);
   const page = pageId(p.data.page);
   const agent = agentFor(page) as { id: string; name: string };
-  const local = agentAnswer(page, p.data.question, c.facts, { room: c.brief.room, role: c.role }) as { text: string; used: string[]; cites: { label: string; go: string }[]; claim: string | null; grounded: boolean; suggest: string[] };
+  const move = agentRead(page, c.facts, c.noticed, { role: c.role, moves: c.moves }).move;
+  const local = agentAnswer(page, p.data.question, c.facts, { room: c.brief.room, role: c.role, move }) as { text: string; short?: string; move?: unknown; used: string[]; cites: { label: string; go: string }[]; claim: string | null; grounded: boolean; suggest: string[] };
   let out = { ...local, engine: 'builtin' as 'ai' | 'builtin' };
   if (aiConfigured() && (await aiAllowance(db, v.orgId, 'ask'))) {
     const turns = (p.data.history ?? []).flatMap((t) => [{ role: 'user' as const, content: t.q }, { role: 'assistant' as const, content: t.a }]);
@@ -178,7 +183,7 @@ export async function askSous(db: Db, v: V, raw: unknown, { fetchImpl, now = new
         { role: 'assistant', content: 'I have read the records. What would you like to know?' },
         ...turns,
         // Which specialist is answering goes with the question, after the cached records, so every page shares one cache.
-        { role: 'user', content: [agentBrief(page, (CV_PAGES as Record<string, { title: string }>)[page]?.title), p.data.question].filter(Boolean).join('\n\n') },
+        { role: 'user', content: [agentBrief(page, (CV_PAGES as Record<string, { title: string }>)[page]?.title, c.role), p.data.question].filter(Boolean).join('\n\n') },
       ],
     }, fetchImpl);
     const sheet = sousSheet(c.facts);
@@ -188,7 +193,7 @@ export async function askSous(db: Db, v: V, raw: unknown, { fetchImpl, now = new
       const used = c.facts.filter((f) => (r.data.used ?? []).includes(f.id));
       const grounded = r.data.answered !== false && used.length > 0;
       const follow = String(r.data.follow_up ?? '').trim().slice(0, 120);
-      out = { text, used: used.map((f) => f.id), cites: grounded ? sousCites(used) : [], claim: grounded ? (used.find((f) => f.claim)?.claim ?? null) : null, grounded, suggest: grounded ? (follow ? [follow] : []) : (sousSuggest(c.facts, c.role) as string[]), engine: 'ai' };
+      out = { text, short: text, move: local.move, used: used.map((f) => f.id), cites: grounded ? sousCites(used) : [], claim: grounded ? (used.find((f) => f.claim)?.claim ?? null) : null, grounded, suggest: grounded ? (follow ? [follow] : []) : (sousSuggest(c.facts, c.role) as string[]), engine: 'ai' };
     }
   }
   // The question itself is not kept: only that one was asked, how it was answered and what it drew on.

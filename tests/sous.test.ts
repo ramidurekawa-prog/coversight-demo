@@ -77,7 +77,8 @@ describe('Sous with the AI engine on', () => {
     // This model takes no sampling or thinking overrides and no forced tool call.
     for (const k of ['temperature', 'top_p', 'thinking', 'tool_choice']) expect(body[k]).toBeUndefined();
     expect(JSON.stringify(body.messages[0])).toContain('[saved]');
-    expect(body.messages.at(-1)).toEqual({ role: 'user', content: 'What have we actually saved?' });
+    // The question comes last, after who is asking; the records before it are the cached part.
+    expect(body.messages.at(-1).content).toMatch(/^Speak to the owner.*\n\nWhat have we actually saved\?$/s);
     // The key and the question are never kept.
     const log = JSON.stringify(await logged('sous.ask'));
     expect(log).not.toContain('sk-test-key');

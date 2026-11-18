@@ -93,7 +93,14 @@ here ships to customers.
   its questions), shown above the page by `PageAgent` from the shell, so page
   files stay untouched. Agents hold no data of their own: they all read the
   same facts, which is the shared brain. A new page needs an entry there
-  (`tests/sous.test.js` fails without one). The nightly `sous` job notifies
+  (`tests/sous.test.js` fails without one). `lib/ai/moves.js` holds what an
+  agent recommends (`sousMoves()`: one move, its stake with a claim, and an
+  act that is only ever a draft, an approval sheet or a screen: agents never
+  send, approve or change anything themselves), what the room told it
+  (`sousRemember()`, saved under the `sous` action key; `sous.seen` per person
+  keeps the strip quiet until an agent has something new) and each area's
+  verified track record (`agentRecord()`). `sousLinks()` ties one ingredient
+  across pages; its figures keep their own claims and are never summed. The nightly `sous` job notifies
   what it noticed and pre-writes briefs. `tests/sous.test.js` and
   `tests/sous.test.ts` cover it; `tests/helpers/fake-claude.ts` stands in for
   the API.
