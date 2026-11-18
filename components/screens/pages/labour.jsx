@@ -400,7 +400,7 @@ function ChecksPanel({ checks, own, weeks, onClose }) {
       </ul>
       <Block title="What this page does not do yet">
         <Facts rows={[
-          ['Demand', own ? 'Uses your typical guests by hour from past weeks. The next-week forecast is not connected for your own data yet.' : 'This week uses actual guests by hour. Next week uses the shared forecast, held against the schedule you run now.'],
+          ['Demand', `${own ? 'This view uses your typical guests by hour from past weeks' : 'This week uses actual guests by hour'}. Next week uses the shared forecast, held against the schedule you run now.`],
           ['Cost', 'Hours × average wage. Payroll taxes, tips and overtime premiums are not included, so real cost is higher.'],
           ['Kitchen staffing', `Ticket times are observed (${weeks}-week average). Cooks by the hour are entered by hand.`],
           ['Confidence', 'High needs 8 or more weeks behind the hour and a current schedule. Medium needs 4. It is a rule of thumb, not a measured error rate.'],
@@ -422,6 +422,30 @@ function Empty({ title, text, cta, on }) {
 }
 
 /* ================================================================ the page */
+
+/**
+ * The shared forecast for this room. Signed in, it is the server's (the same
+ * call the Service page makes); in the browser-only demo it is computed from
+ * the sample. Null while loading, when there is too little history, or when
+ * the call fails: the next-week card then stays hidden.
+ */
+function useForecast(room, roomId, useServer, own) {
+  const [srv, setSrv] = React.useState(/** @type {any} */ (null));
+  React.useEffect(() => {
+    if (!useServer) return undefined;
+    let stop = false;
+    setSrv(null);
+    fetch(`/api/forecast?room=${encodeURIComponent(roomId)}&days=14`, { credentials: 'same-origin' })
+      .then((r) => (r.ok ? r.json() : null)).then((b) => { if (!stop) setSrv(b?.forecast?.ready ? b.forecast : null); }).catch(() => { if (!stop) setSrv(null); });
+    return () => { stop = true; };
+  }, [roomId, useServer]);
+  const local = React.useMemo(() => {
+    if (useServer || own) return null;
+    try { const f = covercastRoom(room); return f.ready ? f : null; } catch { return null; }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomId, useServer, own]);
+  return useServer ? srv : local;
+}
 
 const servicesOf = (room) => (room.fromToast ? planServices(Object.fromEntries(DAYS.map((x) => [x, tonightPlan(room, x)]))) : sampleServices(room.labour));
 
@@ -493,12 +517,8 @@ function CvLabour() {
     gap: services.length ? gapGrid(services) : null,
   };
 
-  /* Next week from the shared forecast (sample rooms compute it here; a room on its own data needs the server's copy, not wired yet). */
-  const cast = React.useMemo(() => {
-    if (own) return null;
-    try { const f = covercastRoom(room); return f.ready ? f : null; } catch { return null; }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [d.id, own]);
+  /* Next week from the shared forecast: the server's copy when signed in (a room's own Toast days, its hand-entered signals and feeds), else computed here from the sample. */
+  const cast = useForecast(room, d.id, eng.mode === 'server', own);
   const ahead = cast && services.length ? forecastWeek(cast.covers.days.slice(0, 7).map((x) => { const sp = shiftPulseDay(cast, x.iso); return { iso: x.iso, weekday: x.weekday, hours: [...(sp?.lunch?.hours || []), ...(sp?.dinner?.hours || [])] }; }), services) : null;
   const miss = cast?.accuracy?.covers?.days?.horizons?.[1]?.covercast || null;
 

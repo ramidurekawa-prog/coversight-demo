@@ -312,4 +312,10 @@ describe('Labor page', () => {
       expect(real.short).toBe(real.days.reduce((t: number, x: any) => t + x.short, 0));
     }
   });
+
+  test('a long day with a quiet gap reads as stretches, not hour by hour', () => {
+    const at = [['11 AM', 1], ['12 PM', 2], ['1 PM', 1], ['5 PM', 1], ['6 PM', 2]].map(([label, by]) => ({ label, by })) as any;
+    expect(changeText('add', at)).toBe('Add up to 2 servers, 11 AM to 2 PM and 5 PM to 7 PM');
+    expect(shortPhrase(at)).toBe('up to 2 servers short, 11 AM to 2 PM and 5 PM to 7 PM');
+  });
 });
