@@ -7,7 +7,7 @@ import { engine, useEngine, useSaved } from '../../engine';
 import { PLAN_KEY, PLAN_TOP, REVIEW_KEY, buildCommit, planState, setItemStatus, trimReviews, weekView } from '../../../lib/data/page/week';
 import { useCv, cvMoney, CV_D, CV_DS, CV_ROOM, Claim, Money, Callout, Interval, PageHead } from '../core';
 import { DenseWeek } from '../dense-sections';
-import { TestTrack, Waterfall, WeekBars } from './week-charts';
+import { TestTrack, WeekBars } from './week-charts';
 import { useTodayTheme } from './today.themes';
 import './today.module.css';
 import s from './week.module.css';
@@ -132,7 +132,7 @@ function Weeks({ v }) {
 /** One action: what, how long, what it could be worth. The why is one tap away. */
 function PlanRow({ item, children, lead, onData }) {
   const [why, setWhy] = React.useState(false);
-  const hasWhy = !!(item.why || item.safety);
+  const hasWhy = !!(item.talk?.length || item.why || item.safety);
   return (
     <div className={`${s.planRow} ${item.blocked ? s.planBlocked : ''}`}>
       {lead}
@@ -142,9 +142,9 @@ function PlanRow({ item, children, lead, onData }) {
           {item.blocked
             ? <><span className={s.blockedNote}><Icon name="Lock" size={13} />{item.blocked.split('.')[0]}</span>{onData && <button type="button" className={s.inlineLink} onClick={onData}>Bring the data in</button>}</>
             : <><span>{leverName(item.lever)}</span><span aria-hidden="true">·</span><span>{minutes(item.hours)}</span></>}
-          {hasWhy && <button type="button" className={s.inlineLink} aria-expanded={why} onClick={() => setWhy((x) => !x)}>{why ? 'Hide why' : 'Why?'}</button>}
+          {hasWhy && <button type="button" className={s.inlineLink} aria-expanded={why} onClick={() => setWhy((x) => !x)}>{why ? 'Hide' : 'Why this?'}</button>}
         </span>
-        {why && <p className={s.whyText}>{item.why}{item.safety && <span className={s.safety}><Icon name="ShieldCheck" size={13} />{item.safety}</span>}</p>}
+        {why && <div className={s.whyText}>{(item.talk?.length ? item.talk : [item.why, item.safety].filter(Boolean)).map((x, i) => <p key={i}>{x}</p>)}</div>}
         {children}
       </div>
       <span className={s.planNum}>{usd(item.conservative ?? item.value)}<span className={s.unit}>/wk</span></span>
@@ -332,6 +332,50 @@ function Guide({ items }) {
   );
 }
 
+/**
+ * What changed, as a short list anyone can read: each line says in words what moved,
+ * with a bar that grows right when it added money and left when it cost money,
+ * then the total. Replaces the waterfall (Ramidu, 2026-11-18: "I don't understand the graph").
+ */
+function Breakdown({ dec, vs }) {
+  const line = (k) => dec.lines.find((l) => l.key === k);
+  const net = line('net'), covers = line('covers'), check = line('check'), food = line('food'), labor = line('labour');
+  const n = (x) => Math.abs(Math.round(x)).toLocaleString('en-US');
+  const salesWhy = Math.round(covers.change) !== 0
+    ? `${n(covers.change)} ${covers.change > 0 ? 'more' : 'fewer'} guests${Math.abs(check.change) >= 0.05 ? `, each spending ${cvMoney(Math.abs(check.change), { cents: true })} ${check.change > 0 ? 'more' : 'less'}` : ''}`
+    : `the same number of guests, each spending ${cvMoney(Math.abs(check.change), { cents: true })} ${check.change >= 0 ? 'more' : 'less'}`;
+  const rows = [
+    { key: 'net', label: net.change >= 0 ? 'You sold more' : 'You sold less', sub: salesWhy, effect: net.effect },
+    { key: 'food', label: food.change > 0 ? 'Food cost more' : 'Food cost less', sub: `${usd(food.now)} on ingredients this week`, effect: food.effect },
+    { key: 'labour', label: labor.change > 0 ? 'Labor cost more' : 'Labor cost less', sub: `${usd(labor.now)} in hourly wages this week`, effect: labor.effect },
+  ];
+  const max = Math.max(...rows.map((r) => Math.abs(r.effect)), 1);
+  const total = dec.contribution.change;
+  return (
+    <div className={s.bd} role="table" aria-label={`What changed compared with ${vs}`}>
+      <div className={s.bdHead} role="row">
+        <span role="columnheader">Compared with {vs}</span>
+        <span role="columnheader" className={s.bdAxis} aria-hidden="true"><span>costs you</span><span>adds to you</span></span>
+        <span role="columnheader" className={s.bdAmt}>Effect</span>
+      </div>
+      {rows.map((r) => (
+        <div key={r.key} className={s.bdRow} role="row">
+          <span role="cell" className={s.bdText}><b>{r.label}</b><span>{r.sub}</span></span>
+          <span role="cell" className={s.bdTrack} aria-hidden="true">
+            <span className={`${s.bdBar} ${r.effect >= 0 ? s.bdUp : s.bdDown}`} style={{ width: `${(Math.abs(r.effect) / max) * 50}%` }} />
+          </span>
+          <span role="cell" className={`${s.bdAmt} ${r.effect >= 0 ? s.bdAmtUp : s.bdAmtDown}`}>{usd(r.effect, true)}</span>
+        </div>
+      ))}
+      <div className={`${s.bdRow} ${s.bdTotal}`} role="row">
+        <span role="cell" className={s.bdText}><b>{total >= 0 ? 'So you kept more' : 'So you kept less'}</b><span>{usd(dec.contribution.then)} before, {usd(dec.contribution.now)} this week</span></span>
+        <span role="cell" aria-hidden="true" />
+        <span role="cell" className={s.bdAmt}>{usd(total, true)}</span>
+      </div>
+    </div>
+  );
+}
+
 /* Step 1: how the week went, and why. */
 function StepWhy({ v, comparator, setComparator }) {
   const dec = v.decomposition;
@@ -355,12 +399,7 @@ function StepWhy({ v, comparator, setComparator }) {
         </div>
         {avail.length > 1 && <Toggle label="Compare with" options={avail.map((x) => ({ value: x.id, label: VS[x.id] ? VS[x.id].replace(/^your /, '') : x.label }))} value={comparator || v.comparator?.id} onChange={setComparator} />}
       </div>
-      {dec && <Waterfall
-        caption={`What you kept, from ${vsPhrase(v.comparator)} to this week`}
-        start={{ label: v.comparator.label, short: 'Before', value: dec.contribution.then }}
-        parts={['net', 'food', 'labour'].map((k) => ({ key: k, label: { net: 'Sales', food: 'Food cost', labour: 'Labor cost' }[k], short: { net: 'Sales', food: 'Food', labour: 'Labor' }[k], value: line(k).effect }))}
-        end={{ label: 'This week', short: 'Now', value: dec.contribution.now }}
-        fmt={(x, sign) => usd(x, sign)} />}
+      {dec && <Breakdown dec={dec} vs={vsPhrase(v.comparator)} />}
       <div className={s.links}>
         {v.history.length > 1 && <button type="button" className={s.linkBtn} aria-expanded={weeks} onClick={() => setWeeks((x) => !x)}><Icon name="ChartColumn" size={15} />{weeks ? 'Hide' : 'See'} the last {v.history.length} weeks<Icon name={weeks ? 'ChevronUp' : 'ChevronDown'} size={14} /></button>}
         <More>

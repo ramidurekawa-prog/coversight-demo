@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { SEED } from '../lib/data/seed.js';
-import { deriveGroup, deriveRoom, choosePlan } from '../lib/data/model.js';
+import { deriveGroup, deriveRoom, choosePlan, money as cvMoney } from '../lib/data/model.js';
 import { densify } from '../lib/data/dense.js';
 import {
   awaitingData, bankedFromWindows, blockedReason, buildCommit, comparators, decompose, planState, setItemStatus,
@@ -90,6 +90,17 @@ describe('This week, on the sample', () => {
     // With fresh recipe costs entered, it isn't blocked any more.
     const fresh = { ...d, feeds: d.feeds.map((f) => (f.name === 'Recipe costs' ? { ...f, state: 'healthy' } : f)) };
     expect(blockedReason(d.candidates.find((c) => c.id === 'salmon'), fresh)).toBeNull();
+  });
+
+  it('explains each action in plain words, using only its own computed numbers', () => {
+    for (const c of v.plan.ranked) {
+      const said = c.talk.join(' ');
+      expect(c.talk.length).toBeGreaterThanOrEqual(2);
+      expect(said).not.toMatch(/elasticity|old engine/i);
+      expect(said).toContain(cvMoney(Math.round(c.value)));
+      if (c.conservative > 0 && Math.round(c.conservative) < Math.round(c.value)) expect(said).toContain(cvMoney(Math.round(c.conservative)));
+      if (c.blocked) expect(said).toMatch(/One thing first/);
+    }
   });
 
   it('chooses the plan the way The plan page does, with the saved hours and set-aside findings', () => {

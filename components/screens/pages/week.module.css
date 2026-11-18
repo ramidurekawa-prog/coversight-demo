@@ -288,3 +288,32 @@
 .rowList { gap: 12px; }
 .testRow { padding: 14px 0; }
 @media (max-width: 640px) { .guide { display: none; } }
+
+/* What changed (replaces the waterfall): words on the left, a bar from the middle, the amount. */
+.bd { display: flex; flex-direction: column; border-radius: 10px; box-shadow: inset 0 0 0 1px var(--border); overflow: hidden; }
+.bdHead, .bdRow { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(120px, 1fr) 96px; gap: 20px; align-items: center; padding: 14px 18px; }
+.bdHead { padding-top: 10px; padding-bottom: 10px; background: var(--surface-sunken); font-size: 13.5px; font-weight: 600; color: var(--fg-2); }
+.bdAxis { display: flex; justify-content: space-between; font-weight: 500; }
+.bdRow + .bdRow { border-top: 1px solid var(--border); }
+.bdText { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.bdText b { font-size: 16px; font-weight: 600; color: var(--fg-1); }
+.bdText span { font-size: 14px; color: var(--fg-2); }
+.bdTrack { position: relative; height: 14px; border-radius: 4px; background: var(--surface-sunken); }
+.bdTrack::after { content: ''; position: absolute; left: 50%; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; background: var(--fg-3); }
+.bdBar { position: absolute; top: 0; bottom: 0; }
+.bdUp { left: 50%; border-radius: 0 4px 4px 0; background: var(--success-600); }
+.bdDown { right: 50%; border-radius: 4px 0 0 4px; background: var(--error-600); }
+.bdAmt { text-align: right; font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--fg-1); }
+.bdHead .bdAmt { font-size: 13.5px; }
+.bdAmtUp { color: var(--success-700, var(--success-600)); }
+.bdAmtDown { color: var(--error-600); }
+.bdTotal { background: color-mix(in srgb, var(--surface-sunken) 55%, transparent); }
+.bdTotal .bdAmt { font-size: 20px; }
+@media (max-width: 640px) {
+  .bdHead { display: none; }
+  .bdRow { grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; padding: 12px 14px; }
+  .bdTrack { grid-column: 1 / -1; grid-row: 2; }
+  .bdTotal > :nth-child(2) { display: none; }
+}
+.whyText { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; font-size: 15px; line-height: 1.55; }
+.whyText p { margin: 0; }
