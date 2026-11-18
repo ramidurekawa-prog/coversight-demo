@@ -32,9 +32,38 @@ const FULL_DAY = { Sun: 'Sunday', Mon: 'Monday', Tue: 'Tuesday', Wed: 'Wednesday
 const dayOf = (d) => FULL_DAY[d] ?? d;
 const POLL_MS = 120_000;
 const VIEW_KEY = 'cv.service.view';
-const DEFAULT_VIEW = { meal: 'dinner', when: 'today', tab: 'forecast', detail: 'slots' };
+const DEFAULT_VIEW = { meal: 'dinner', when: 'today', tab: 'forecast', detail: 'slots', role: null };
 const MEAL_ICON = { lunch: 'Sun', dinner: 'Moon', day: 'CalendarDays' };
 const HANDOFF = { gm: 'GM', floor: 'floor manager' };
+
+/* Coversight's own names for the parts of this page. */
+const NAMES = { page: 'Shift Pulse', call: 'Right-Size Call', pace: 'Pace Line', map: 'Staffing Map', guard: 'Floor Guard', proof: 'Clock-in Proof', brief: 'Pre-shift Brief' };
+const ROLES = [['owner', 'Owner'], ['gm', 'GM'], ['floor', 'Floor manager']];
+/** The promise each role buys this page for, in the page head. */
+const PROMISE = {
+  owner: 'Labor that follows your guests, every service',
+  gm: 'Every send-home call made on time, not guessed',
+  floor: 'A covered floor from first seating to close',
+};
+
+/**
+ * The outcome first, per role: what tonight's answer saves or protects. Built
+ * only from figures the page already computed; a missing figure drops the
+ * line, it is never filled in.
+ */
+function outcomeFor(role, answer, { impact, perServer, usualRate, on }) {
+  const cut = answer.cut;
+  if (answer.tone === 'neutral' || answer.empty) return null;
+  if (cut) {
+    if (role === 'owner') return impact != null ? { text: `About ${cvMoney(impact)} of labor back tonight, with every table still covered`, money: true } : { text: 'Labor back on target tonight, with every table still covered' };
+    if (role === 'floor') return perServer != null ? { text: `Your team stays covered to close: about ${perServer} guests per server an hour${usualRate ? ` (your usual is ${usualRate})` : ''}` } : { text: 'Your team stays covered to close' };
+    return { text: `One call, made in time: ${on} → ${on - 1} servers${impact != null ? `, about ${cvMoney(impact)} of labor back` : ''}`, money: impact != null };
+  }
+  if (answer.tone === 'warn') return role === 'owner' ? { text: 'Protect tonight’s sales: the floor needs everyone' } : role === 'floor' ? { text: 'Service is at risk if anyone leaves early' } : { text: 'No send-home tonight: guests are ahead of a usual night' };
+  if (answer.blocked) return { text: 'Your own staffing rule decides tonight: nothing to trim' };
+  if (answer.tone === 'wait') return { text: role === 'owner' ? 'No labor at risk yet: checked again before any money is spent' : 'No guessing: the call comes when the numbers are sure' };
+  return { text: role === 'owner' ? 'Labor matches demand: nothing to trim' : role === 'floor' ? 'Floor fully covered for the peak' : 'Staffing fits: no call needed' };
+}
 const hoursLabel = (m) => `${clockLabel(m.from * 60).replace(':00', '')}–${clockLabel(m.to * 60).replace(':00', '')}`;
 const niceDate = (iso) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
 const pct = (p) => (p === 0 ? 'right on' : `${Math.abs(p)}% ${p < 0 ? 'under' : 'over'}`);
@@ -131,18 +160,18 @@ function answerFor({ meal, plan, L, manual, isToday, nowMin, day, fences, own })
   const planCut = plan?.cutFrom != null && (!isToday || plan.cutFrom * 60 > nowMin) ? plan.cutFrom * 60 : null;
   const planned = (kicker) => planCut != null
     ? { tone: 'act', kicker, title: `Plan: 1 server can go home at ${clockLabel(planCut)}`, why: `On each of your last ${plan.weeks} ${Day}s, every hour from then had a spare server, even the busiest week.`, next: 'Look at the room first. Approving puts the 7shifts step on Today; nothing changes in 7shifts until someone does it.', cut: isToday ? { at: planCut, servers: Math.round(plan.hours.find((h) => h.hour === plan.cutFrom).servers), source: 'plan' } : null }
-    : { tone: 'good', kicker, title: plan.blocked ? 'Keep everyone on' : `Keep ${Math.round(peak.servers)} servers on for the ${clockLabel(peak.hour * 60)} peak`, why: plan.blocked ? plan.blocked.text : `Usually ${usual} covers. Every hour on recent ${Day}s used all its servers.` };
+    : { tone: 'good', kicker, blocked: !!plan.blocked, title: plan.blocked ? 'Keep everyone on' : `Keep ${Math.round(peak.servers)} servers on for the ${clockLabel(peak.hour * 60)} peak`, why: plan.blocked ? plan.blocked.text : `Usually ${usual} covers. Every hour on recent ${Day}s used all its servers.` };
 
   if (!plan && !L && !manual) return { tone: 'neutral', kicker: `${M.label} · no data yet`, title: `No ${M.label.toLowerCase()} history yet`, why: own ? `Needs Toast orders and time entries for ${M.label.toLowerCase()} on ${Day}s.` : `The sample group only has dinner. Pick Dinner to see the sample night.`, empty: own };
-  if (!isToday) return planned(`${M.label} · ${Day} plan`);
+  if (!isToday) return planned(`${NAMES.brief} · ${M.label}, ${Day}`);
   if (L && after) return { tone: 'good', kicker: `${M.label} is done`, title: `${L.so} guests served`, why: `${pct(L.pace)[0].toUpperCase()}${pct(L.pace).slice(1)} a usual ${Day}.` };
   if (manual && after) return { tone: 'good', kicker: `${M.label} is done`, title: `${manual.covers} guests by your count`, why: manual.typical ? `A usual ${Day} has ${manual.typical} by ${clockLabel(clockMinutes(manual.at))}.` : 'Your count.' };
-  if (before && !L && !manual) return plan ? planned(`${M.label} starts at ${clockLabel(M.from * 60)}`) : { tone: 'neutral', kicker: `${M.label} starts at ${clockLabel(M.from * 60)}`, title: 'Nothing to do yet', why: '' };
+  if (before && !L && !manual) return plan ? planned(`${NAMES.brief} · ${M.label} starts at ${clockLabel(M.from * 60)}`) : { tone: 'neutral', kicker: `${M.label} starts at ${clockLabel(M.from * 60)}`, title: 'Nothing to do yet', why: '' };
 
   if (L) {
     const vs = `Guests are ${pct(L.pace)} a usual ${Day}`;
     const lo = Math.round(L.cmp * (1 - L.spread)), hi = Math.round(L.cmp * (1 + L.spread));
-    if (L.mode === 'cut') return { tone: 'act', kicker: 'Do this now', title: `Send 1 server home at ${clockLabel(L.at)}`, why: `${vs}. After ${clockLabel(L.at)}, ${L.serversNow - 1} servers still cover the busiest likely finish.`, next: `Approving puts the 7shifts step on Today. Nothing changes in 7shifts until someone does it${L.source === 'toast' ? ', and Toast clock-ins confirm it' : ''}.`, cut: { at: L.at, servers: L.serversNow, source: 'live' } };
+    if (L.mode === 'cut') return { tone: 'act', kicker: `${NAMES.call} · do this now`, title: `Send 1 server home at ${clockLabel(L.at)}`, why: `${vs}. After ${clockLabel(L.at)}, ${L.serversNow - 1} servers still cover the busiest likely finish.`, next: `Approving puts the 7shifts step on Today. Nothing changes in 7shifts until someone does it${L.source === 'toast' ? ', and Toast clock-ins confirm it' : ''}.`, cut: { at: L.at, servers: L.serversNow, source: 'live' } };
     if (L.mode === 'stale') return { tone: 'warn', kicker: 'Toast is late', title: 'No call until Toast catches up', why: `No new orders since ${L.dataThrough != null ? clockLabel(L.dataThrough) : 'service started'}. Check the room yourself.` };
     if (L.so > hi) return { tone: 'warn', kicker: 'Busier than usual', title: L.serversNow != null ? `Keep all ${L.serversNow} servers on` : 'Keep everyone on', why: `${vs}. Sending anyone home now puts service at risk.` };
     if (L.mode === 'wait') return { tone: 'wait', kicker: 'Watching', title: L.why === 'history' ? 'Looks quiet, but too few past days to act' : `Looks quiet. Next check ${clockLabel(L.checkAt)}`, why: L.why === 'history' ? `Needs ${MIN_CALIBRATED} recent ${Day}s to be sure; has ${L.nights}. Keep everyone on.` : `${vs}, but the likely range is still too wide to send anyone home.` };
@@ -156,7 +185,7 @@ function answerFor({ meal, plan, L, manual, isToday, nowMin, day, fences, own })
     if (manual.staff === 'short') return { tone: 'warn', kicker: 'Short on the floor · your count', title: 'Add 1 server if you can', why: `${manual.servers} on, and the busiest recent ${Day} needed ${manual.need} at this hour.` };
     return plan ? planned(`${manual.label} · your count`) : { tone: 'neutral', kicker: 'Your count', title: `${manual.covers} guests so far`, why: `No ${M.label.toLowerCase()} history to compare with yet.` };
   }
-  return planned(`${M.label} · plan from recent ${Day}s`);
+  return planned(`${NAMES.brief} · ${M.label}`);
 }
 
 /* ================================================================ small pieces */
@@ -247,6 +276,8 @@ function CvService() {
   const [view, setView] = useView();
   const live = useLive(CV_D.id, server && own);
   const [fencesSaved] = useSaved('fences', null);
+  const myRole = ['gm', 'floor'].includes(eng.viewer?.role) ? eng.viewer.role : cv.role === 'gm' ? 'gm' : 'owner';
+  const role = view.role ?? myRole;
   const fences = fencesOf(fencesSaved);
 
   // The clock: the room's own when Toast answered, the sample's fixed evening, else this device's.
@@ -392,7 +423,7 @@ function CvService() {
       {yes
         ? (() => {
           const [icon, label, tone] = ex?.state === 'breach' ? ['TriangleAlert', 'Guests above the range since: consider calling them back', 'bad']
-            : ex?.state === 'confirmed' ? ['CircleCheck', 'Done · confirmed in Toast clock-ins', 'good']
+            : ex?.state === 'confirmed' ? ['CircleCheck', `${NAMES.proof} · confirmed`, 'good']
               : task?.status === 'done' ? ['ListChecks', 'Marked done on Today · not yet seen in Toast', 'info']
                 : ['Hourglass', 'Approved · waiting for the 7shifts change', 'info'];
           return <Pill tone={tone} icon={icon}>{label}</Pill>;
@@ -413,6 +444,15 @@ function CvService() {
   const hoursLeft = cut ? Math.max(0, ((L?.end ?? M.to * 60) - cut.at) / 60) : 0;
   const hl = hoursLeft % 1 ? hoursLeft.toFixed(1) : String(hoursLeft);
 
+  // Guests each remaining server would look after an hour, from the send-home to close.
+  const perServer = (() => {
+    if (!cut || cut.servers < 2 || !hoursLeft) return null;
+    // Same source as the usual rate it's compared with: the recent same weekdays, hour by hour.
+    const left = rows.filter((r) => r.hour * 60 >= cut.at).reduce((t, r) => t + r.usual, 0);
+    return left > 0 ? Math.round(left / hoursLeft / (cut.servers - 1)) : null;
+  })();
+  const promise = outcomeFor(role, answer, { impact, perServer, usualRate: plan?.rate ? Math.round(plan.rate) : null, on: cut?.servers });
+
   /* ---------- level 2 ---------- */
   const tab = view.tab;
   const nowHour = isToday ? Math.floor(nowMin / 60) : null;
@@ -421,7 +461,7 @@ function CvService() {
   const selHour = sel == null ? null : sel >= SLOT_FLOOR ? Math.floor(sel / 60) : sel;
   const staffAt = (min) => { const h = rows.find((r) => r.hour === Math.floor(min / 60)); return h ? `${Math.round(h.servers)} usually on · ${h.need} needed` : null; };
 
-  const chartTitle = tab === 'forecast' ? (L ? `${M.label} · guests through closing` : `${M.label} · covers each hour`) : tab === 'staffing' ? `${M.label} · servers on and needed` : `${M.label} · guests per server`;
+  const chartTitle = `${NAMES.pace} · ` + (tab === 'forecast' ? (L ? `${M.label} guests through closing` : `${M.label} covers each hour`) : tab === 'staffing' ? `${M.label} servers on and needed` : `${M.label} guests per server`);
   const chartSub = !L && !plan ? '' : tab === 'forecast' ? (L ? `Served so far, a usual ${dayOf(day)}, and the likely finish.` : `A usual ${dayOf(day)} and the busiest of your last ${plan.weeks}.`)
     : tab === 'staffing' ? 'Servers usually on each hour, against what the busiest recent week needed.' : 'Guests each server handles each hour, against your own average.';
   const stats = tab === 'forecast' && L ? [
@@ -478,14 +518,15 @@ function CvService() {
     if (!t) return 'Approved';
     return { open: 'Approved · not done yet', done: 'Marked done on Today', verified: 'Confirmed', mismatch: 'Didn’t match Toast', cancelled: 'Undone' }[t.status] ?? 'Approved';
   };
-  const detailTabs = [['slots', 'Every 15 minutes'], ['hours', 'Hour by hour'], ['rules', 'Checks & rules'], ['money', 'The money'], ['past', 'Past decisions'], ['busy', 'Busy times']];
+  const detailTabs = [['slots', 'Every 15 minutes'], ['hours', 'Hour by hour'], ['rules', NAMES.guard], ['money', 'The money'], ['past', 'Past decisions'], ['busy', 'Busy times']];
   const pick = sel == null ? null : sel >= SLOT_FLOOR ? sel : sel * 60;
 
   return (
     <div className="cv-page">
       <div className={s.lead}>
-        <PageHead over={`Service · ${CV_ROOM.name} · ${dayOf(day)}${isToday ? ` · ${clockLabel(nowMin)}` : ` · ${niceDate(date)}`}`} q="How is service going?" />
+        <PageHead over={`${NAMES.page} · ${CV_ROOM.name} · ${dayOf(day)}${isToday ? ` · ${clockLabel(nowMin)}` : ` · ${niceDate(date)}`}`} q={PROMISE[role]} />
         <div className={s.when}>
+          <Seg label="View as" value={role} onChange={(k) => setView({ role: k })} options={ROLES} />
           <Seg label="Which day" value={view.when === 'today' || view.when === 'tomorrow' ? view.when : 'date'} onChange={(k) => setView({ when: k })} options={[['today', 'Today'], ['tomorrow', 'Tomorrow']]} />
           <label className={`${s.datePick} ${view.when !== 'today' && view.when !== 'tomorrow' ? s.segOn : ''}`}><span className="sr-only">Pick a date</span><Icon name="CalendarDays" size={15} /><input type="date" value={date} onChange={(e) => e.target.value && setView({ when: e.target.value === clock.date ? 'today' : e.target.value === addDays(clock.date, 1) ? 'tomorrow' : e.target.value })} /></label>
         </div>
@@ -503,6 +544,7 @@ function CvService() {
       <section className={`${s.hero} ${s[`h_${answer.tone}`] || ''}`} aria-labelledby="svc-hero">
         <div className={s.heroMain}>
           <span className={s.heroKicker}><Icon name={TONE_ICON[answer.tone] || 'Activity'} size={16} />{view.meal === 'day' ? `Full day · ${M.label} now · ` : ''}{answer.kicker}</span>
+          {promise && <p className={s.heroOutcome}><Icon name={role === 'floor' ? 'Users' : role === 'owner' ? 'TrendingUp' : 'Gauge'} size={18} /><span>{promise.text}</span>{promise.money && <Claim k="est" />}</p>}
           <h2 id="svc-hero" className={s.heroTitle} role="status" aria-live="polite">{answer.title}</h2>
           {answer.why && <p className={s.heroSub}>{answer.why}</p>}
           {cut && answer.next && !state && <p className={s.heroNext}><Icon name="ArrowRight" size={15} />{answer.next}</p>}
@@ -522,11 +564,11 @@ function CvService() {
             </div>
           ))}
           {answer.empty && !showManual && <div className={s.heroActions}><Button className={s.cta} iconRight="ArrowRight" onClick={() => cv.go('inputs')}>Add Toast data</Button></div>}
-          {cut && !state && <span className={s.proof}><Icon name="ShieldCheck" size={14} />{own ? 'Checked again on fresh data when you approve.' : 'Sample: approving opens the same check a real one runs.'}</span>}
+          {cut && !state && <span className={s.proof}><Icon name="ShieldCheck" size={14} />{NAMES.guard} checks it again when you approve. {NAMES.proof} counts it as saved only once Toast shows it.</span>}
         </div>
         {(cut || L || manual || rows.length > 0) && <aside className={s.heroSide}>
           {cut ? (
-            <>
+            <div className={`${s.sideStack} ${role === 'floor' ? s.sideFlip : ''}`}>
               <div>
                 <span className={s.sideLabel}>Labor you could save after {clockLabel(cut.at)}</span>
                 {impact != null
@@ -541,7 +583,7 @@ function CvService() {
                 <Seats on={before.on} need={before.need} gone />
                 <span className={s.sideFoot}>Without a change, 1 extra server for about {hl} hour{hoursLeft === 1 ? '' : 's'}. With it, the busiest likely finish is still covered.</span>
               </div>
-            </>
+            </div>
           ) : (
             <div className={s.sideStats}>
               {(L ? [['Guests so far', L.so, `usual by now ${Math.round(L.cmp)}`], ['Servers on now', L.serversNow ?? '—', L.needTop != null ? `${L.needMid === L.needTop ? L.needTop : `${L.needMid}–${L.needTop}`} needed` : 'no clock-ins']]
@@ -582,7 +624,7 @@ function CvService() {
         </section>
 
         <section className={`cv-card ${s.panel}`}>
-          <h3 className="cv-h4">Where staffing meets demand</h3>
+          <h3 className="cv-h4">{NAMES.map} · where staffing meets demand</h3>
           <p className="cv-xs cv-faint">{isToday && !ended ? 'The hours ahead' : `Each hour of ${M.label.toLowerCase()}`}, sized for the busiest recent week.</p>
           {ahead.length ? (
             <ul className={s.windows}>
@@ -627,7 +669,7 @@ function CvService() {
           ) : <Note icon="Clock">No {M.label.toLowerCase()} history for {dayOf(day)}s yet.</Note>)}
           {view.detail === 'rules' && (
             <div className={s.rules}>
-              <div className={s.block}><span className={s.blockTitle}>Checks before anyone goes home</span>{checks.length ? <Checks checks={checks} /> : <span className="cv-xs cv-faint">No checks without data.</span>}</div>
+              <div className={s.block}><span className={s.blockTitle}>{NAMES.guard} · checks before anyone goes home</span>{checks.length ? <Checks checks={checks} /> : <span className="cv-xs cv-faint">No checks without data.</span>}</div>
               <div className={s.block}>
                 <span className={s.blockTitle}>Your rules</span>
                 <div className={s.fences}>
