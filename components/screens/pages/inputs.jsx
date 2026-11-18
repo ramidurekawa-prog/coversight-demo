@@ -112,7 +112,7 @@ function CvInputs() {
       <Summary systems={systems} rows={rows} items={items}
         onConnections={() => scrollTo('inputs-conns')} onReadiness={() => setPanel({ type: 'ready' })} onIssues={() => scrollTo('inputs-next')} />
 
-      <DropStrip over={dragging} onFiles={(f) => add('file', f)} onConnect={() => add('connect')} onType={() => add('manual')} />
+      <DropStrip over={dragging} onFiles={(f) => add('file', f)} onPhoto={(f) => add('scan', f)} onConnect={() => add('connect')} onType={() => add('manual')} />
 
       <section className="cv-card" aria-labelledby="inputs-next-h" id="inputs-next" style={{ scrollMarginTop: 16 }}>
         <div className="cv-card-head">
@@ -136,6 +136,7 @@ function CvInputs() {
               <span className="cv-h4" id="inputs-conns-h">Connections</span>
               <span className="cv-xs cv-faint">{sample ? 'The sample restaurant’s systems' : 'The systems your data comes from'}</span>
             </div>
+            <Link className="btn btn-ghost btn-sm" href="/sources">All connections<Icon name="ChevronRight" size={15} /></Link>
           </div>
           <Connections systems={systems} busy={linkBusy} onReadNow={readNow}
             onSettings={(l) => setPanel({ type: 'link', link: l })} onToastExports={() => setPanel({ type: 'toast' })} />
@@ -149,9 +150,11 @@ function CvInputs() {
           <span><Icon name="Users" size={15} />Owners see every location; a manager sees only their own</span>
           <span><Icon name="History" size={15} />Every change is recorded and can be undone</span>
           <span><Icon name="ShieldCheck" size={15} />New data never re-prices a verified saving</span>
+          <Link className={s.trustLink} href="/data">Export or delete your data<Icon name="ChevronRight" size={14} /></Link>
         </> : <>
           <span><Icon name="HardDrive" size={15} />Demo only: what you enter here stays in this browser and isn&apos;t shared</span>
           <span><Icon name="Cloud" size={15} />A real account saves to your restaurant&apos;s account, with a login for each teammate</span>
+          <Link className={s.trustLink} href="/data">Export or delete your data<Icon name="ChevronRight" size={14} /></Link>
         </>}
       </div>
 

@@ -208,17 +208,20 @@ export function ReadyList({ rows, items, kind, sample, onPick }) {
 }
 
 /* ------------------------------------------------------------------ the one way in: drop anything */
-export function DropStrip({ over, onFiles, onConnect, onType }) {
+export function DropStrip({ over, onFiles, onPhoto, onConnect, onType }) {
   const ref = React.useRef(null);
+  const cam = React.useRef(null);
   return (
     <div className={`${s.dropStrip} ${over ? s.dropOver : ''}`}>
       <span className={s.dropStripIco}><Icon name="FileSpreadsheet" size={20} /></span>
-      <span className={s.dropStripText}><b>{over ? 'Drop it anywhere' : 'Drop any file, photo or PDF anywhere on this page'}</b><span>Coversight works out what it is and shows you before anything changes.</span></span>
+      <span className={s.dropStripText}><b className={s.notPhone}>{over ? 'Drop it anywhere' : 'Drop any file, photo or PDF anywhere on this page'}</b><b className={s.onlyPhone}>Add a file or a photo</b><span>Coversight works out what it is and shows you before anything changes.</span></span>
       <span className={s.sampleActs}>
         <Button size="sm" variant="secondary" icon="Upload" onClick={() => ref.current?.click()}>Choose a file</Button>
+        <span className={s.onlyPhone}><Button size="sm" variant="secondary" icon="Camera" onClick={() => cam.current?.click()}>Take a photo</Button></span>
         <Button size="sm" variant="ghost" icon="PlugZap" onClick={onConnect}>Connect software or a sheet</Button>
         <Button size="sm" variant="ghost" icon="PencilLine" onClick={onType}>Type it in</Button>
       </span>
+      <input ref={cam} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} aria-hidden="true" tabIndex={-1} onChange={(e) => { const f = [...e.target.files]; e.target.value = ''; if (f.length) onPhoto(f); }} />
       <input ref={ref} type="file" multiple style={{ display: 'none' }} aria-hidden="true" tabIndex={-1} onChange={(e) => { const f = [...e.target.files]; e.target.value = ''; if (f.length) onFiles(f); }} />
     </div>
   );

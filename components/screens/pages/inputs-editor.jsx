@@ -40,7 +40,7 @@ function Grid({ kind, rows, setRows, issues }) {
   const set = (i, k, v) => setRows(rows.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
   return (
     <div className="cv-tablewrap" tabIndex={0} role="group" aria-label={`${SCHEMAS[kind].title} rows`} style={{ maxHeight: 460, overflowY: 'auto' }}>
-      <table className="cv-table cv-grid-edit">
+      <table className={`cv-table cv-grid-edit ${s.gridTable}`}>
         <thead><tr><th style={{ width: 36 }}>#</th>{cols.map((c) => <th key={c.k} className={c.type === 'money' || c.type === 'number' ? 'r' : ''}>{c.label}{c.required ? '' : <span className="cv-faint" style={{ fontWeight: 400, textTransform: 'none' }}> · optional</span>}</th>)}<th style={{ width: 40 }}><span className="sr-only">Remove</span></th></tr></thead>
         <tbody>
           {rows.map((r, i) => (
@@ -52,7 +52,7 @@ function Grid({ kind, rows, setRows, issues }) {
                 const cls = `${s.cell} ${num ? s.num : ''} ${b ? (b.level === 'error' ? s.err : s.warn) : ''}`;
                 const label = `${c.label}, row ${i + 1}`;
                 return (
-                  <td key={c.k}>
+                  <td key={c.k} data-label={c.label}>
                     {c.type === 'enum' ? (
                       <select id={cellId(kind, i, c.k)} aria-label={label} aria-invalid={b?.level === 'error' || undefined} value={r[c.k] ?? ''} onChange={(e) => set(i, c.k, e.target.value)} className={cls}>
                         <option value="">Choose…</option>
@@ -126,8 +126,8 @@ function Issues({ kind, result, mode }) {
         <li key={i} className={x.level}>
           <Icon name={x.level === 'error' ? 'CircleX' : 'TriangleAlert'} size={14} />
           {x.row && mode === 'grid'
-            ? <button type="button" className={s.issue} onClick={() => jump(x)}><b>Row {x.row}{x.col ? ` · ${SCHEMAS[kind].columns.find((c) => c.k === x.col)?.label ?? x.col}` : ''}:</b> {x.msg}{x.confirm ? ' (needs your yes)' : ''}</button>
-            : <span>{x.row ? <b>Row {x.row}{x.col ? ` · ${x.col}` : ''}: </b> : null}{x.msg}{x.confirm ? ' (needs your yes)' : ''}</span>}
+            ? <button type="button" className={s.issue} onClick={() => jump(x)}><b>Row {x.row}{x.col ? ` · ${SCHEMAS[kind].columns.find((c) => c.k === x.col)?.label ?? x.col}` : ''}:</b> {x.msg}{x.confirm ? ' (needs your OK)' : ''}</button>
+            : <span>{x.row ? <b>Row {x.row}{x.col ? ` · ${x.col}` : ''}: </b> : null}{x.msg}{x.confirm ? ' (needs your OK)' : ''}</span>}
         </li>
       ))}
       {issues.length > 14 && <li className="cv-xs cv-faint">…and {issues.length - 14} more</li>}
@@ -137,15 +137,14 @@ function Issues({ kind, result, mode }) {
 
 function Counts({ result, a }) {
   const d = a?.diff;
-  const cells = [
-    ['Accepted', result.rows.length, ''],
-    ['Rejected', result.rejected, result.rejected ? 'bad' : ''],
-    ['Warnings', result.warnings, result.warnings ? 'warn' : ''],
-    ...(d ? [['Match existing', d.matched, ''], ['New', d.added, ''], ['Values overwritten', d.overwrites.length, d.overwrites.length ? 'warn' : ''], ...(d.removed.length ? [['Drop out', d.removed.length, 'warn']] : []), ...(a.duplicates ? [['Already logged', a.duplicates, '']] : [])] : []),
-  ];
+  const good = result.rows.length;
+  const detail = d ? [d.matched ? `${plural(d.matched, 'row')} update${d.matched === 1 ? 's' : ''} what’s there` : null, d.added ? `${d.added.toLocaleString('en-US')} new` : null, d.removed.length ? `${d.removed.length.toLocaleString('en-US')} dropped` : null, a.duplicates ? `${a.duplicates.toLocaleString('en-US')} already logged` : null].filter(Boolean).join(' · ') : '';
   return (
-    <div className={s.counts} role="status" aria-live="polite">
-      {cells.map(([label, n, tone]) => <div key={label} className={`${s.count} ${tone ? s[tone] : ''}`}><b>{n.toLocaleString('en-US')}</b><span>{label}</span></div>)}
+    <div className={s.tally} role="status" aria-live="polite">
+      <Pill tone={good ? 'good' : 'neutral'} icon="CircleCheck">{plural(good, 'row')} look{good === 1 ? 's' : ''} good</Pill>
+      {result.rejected > 0 && <Pill tone="bad" icon="CircleX">{plural(result.rejected, 'row')} need{result.rejected === 1 ? 's' : ''} a fix</Pill>}
+      {result.warnings > 0 && <Pill tone="warn" icon="TriangleAlert">{plural(result.warnings, 'thing')} worth a look</Pill>}
+      {detail && <span className={s.tallyNote}>{detail}</span>}
     </div>
   );
 }
@@ -223,35 +222,18 @@ function Preview({ a }) {
       </details>
       {(f.unblocked.length + f.blocked.length + f.changed.length + f.added.length + f.gone.length > 0 || a.tests.length > 0) && (
         <div className="cv-col" style={{ gap: 6 }}>
-          <span className="cv-over">Findings and tests affected</span>
+          <span className="cv-over">What this changes for your findings</span>
           <ul className="cv-issues">
             {f.unblocked.map((x) => <li key={`u${x.id}`} className="good" style={{ background: 'var(--success-50)' }}><Icon name="CircleCheck" size={14} color="var(--success-600)" /><span><b>Can be acted on:</b> {x.title} · {usd(x.value)} potential opportunity <Claim k={x.claim || 'est'} /></span></li>)}
             {f.blocked.map((x) => <li key={`b${x.id}`} className="warn"><Icon name="Ban" size={14} /><span><b>Held back:</b> {x.title}</span></li>)}
             {f.changed.slice(0, 6).map((x) => <li key={`c${x.id}`} style={{ background: 'var(--surface-sunken)' }}><Icon name="ArrowRightLeft" size={14} /><span>{x.title}: potential opportunity {usd(x.from)} → <b>{usd(x.to)}</b> <Claim k={x.claim || 'est'} /></span></li>)}
             {f.added.map((x) => <li key={`a${x.id}`} style={{ background: 'var(--surface-sunken)' }}><Icon name="Plus" size={14} /><span><b>New finding:</b> {x.title}</span></li>)}
             {f.gone.map((x) => <li key={`g${x.id}`} style={{ background: 'var(--surface-sunken)' }}><Icon name="Minus" size={14} /><span><b>No longer a finding:</b> {x.title}</span></li>)}
-            {a.tests.map((t) => <li key={`t${t.id}`} className="warn"><Icon name="FlaskConical" size={14} /><span><b>Running test reads this data:</b> {t.title}. It will be flagged for reassessment.</span></li>)}
+            {a.tests.map((t) => <li key={`t${t.id}`} className="warn"><Icon name="FlaskConical" size={14} /><span><b>Running test reads this data:</b> {t.title}. It will be flagged for another look.</span></li>)}
           </ul>
         </div>
       )}
     </div>
-  );
-}
-
-const STEPS = ['Enter', 'Map', 'Check', 'Preview', 'Confirm', 'Commit'];
-function Stepper({ step, bad, csv }) {
-  return (
-    <ol className={s.stepper} aria-label="Import steps" style={{ margin: 0, padding: 0 }}>
-      {STEPS.filter((l) => csv || l !== 'Map').map((label) => {
-        const i = STEPS.indexOf(label);
-        const st = i < step ? 'ok' : i === step ? (bad ? 'bad' : 'now') : '';
-        return (
-          <li key={label} className={s[st] || ''} aria-current={i === step ? 'step' : undefined}>
-            <span className={s.dot}>{i < step ? <Icon name="Check" size={12} /> : st === 'bad' ? <Icon name="X" size={12} /> : STEPS.filter((l) => csv || l !== 'Map').indexOf(label) + 1}</span>{label}
-          </li>
-        );
-      })}
-    </ol>
   );
 }
 
@@ -261,14 +243,14 @@ function Verified({ r, onClose }) {
     <div className={`${s.verifyBox} ${bad ? s.bad : ''}`} role="status" aria-live="polite">
       <Icon name={bad ? 'CircleX' : r.unchanged ? 'Info' : 'ShieldCheck'} size={18} color={bad ? 'var(--error-600)' : 'var(--success-600)'} />
       <div className="cv-col" style={{ gap: 2, flex: 1 }}>
-        <b>{bad ? 'Saved, but the stored rows don’t match what was checked.' : r.unchanged ? 'Nothing new: identical to what’s in use, so nothing was added.' : `Committed and verified: ${plural(r.verify.rows, 'row')} stored, matching what was checked.`}</b>
-        {bad && <span className="cv-xs">Undo it below and import again; if it repeats, tell us. Expected print {r.verify.expected}, stored {r.verify.fingerprint || 'nothing'}.</span>}
+        <b>{bad ? 'Saved, but what was stored doesn’t match what you checked.' : r.unchanged ? 'Nothing new: identical to what’s in use, so nothing was added.' : `Saved. ${plural(r.verify.rows, 'row')} stored and double-checked.`}</b>
+        {bad && <span className="cv-xs">Undo it in Recent activity and import again. If it repeats, tell us.</span>}
         {!bad && !r.unchanged && (
           <span className="cv-xs cv-faint">
             {r.effects.moved ? `${plural(r.effects.moved, 'figure')} moved. ` : 'No figure moved. '}
             {r.duplicates ? `${plural(r.duplicates, 'row')} already logged, skipped. ` : ''}
             {r.effects.unblocked.length ? `Can now be acted on: ${r.effects.unblocked.join(', ')}. ` : ''}
-            {r.effects.tests.length ? `Flagged for reassessment: ${r.effects.tests.join(', ')}.` : ''}
+            {r.effects.tests.length ? `Flagged for another look: ${r.effects.tests.join(', ')}.` : ''}
           </span>
         )}
       </div>
@@ -329,6 +311,21 @@ export function Editor({ kind, seed, startMode }) {
     setA(res.errors || !res.rows.length ? null : analyze({ base: eng.base, inputs: eng.inputs, roomId: CV_D.id, kind, rows: res.rows, opts, windows: eng.windows, issues: res.issues, mappingNeedsConfirm: false }));
   };
 
+  // No "check" step: rows are checked a moment after they change, so the only button is Save.
+  const mapBlockedNow = mode === 'csv' && (!parsed || missingCols.length > 0 || (review?.needsConfirm && !mapOk));
+  React.useEffect(() => {
+    if (!dirty || result || mapBlockedNow) return undefined;
+    const id = setTimeout(check, 450);
+    return () => clearTimeout(id);
+  }, [dirty, result, mapBlockedNow, rows, csv, curMap, replace, mode]); // eslint-disable-line react-hooks/exhaustive-deps
+  /** Move a file's rows into the table so a problem can be fixed where it is. */
+  const fixInTable = () => {
+    if (!parsed) return;
+    const from = (k) => Object.keys(curMap).find((h) => curMap[h] === k);
+    setRowsState(parsed.rows.map((r) => Object.fromEntries(schema.columns.map((c) => [c.k, from(c.k) ? String(r[from(c.k)] ?? '') : '']))));
+    setMode('grid'); stale();
+  };
+
   // Arrived from "Bring data in": check it straight away so the issues and the preview show.
   React.useEffect(() => { if (seed) { if (!review?.needsConfirm && !missingCols.length) check(); document.getElementById('inputs-editor')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -352,7 +349,7 @@ export function Editor({ kind, seed, startMode }) {
         const stored = engine.get().inputs[CV_D.id]?.[kind]?.rows || [];
         finish({ unchanged: false, duplicates: a.duplicates, verify: { ok: fingerprint(stored) === a.fingerprint, rows: stored.length, fingerprint: fingerprint(stored), expected: a.fingerprint }, effects: { moved: changed.length, unblocked: a.findings.unblocked.map((x) => x.title), tests: a.tests.map((t) => t.title) } });
       }
-      cv.toast(`${schema.title} committed for ${CV_ROOM.short}.`);
+      cv.toast(`${schema.title} saved for ${CV_ROOM.short}.`);
     } catch (e) {
       cv.toast(`Not saved: ${e.message}`);
     } finally { setBusy(false); }
@@ -367,9 +364,8 @@ export function Editor({ kind, seed, startMode }) {
     reader.readAsText(f);
   };
 
-  const discard = () => { setRowsState(initialRows()); setCsvState(seed?.csv ?? ''); setMapState(null); setMapOk(false); setResult(null); setA(null); setDirty(false); setYes(false); };
+  const discard = () => { setRowsState(initialRows()); if (seed) setMode('csv'); setCsvState(seed?.csv ?? ''); setMapState(null); setMapOk(false); setResult(null); setA(null); setDirty(false); setYes(false); };
   const needYes = !!a?.confirm.length;
-  const step = a ? (needYes && !yes ? 4 : 5) : result ? 2 : mode === 'csv' && parsed ? 1 : 0;
   const mapBlocked = mode === 'csv' && (!parsed || missingCols.length > 0 || (review?.needsConfirm && !mapOk));
   const canCommit = result && !result.errors && a && (!needYes || yes) && !busy && !eng.saving;
 
@@ -387,11 +383,10 @@ export function Editor({ kind, seed, startMode }) {
         <Button variant="secondary" size="sm" icon="Download" onClick={() => download(`${kind}-${CV_D.id}-template.csv`, safeCSV(schema.columns.map((c) => c.k), templateRows(kind, room)))}>Template</Button>
       </div>
       {last && <Verified r={last} onClose={() => { done.key = null; setLast(null); }} />}
-      <Stepper step={step} bad={!!result?.errors} csv={mode === 'csv'} />
-      {!seed && <Tabs value={mode} onChange={(m) => { setMode(m); stale(); }} tabs={[{ value: 'grid', label: 'Type it in' }, { value: 'csv', label: 'Paste or upload CSV' }]} />}
+      {!seed && <Tabs value={mode} onChange={(m) => { setMode(m); stale(); }} tabs={[{ value: 'grid', label: 'Type it in' }, { value: 'csv', label: 'Paste or upload' }]} />}
       {mode === 'grid' ? (
         <>
-          <span className="cv-xs cv-faint">{kind === 'waste' ? `Each row adds to the log${eng.inputs[CV_D.id]?.waste?.rows?.length ? ` (${plural(eng.inputs[CV_D.id].waste.rows.length, 'entry', 'entries')} logged so far)` : ''}. A row already logged isn’t added twice.` : 'Pre-filled with what this room has now. Change what’s different, then check it.'}</span>
+          <span className="cv-xs cv-faint">{kind === 'waste' ? `Each row adds to the log${eng.inputs[CV_D.id]?.waste?.rows?.length ? ` (${plural(eng.inputs[CV_D.id].waste.rows.length, 'entry', 'entries')} logged so far)` : ''}. A row already logged isn’t added twice.` : 'Pre-filled with what’s there now. Change what’s different.'}</span>
           <Grid kind={kind} rows={rows} setRows={setRows} issues={result?.issues || []} />
           {!schema.single && (
             <div className="cv-row">
@@ -405,7 +400,7 @@ export function Editor({ kind, seed, startMode }) {
           {seed && parsed && (
             <div className={s.recog} role="status">
               <Icon name="ScanSearch" size={16} />
-              <span><b>Recognized as {schema.title.toLowerCase()}.</b> {plural(parsed.rows.length, 'row')} read{review && !missingCols.length && !review.needsConfirm ? ', every column matched' : ''}. Only what needs a decision is shown below.</span>
+              <span><b>Recognized as {schema.title.toLowerCase()}.</b> {plural(parsed.rows.length, 'row')} read{review && !missingCols.length && !review.needsConfirm ? ', every column matched' : ''}.</span>
             </div>
           )}
           <details className={s.rawRows} open={!seed}>
@@ -433,31 +428,31 @@ export function Editor({ kind, seed, startMode }) {
       )}
       {result && <Counts result={result} a={a} />}
       <Issues kind={kind} result={result} mode={mode} />
+      {mode === 'csv' && result?.rejected > 0 && <span><Button size="sm" variant="secondary" icon="PencilLine" onClick={fixInTable}>Fix {result.rejected === 1 ? 'it' : 'them'} here</Button></span>}
       <Preview a={a} />
       {needYes && (
         <div className={s.confirmBox}>
-          <b>Confirm before this lands</b>
+          <b>Please confirm</b>
           <ul>{a.confirm.map((r) => <li key={r}>{r}</li>)}</ul>
           <label className="cv-row" style={{ gap: 8, cursor: 'pointer', flexWrap: 'nowrap' }}>
             <input type="checkbox" checked={yes} onChange={(e) => setYes(e.target.checked)} />
-            <span>Yes, I&apos;ve checked this and want to commit it.</span>
+            <span>Yes, I&apos;ve checked this. Save it.</span>
           </label>
         </div>
       )}
       <div className={s.bar}>
         <span className={s.barNote}>
-          {busy || eng.saving ? <><Icon name="RefreshCw" size={14} /> Saving and verifying…</>
-            : canCommit ? <><Icon name="CircleCheck" size={14} color="var(--success-600)" /> {a.unchanged ? 'Identical to what’s in use.' : `Checked. Commit to make it ${CV_ROOM.short}’s data.`}</>
-              : a && needYes && !yes ? <><Icon name="TriangleAlert" size={14} color="var(--warning-600)" /> Confirm above to commit.</>
-                : result?.errors ? <><Icon name="CircleX" size={14} color="var(--error-600)" /> Fix {plural(result.errors, 'error')} and check again.</>
+          {busy || eng.saving ? <><Icon name="RefreshCw" size={14} /> Saving…</>
+            : canCommit ? <><Icon name="CircleCheck" size={14} color="var(--success-600)" /> {a.unchanged ? 'Same as what’s already there.' : 'Ready to save.'}</>
+              : a && needYes && !yes ? <><Icon name="TriangleAlert" size={14} color="var(--warning-600)" /> Tick the box above to save.</>
+                : result?.errors ? <><Icon name="CircleX" size={14} color="var(--error-600)" /> {result.rejected ? `${plural(result.rejected, 'row')} need${result.rejected === 1 ? 's' : ''} a fix before you can save.` : 'Something needs a fix before you can save.'}</>
                   : mapBlocked && parsed ? <><Icon name="Columns3" size={14} /> {missingCols.length ? 'Pick the missing columns.' : 'Confirm the columns first.'}</>
-                    : dirty ? <><Icon name="PencilLine" size={14} /> Changed. Check the rows to see what moves.</>
+                    : dirty ? <><Icon name="RefreshCw" size={14} /> Checking…</>
                       : <><Icon name="Info" size={14} /> Nothing changed yet.</>}
         </span>
         <span className="cv-row" style={{ gap: 8 }}>
-          {dirty && <Button size="sm" variant="ghost" icon="RotateCcw" onClick={discard}>Discard</Button>}
-          <Button size="sm" variant={canCommit ? 'secondary' : 'primary'} icon="ListChecks" disabled={mapBlocked} onClick={check}>Check {mode === 'grid' ? plural(rows.length, 'row') : parsed ? plural(parsed.rows.length, 'row') : 'the rows'}</Button>
-          <Button size="sm" icon="Check" disabled={!canCommit} onClick={commit}>{a?.unchanged ? 'Nothing to commit' : `Commit to ${CV_ROOM.short}`}</Button>
+          {dirty && <Button size="sm" variant="ghost" icon="RotateCcw" onClick={discard}>Start over</Button>}
+          <Button icon="Check" disabled={!canCommit} onClick={commit}>{a?.unchanged ? 'Nothing to save' : `Save to ${CV_ROOM.short}`}</Button>
         </span>
       </div>
     </section>

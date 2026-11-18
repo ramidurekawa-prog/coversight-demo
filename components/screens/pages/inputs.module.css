@@ -431,3 +431,27 @@ button.mRow.on { background: var(--accent-subtle); }
   .page .mRow > :nth-child(2), .page .mRow > :nth-child(3) { display: none; }
   .mGo { font-size: 0; }
 }
+
+/* ---------------------------------------------------------------- import review: one screen, and a phone layout */
+.tally { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.tallyNote { font-size: 14px; color: var(--fg-2); }
+.onlyPhone { display: none; }
+@media (max-width: 700px) {
+  .onlyPhone { display: inline-flex; }
+  .notPhone { display: none; }
+  .panelWork .panelBody { padding: 12px 12px 20px; }
+  /* the edit table becomes one card per row, each field with its label */
+  .gridTable, .gridTable tbody { display: block; width: 100%; }
+  .gridTable thead { display: none; }
+  .gridTable tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px 10px; padding: 12px; margin-bottom: 10px; border-radius: 12px; background: var(--surface); box-shadow: var(--soft); position: relative; }
+  .gridTable td { display: flex; flex-direction: column; gap: 4px; padding: 0; border: 0; }
+  .gridTable td[data-label]::before { content: attr(data-label); font-size: 13px; font-weight: 600; color: var(--fg-2); }
+  .gridTable td:first-child { display: none; }
+  .gridTable td:nth-child(2) { grid-column: 1 / -1; padding-right: 36px; }
+  .gridTable td:last-child { position: absolute; top: 8px; right: 8px; }
+  .gridTable td input, .gridTable td select { width: 100%; min-height: 44px; font-size: 16px; text-align: left; border: 1px solid var(--border-strong); border-radius: 8px; padding: 0 10px; background: var(--surface); }
+  .bar { flex-direction: column; align-items: stretch; gap: 10px; }
+  .bar :global(.btn) { min-height: 48px; justify-content: center; }
+}
+.trustLink { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; color: var(--fg-1); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--border-strong); }
+@media (max-width: 700px) { .bar > :last-child { display: flex; } .bar > :last-child :global(.btn-primary) { flex: 1; } }
