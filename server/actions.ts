@@ -17,6 +17,16 @@ const id = z.string().min(1).max(120);
 const isoDate = z.string().max(40);
 const flags = z.record(id, isoDate);
 
+const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const forecastSignals = z.object({
+  events: z.array(z.object({ date: day, name: z.string().trim().min(1).max(80), lift: z.number().min(-100).max(500).nullable().optional(), by: z.string().max(80).optional() })).max(100).optional(),
+  closures: z.array(day).max(120).optional(),
+  weather: z.array(z.object({ date: day, rainIn: z.number().min(0).max(20), tempF: z.number().min(-60).max(140).nullable().optional() })).max(250).optional(),
+  reservations: z.array(z.object({ date: day, covers: z.number().int().min(0).max(5000), asOf: day })).max(250).optional(),
+  days: z.array(z.object({ date: day, covers: z.number().int().min(0).max(20_000).optional(), net: z.number().min(0).max(5_000_000).optional() })).max(250).optional(),
+  location: z.object({ lat: z.number().min(-90).max(90), lon: z.number().min(-180).max(180) }).nullable().optional(),
+});
+
 const layoutRole = z.object({ metrics: z.array(z.string().max(20)).max(6), widgets: z.array(z.string().max(20)).max(6) });
 
 export const ACTION_KEYS = {
@@ -56,6 +66,17 @@ export const ACTION_KEYS = {
   autonomy: { scope: 'room', schema: z.record(z.string().min(1).max(40), z.number().int().min(0).max(4)) },
   /** Pricing on the invoice: per room per month, and the fee on reconciled savings. */
   pricing: { scope: 'group', schema: z.object({ perRoomMonthlyCents: z.number().int().min(0).max(1_000_000), feePct: z.number().min(0).max(50) }) },
+  /** Service: tonight's answer to the one staffing call, per night (the room's local date). */
+  'service.night': { scope: 'room', schema: z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), answer: z.enum(['ask', 'yes', 'no', 'later']), at: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable(), approvalId: z.string().max(120).optional(), meal: z.enum(['lunch', 'dinner']).optional(), until: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(), to: z.enum(['gm', 'floor']).optional(),
+    /** The last decisions, newest first, so the page can show what was decided and what came of it. */
+    past: z.array(z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), meal: z.enum(['lunch', 'dinner']).optional(), answer: z.enum(['yes', 'no', 'later', 'ask']), at: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable(), approvalId: z.string().max(120).optional(), to: z.enum(['gm', 'floor']).optional(), when: z.string().max(40) })).max(30).optional() }) },
+  /**
+   * Covercast's hand-entered signals for a room: events (with the lift the
+   * manager expects, if any), closures, rain, reservations on the books, past
+   * days typed in where no feed has them, and where the room is (for the
+   * weather feed). Feeds add to these; a hand entry is never overwritten.
+   */
+  'forecast.signals': { scope: 'room', schema: forecastSignals },
   /** Weekly meeting: the room's slot (day of week, 0 = Sunday, local time, length) and who usually attends. */
   'meeting.schedule': { scope: 'room', schema: meetingSchemas.schedule },
   /** Labor: days entered by hand (cost and hours), for when no schedule or payroll feed is connected or one is down. One entry per date. */
@@ -66,6 +87,8 @@ export const ACTION_KEYS = {
   'labour.moves': { scope: 'room', schema: z.record(id, z.object({ s: z.enum(['planned', 'skipped']), at: isoDate, t: z.string().max(160).optional() })) },
   /** Labor: cooks on the line by hour for each weekday, entered by hand when no schedule feed carries kitchen roles. Read-only analysis: never changes a schedule. */
   'labour.crew': { scope: 'room', schema: z.record(z.string().regex(/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)$/), z.record(z.string().regex(/^([01]?\d|2[0-3])$/), z.number().min(0).max(40))) },
+  /** Service: tonight's count entered by hand when no live feed is on (covers so far, servers on), per night. */
+  'service.manual': { scope: 'room', schema: z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), entries: z.array(z.object({ meal: z.enum(['lunch', 'dinner']), at: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/), covers: z.number().int().min(0).max(5000), servers: z.number().int().min(0).max(200).nullable(), saved: z.string().max(40) })).max(24) }) },
   /** This week: weeks marked reviewed, keyed by the data week's first day, with an optional note. Who reviewed comes from the row's user. */
   'week.review': { scope: 'room', schema: z.record(z.string().regex(/^\d{4}-\d{2}-\d{2}$/), z.object({ at: isoDate, note: z.string().trim().max(1000).optional() })).refine((r) => Object.keys(r).length <= 26, 'keeps at most 26 weeks') },
 } as const;
