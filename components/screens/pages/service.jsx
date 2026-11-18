@@ -55,7 +55,7 @@ function outcomeFor(role, answer, { impact, perServer, usualRate, on }) {
   const cut = answer.cut;
   if (answer.tone === 'neutral' || answer.empty) return null;
   if (cut) {
-    if (role === 'owner') return impact != null ? { text: `About ${cvMoney(impact)} of labor back tonight, with every table still covered`, money: true } : { text: 'Labor back on target tonight, with every table still covered' };
+    if (role === 'owner') return { text: 'Labor back on target tonight, with every table still covered' };
     if (role === 'floor') return perServer != null ? { text: `Your team stays covered to close: about ${perServer} guests per server an hour${usualRate ? ` (your usual is ${usualRate})` : ''}` } : { text: 'Your team stays covered to close' };
     return { text: `One call, made in time: ${on} → ${on - 1} servers${impact != null ? `, about ${cvMoney(impact)} of labor back` : ''}`, money: impact != null };
   }
@@ -68,6 +68,13 @@ const hoursLabel = (m) => `${clockLabel(m.from * 60).replace(':00', '')}–${clo
 const niceDate = (iso) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
 const pct = (p) => (p === 0 ? 'right on' : `${Math.abs(p)}% ${p < 0 ? 'under' : 'over'}`);
 const SLOT_FLOOR = 6 * 60; // a picked value at or above this is a time in minutes, below it an hour
+
+/** The role switch is a demo tool: shown only with ?tools=1, like the shell's own view-as. */
+function useDemoTools() {
+  const [on, setOn] = React.useState(false);
+  React.useEffect(() => { try { setOn(window.localStorage.getItem('cv-tools') === '1'); } catch { /* private window */ } }, []);
+  return on;
+}
 
 /** The view (service, day, tabs) is remembered per browser, across rooms. */
 function useView() {
@@ -274,6 +281,9 @@ function CvService() {
   const server = eng.mode === 'server';
   const own = !!CV_D.room.fromToast;
   const [view, setView] = useView();
+  const tools = useDemoTools();
+  const [more, setMore] = React.useState(false);
+  const [showDetail, setShowDetail] = React.useState(false);
   const live = useLive(CV_D.id, server && own);
   const [fencesSaved] = useSaved('fences', null);
   const myRole = ['gm', 'floor'].includes(eng.viewer?.role) ? eng.viewer.role : cv.role === 'gm' ? 'gm' : 'owner';
@@ -526,7 +536,7 @@ function CvService() {
       <div className={s.lead}>
         <PageHead over={`${NAMES.page} · ${CV_ROOM.name} · ${dayOf(day)}${isToday ? ` · ${clockLabel(nowMin)}` : ` · ${niceDate(date)}`}`} q={PROMISE[role]} />
         <div className={s.when}>
-          <Seg label="View as" value={role} onChange={(k) => setView({ role: k })} options={ROLES} />
+          {tools && <Seg label="View as" value={role} onChange={(k) => setView({ role: k })} options={ROLES} />}
           <Seg label="Which day" value={view.when === 'today' || view.when === 'tomorrow' ? view.when : 'date'} onChange={(k) => setView({ when: k })} options={[['today', 'Today'], ['tomorrow', 'Tomorrow']]} />
           <label className={`${s.datePick} ${view.when !== 'today' && view.when !== 'tomorrow' ? s.segOn : ''}`}><span className="sr-only">Pick a date</span><Icon name="CalendarDays" size={15} /><input type="date" value={date} onChange={(e) => e.target.value && setView({ when: e.target.value === clock.date ? 'today' : e.target.value === addDays(clock.date, 1) ? 'tomorrow' : e.target.value })} /></label>
         </div>
@@ -535,10 +545,10 @@ function CvService() {
       <div className={s.mode}><span className={`${s.dot} ${source.dot}`} />{source.text}</div>
       {banner}
 
-      <div className={s.strip} role="group" aria-label="Lunch, dinner or the full day">
-        <MealCard id="lunch" active={view.meal === 'lunch'} onPick={(id) => { setView({ meal: id }); setSel(null); }} title="Lunch" hours={hoursLabel(MEALS.lunch)} {...lc} />
-        <MealCard id="dinner" active={view.meal !== 'lunch' && view.meal !== 'day'} onPick={(id) => { setView({ meal: id }); setSel(null); }} title="Dinner" hours={hoursLabel(MEALS.dinner)} {...dc} />
-        <MealCard id="day" active={view.meal === 'day'} onPick={(id) => { setView({ meal: id }); setSel(null); }} title="Full day" hours="" big={dayTotal} unit="covers" foot={dayFoot} state={null} />
+      <div className={`${s.strip} ${s.stripSlim}`} role="group" aria-label="Lunch, dinner or the full day">
+        <MealCard id="lunch" active={view.meal === 'lunch'} onPick={(id) => { setView({ meal: id }); setSel(null); }} title="Lunch" {...lc} foot={null} />
+        <MealCard id="dinner" active={view.meal !== 'lunch' && view.meal !== 'day'} onPick={(id) => { setView({ meal: id }); setSel(null); }} title="Dinner" {...dc} foot={null} />
+        {both && <MealCard id="day" active={view.meal === 'day'} onPick={(id) => { setView({ meal: id }); setSel(null); }} title="Full day" big={dayTotal} unit="covers" foot={null} state={null} />}
       </div>
 
       <section className={`${s.hero} ${s[`h_${answer.tone}`] || ''}`} aria-labelledby="svc-hero">
@@ -547,7 +557,6 @@ function CvService() {
           {promise && <p className={s.heroOutcome}><Icon name={role === 'floor' ? 'Users' : role === 'owner' ? 'TrendingUp' : 'Gauge'} size={18} /><span>{promise.text}</span>{promise.money && <Claim k="est" />}</p>}
           <h2 id="svc-hero" className={s.heroTitle} role="status" aria-live="polite">{answer.title}</h2>
           {answer.why && <p className={s.heroSub}>{answer.why}</p>}
-          {cut && answer.next && !state && <p className={s.heroNext}><Icon name="ArrowRight" size={15} />{answer.next}</p>}
           {night?.to && !yes && <span className={s.typedNote}><Icon name="UserPlus" size={14} />Handed to the {HANDOFF[night.to]}.</span>}
           {showManual && <ManualForm key={`${meal}:${manual?.saved ?? 'new'}`} meal={meal} entry={latest(meal)} nowMin={nowMin} onSave={saveManual} primary={!cut || !!state} />}
           {showManual && manual && <span className={s.typedNote}><Icon name="PenLine" size={14} />Typed by you for {clockLabel(clockMinutes(manual.at))}. One count can’t check sections or breaks. Change a number and save to fix it.</span>}
@@ -555,33 +564,32 @@ function CvService() {
             <div className={s.heroActions}>
               <Button className={s.cta} icon="Check" onClick={approve} disabled={busy}>{busy ? 'Checking…' : `Approve ${clockLabel(cut.at)} send-home`}</Button>
               <Button variant="secondary" onClick={decline} disabled={busy}>Not tonight</Button>
-              <Button variant="ghost" icon="Timer" onClick={snooze} disabled={busy}>Ask me in 30 min</Button>
-              <span className={s.handoff} role="group" aria-label="Hand this to">
-                <span className="cv-xs cv-faint">Hand to</span>
-                <Button size="sm" variant="ghost" icon="UserPlus" onClick={() => handoff('floor')} disabled={busy}>Floor manager</Button>
-                <Button size="sm" variant="ghost" onClick={() => handoff('gm')} disabled={busy}>GM</Button>
-              </span>
+              {!more ? <Button variant="ghost" iconRight="ChevronRight" onClick={() => setMore(true)} aria-expanded={false}>More</Button> : (
+                <span className={s.handoff} role="group" aria-label="More choices">
+                  <Button size="sm" variant="ghost" icon="Timer" onClick={snooze} disabled={busy}>Ask me in 30 min</Button>
+                  <Button size="sm" variant="ghost" icon="UserPlus" onClick={() => handoff('floor')} disabled={busy}>Hand to floor manager</Button>
+                  <Button size="sm" variant="ghost" onClick={() => handoff('gm')} disabled={busy}>Hand to GM</Button>
+                </span>
+              )}
             </div>
           ))}
           {answer.empty && !showManual && <div className={s.heroActions}><Button className={s.cta} iconRight="ArrowRight" onClick={() => cv.go('inputs')}>Add Toast data</Button></div>}
-          {cut && !state && <span className={s.proof}><Icon name="ShieldCheck" size={14} />{NAMES.guard} checks it again when you approve. {NAMES.proof} counts it as saved only once Toast shows it.</span>}
         </div>
-        {(cut || L || manual || rows.length > 0) && <aside className={s.heroSide}>
+        {(cut || L || manual) && <aside className={s.heroSide}>
           {cut ? (
             <div className={`${s.sideStack} ${role === 'floor' ? s.sideFlip : ''}`}>
               <div>
-                <span className={s.sideLabel}>Labor you could save after {clockLabel(cut.at)}</span>
+                <span className={s.sideLabel}>Labor back tonight</span>
                 {impact != null
                   ? <span className={s.impact}>{!own ? <Money id="service-cut">{cvMoney(impact)}</Money> : cvMoney(impact)}</span>
                   : <span className={`${s.impact} ${s.none}`}>—</span>}
-                <span className={s.sideFoot}>{impact != null ? <>Potential, not saved yet <Claim k="est" /></> : 'No wage rates in your data, so no dollar figure.'}</span>
+                <span className={s.sideFoot}>{impact != null ? <>Potential <Claim k="est" /></> : 'No wage rates yet'}</span>
               </div>
               <div className={s.sideSep} />
               <div>
-                <span className={s.sideLabel}>After {clockLabel(cut.at)} · on → needed</span>
+                <span className={s.sideLabel}>Servers after {clockLabel(cut.at)}</span>
                 <span className={s.ba}><b>{before.on}</b><Icon name="ArrowRight" size={18} /><b className={s.baAfter}>{before.need}</b></span>
                 <Seats on={before.on} need={before.need} gone />
-                <span className={s.sideFoot}>Without a change, 1 extra server for about {hl} hour{hoursLeft === 1 ? '' : 's'}. With it, the busiest likely finish is still covered.</span>
               </div>
             </div>
           ) : (
@@ -595,17 +603,17 @@ function CvService() {
         </aside>}
       </section>
 
-      <div className={s.grid}>
+      <div>
         <section className={`cv-card ${s.panel}`}>
           <div className={s.panelHead}>
-            <div><h3 className="cv-h4">{chartTitle}</h3><p className="cv-xs cv-faint">{chartSub}</p></div>
+            <h3 className="cv-h4">{chartTitle}</h3>
             <Seg label="What to show" value={tab} onChange={(k) => setView({ tab: k })} options={[['forecast', 'Forecast', 'TrendingUp'], ['staffing', 'Staffing', 'Users'], ['performance', 'Performance', 'Gauge']]} wide />
           </div>
           {tab === 'forecast' && L ? <GuestsChart L={L} sel={sel != null && sel >= SLOT_FLOOR ? sel : null} onSel={setSel} staffAt={staffAt} usual={`Usual ${dayOf(day)}`} />
             : rows.length ? <HourChart rows={rows} mode={tab === 'forecast' ? 'covers' : tab === 'staffing' ? 'staff' : 'perf'} sel={selHour} onSel={setSel} cutFrom={plan?.cutFrom} rate={plan?.rate ?? null} nowHour={nowHour} />
               : <Note icon="Clock">No {M.label.toLowerCase()} history for {dayOf(day)}s yet.{showManual ? ' Type your count in the card above.' : ''}</Note>}
           {stats.length > 0 && <div className={s.stats}>{stats.map(([k, v]) => <div key={k} className={s.stat}><span>{k}</span><b>{v}</b></div>)}</div>}
-          {pick == null ? (rows.length || L ? <span className="cv-xs cv-faint">Tap a time on the chart for its breakdown.</span> : null) : (() => {
+          {pick == null ? null : (() => {
             const h = rows.find((r) => r.hour === Math.floor(pick / 60));
             const sl = slots.find((r) => r.at === pick);
             return (
@@ -623,31 +631,11 @@ function CvService() {
           })()}
         </section>
 
-        <section className={`cv-card ${s.panel}`}>
-          <h3 className="cv-h4">{NAMES.map} · where staffing meets demand</h3>
-          <p className="cv-xs cv-faint">{isToday && !ended ? 'The hours ahead' : `Each hour of ${M.label.toLowerCase()}`}, sized for the busiest recent week.</p>
-          {ahead.length ? (
-            <ul className={s.windows}>
-              {ahead.slice(0, 6).map((r) => {
-                const gone = !!cut && r.hour * 60 >= cut.at;
-                const tag = r.short ? ['bad', `${r.short} short`] : r.spare ? ['warn', `${r.spare} spare`] : ['good', 'Covered'];
-                return (
-                  <li key={r.hour}>
-                    <button type="button" className={`${s.window} ${selHour === r.hour ? s.windowOn : ''}`} onClick={() => setSel(r.hour)} aria-pressed={selHour === r.hour}>
-                      <span className={s.windowTop}><b>{clockLabel(r.hour * 60)}</b><span className={`${s.tag} ${s[`t_${tag[0]}`]}`}>{tag[1]}</span></span>
-                      <span className="cv-xs cv-faint">usually {Math.round(r.servers)} on · {r.need} needed · about {r.usual} guests</span>
-                      <Seats on={Math.round(r.servers)} need={r.need} gone={gone} />
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          ) : <Note icon="Clock">No hours to show for {M.label.toLowerCase()} yet.</Note>}
-          {(L?.serversNow != null || manual?.servers != null) && <p className="cv-xs cv-muted">Right now: {L?.serversNow ?? manual.servers} on{L?.source === 'toast' ? ', from Toast clock-ins' : L?.source === 'sample' ? ' (sample)' : ', your count'}.</p>}
-        </section>
       </div>
 
-      <section className={`cv-card ${s.detail}`}>
+      {!showDetail ? (
+        <button type="button" className={s.moreDetail} onClick={() => setShowDetail(true)}><Icon name="ChevronDown" size={16} />Details: every 15 minutes, hour by hour, {NAMES.guard}, the money, past decisions</button>
+      ) : <section className={`cv-card ${s.detail}`}>
         <div className={s.detailHead}>
           <div className={s.tabs} role="tablist" aria-label="Details">
             {detailTabs.map(([k, label]) => <button key={k} role="tab" type="button" aria-selected={view.detail === k} className={`${s.tab} ${view.detail === k ? s.tabOn : ''}`} onClick={() => setView({ detail: k })}>{label}</button>)}
@@ -704,7 +692,7 @@ function CvService() {
           ) : <Note icon="ListChecks">No decisions yet. Each one shows here with what came of it.</Note>)}
           {view.detail === 'busy' && <DenseService />}
         </div>
-      </section>
+      </section>}
     </div>
   );
 }
