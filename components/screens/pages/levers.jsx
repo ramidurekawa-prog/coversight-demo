@@ -64,7 +64,7 @@ function CvLevers() {
                           const w = testOf(l.key);
                           if (w) return <span className="cv-row" style={{ gap: 6, marginTop: 6 }}><Pill tone={w.status === 'verified' ? 'good' : 'info'} icon="Timer">{w.status === 'verified' ? 'Verified' : `Testing · day ${w.day} of 28`}</Pill><button className="cv-link" onClick={() => cv.go('windows')}>See the test</button></span>;
                           if (l.key === 'menu_margin') return <span className="cv-row" style={{ marginTop: 6 }}><button className="cv-link" onClick={() => cv.go('windows')}>Pick a dish to test on Test windows</button></span>;
-                          return l.weekly > 0 ? <span className="cv-row" style={{ marginTop: 6 }}><Button size="sm" icon="Play" onClick={(e) => { e.stopPropagation(); start(l.key); }}>Start a 28-day test</Button></span> : null;
+                          return l.weekly > 0 ? <span className="cv-row" style={{ marginTop: 6 }}><Button size="sm" variant="secondary" icon="Play" onClick={(e) => { e.stopPropagation(); start(l.key); }}>Start a 28-day test</Button></span> : null;
                         })()}
                       </td>
                     </tr>
@@ -79,7 +79,7 @@ function CvLevers() {
         <section className="cv-card">
           <span className="cv-h4">What changed from the typed numbers</span>
           <ul className="cv-ul">
-            <li><Icon name="Users" size={15} />Labour: each room's own pace in its busiest hours replaces “14 covers a server”.</li>
+            <li><Icon name="Users" size={15} />Labor: each room's own pace in its busiest hours replaces “14 covers a server”.</li>
             <li><Icon name="Receipt" size={15} />Voids & comps: the norm is the room's 8 weeks before, on a control chart; a whole-room rise is its own finding.</li>
             <li><Icon name="UtensilsCrossed" size={15} />Menu: each dish's price sensitivity is fitted from its own price changes, so a rise is valued after the plates it loses.</li>
             <li><Icon name="Armchair" size={15} />Turns: “guests were waiting” is measured from how fast tables are reseated, not assumed at 50% × 0.52, and valued after food cost.</li>

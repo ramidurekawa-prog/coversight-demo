@@ -34,7 +34,7 @@ function CvFences() {
         sub="Fences are hard limits. Every draft and every automated change is checked against them, and a breach drops that lever back to recommending." />
       <div className="cv-grid g2">
         <section className="cv-card">
-          <div className="cv-card-head"><span className="cv-h4">Labour</span><Pill icon="Gauge">A2 · Drafts</Pill></div>
+          <div className="cv-card-head"><span className="cv-h4">Labor</span><Pill icon="Gauge">A2 · Drafts</Pill></div>
           {num("minDinner", "Fewest servers on dinner", "servers", 1, 10)}
           {num("minAny", "Fewest servers at any open hour", "servers", 1, 10)}
           {num("lockHours", "No schedule change within", "hours", 0, 72)}
@@ -62,7 +62,7 @@ function CvFences() {
           <span className="cv-h4">Keeping it quiet</span>
           {tog("onePerService", "At most one email per person every 4 hours", "Alert fatigue is what kills engagement; the rest wait in the bell")}
           {tog("quiet", "Quiet hours, 10 pm to 7 am", "Email waits until morning")}
-          <Callout icon="Users">The GM gets service and labour messages. The owner gets alarms and the weekly summary. The controller gets period packages only.</Callout>
+          <Callout icon="Users">The GM gets service and labor messages. The owner gets alarms and the weekly summary. The controller gets period packages only.</Callout>
         </section>
       </div>
       <div className="cv-row"><Button icon="Check" disabled={!dirty} onClick={() => { const version = saved.version + 1; setSaved({ version, f, al }, `Fences saved as version ${version}`); cv.toast(`Fences saved as version ${version}, effective now. Drafts re-check them every time.`); }}>Save fences</Button><span className="cv-xs cv-faint cv-num">v{saved.version}</span><span className="cv-xs cv-faint">Every change is versioned and shown on the verification packets it affects.</span></div>

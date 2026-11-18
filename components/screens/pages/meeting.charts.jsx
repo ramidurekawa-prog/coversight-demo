@@ -51,7 +51,7 @@ export function WeekBars({ rows, n = 12, h = 150 }) {
         <span className={s.readNum}>{usd(r.earned)}</span>
         {prev && <span className={r.earned >= prev.earned ? s.up : s.down}>{signedUsd(r.earned - prev.earned)} vs week before</span>}
       </Readout>
-      <svg className="cv-chart" viewBox={`0 0 ${W} ${h}`} role="group" aria-label={`Contribution after food and labour, last ${data.length} weeks`}>
+      <svg className="cv-chart" viewBox={`0 0 ${W} ${h}`} role="group" aria-label={`Contribution after food and labor, last ${data.length} weeks`}>
         {avg != null && (
           <g>
             <line x1={P.l} x2={W - P.r} y1={y(avg)} y2={y(avg)} stroke="var(--fg-3)" strokeDasharray="3 4" />
@@ -85,7 +85,7 @@ export function Drivers({ rows }) {
   const parts = [
     ['Sales', last.net - avg('net')],
     ['Food cost', -(last.food - avg('food'))],
-    ['Labour', -(last.labour - avg('labour'))],
+    ['Labor', -(last.labour - avg('labour'))],
   ];
   const max = Math.max(...parts.map(([, v]) => Math.abs(v))) || 1;
   return (
