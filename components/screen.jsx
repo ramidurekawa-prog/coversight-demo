@@ -79,10 +79,20 @@ export const SCREENS = {
   system: CvSystem,
 };
 
+/**
+ * Pages that carry their own copy of Today's style in their page CSS module.
+ * Every other page gets it from app/page-style.css through data-style="today".
+ */
+export const OWN_STYLE = ['today', 'week', 'inputs', 'trends', 'labour'];
+
 /** @param {{ page: string, id?: string | null }} props */
 export function Screen({ page, id = null }) {
   const C = SCREENS[page];
-  return <C params={id ? { id } : {}} />;
+  return (
+    <div data-style={OWN_STYLE.includes(page) ? undefined : 'today'} style={{ display: 'contents' }}>
+      <C params={id ? { id } : {}} />
+    </div>
+  );
 }
 
 /** The build plan. Its focus (which screen's gaps to show) lives in the URL hash. */

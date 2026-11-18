@@ -47,7 +47,7 @@ function ItemVisual({ item }) {
     return (
       <div className={s.visual}>
         <div className={s.bigRow}>
-          {first && <BigNum label="Contribution after food and labour" value={first.value} claim={first.claim} />}
+          {first && <BigNum label="Contribution after food and labor" value={first.value} claim={first.claim} />}
           {second && <BigNum label="vs 4-week average" value={second.value} claim={second.claim} tone={second.value.startsWith('−') ? 'down' : 'up'} />}
           {third && <BigNum label="Verified saving run-rate" value={third.value} claim={third.claim} sub=" not realized cash" />}
         </div>

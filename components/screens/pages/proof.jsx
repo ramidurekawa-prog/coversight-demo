@@ -52,7 +52,7 @@ function CvProof() {
           <span className="cv-fig md cv-up">{cvMoney(bookable)}<span className="cv-small cv-faint" style={{ fontFamily: "var(--font-sans)", fontWeight: 400 }}>/wk</span></span>
           <Claim k="book" />
         </div>
-        <Button variant="secondary" icon="FileOutput" onClick={() => cv.go("accountant")}>Package for your accountant</Button>
+        <Button icon="FileOutput" onClick={() => cv.go("accountant")}>Package for your accountant</Button>
       </div>
       <section className="cv-card flush">
         <div className="cv-tablewrap" tabIndex={0} role="group" aria-label="Scrollable table">
