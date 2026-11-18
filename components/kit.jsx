@@ -163,6 +163,12 @@ import {
   Type,
   ArrowDownRight,
   ChevronRight,
+  Cloud,
+  FileArchive,
+  HardDrive,
+  History,
+  Minus,
+  Settings,
   User,
 } from 'lucide-react';
 
@@ -325,6 +331,12 @@ const ICONS = {
   Type,
   ArrowDownRight,
   ChevronRight,
+  Cloud,
+  FileArchive,
+  HardDrive,
+  History,
+  Minus,
+  Settings,
   User,
 };
 
