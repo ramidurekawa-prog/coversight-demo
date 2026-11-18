@@ -455,3 +455,29 @@ button.mRow.on { background: var(--accent-subtle); }
 }
 .trustLink { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; color: var(--fg-1); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--border-strong); }
 @media (max-width: 700px) { .bar > :last-child { display: flex; } .bar > :last-child :global(.btn-primary) { flex: 1; } }
+
+/* ---------------------------------------------------------------- plain data entry: a drop area and one list */
+.narrow:global(.cv-page) { max-width: 920px; margin-left: auto; margin-right: auto; gap: 20px; }
+.dataRows { display: flex; flex-direction: column; }
+.dataRow { display: grid; grid-template-columns: minmax(0, 1fr) 190px; gap: 16px; align-items: center; padding: 14px 0; border-top: 1px solid var(--border); }
+.dataRow:first-child { border-top: 0; padding-top: 4px; }
+.dataRow:last-child { padding-bottom: 4px; }
+.dataRow > :global(.btn) { justify-content: center; min-height: 40px; }
+.dataMain { all: unset; box-sizing: border-box; cursor: pointer; display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 6px 8px; margin: -6px -8px; border-radius: 10px; min-width: 0; }
+.dataMain:hover { background: var(--surface-sunken); }
+.dataMain:focus-visible { box-shadow: var(--ring); }
+.dataIco { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 10px; background: var(--surface-sunken); color: var(--fg-1); }
+.dataText { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.dataText b { font-size: 17px; font-weight: 600; color: var(--fg-1); }
+.dataText span { font-size: 14px; color: var(--fg-2); }
+.moreLinks { display: flex; flex-wrap: wrap; gap: 8px 12px; }
+.moreLinks > * { all: unset; box-sizing: border-box; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px; border-radius: 10px; font-size: 15px; font-weight: 600; color: var(--fg-1); background: var(--surface); box-shadow: var(--soft); }
+.moreLinks > *:hover { box-shadow: var(--soft-hover); }
+.moreLinks > *:focus-visible { box-shadow: var(--ring); }
+.moreNote { font-weight: 500; color: var(--fg-2); }
+.page .dropStrip { padding: 22px 20px; }
+@media (max-width: 700px) {
+  .dataRow { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .dataMain { grid-template-columns: 40px minmax(0, 1fr); }
+  .dataMain > :global(.cv-pill) { grid-column: 2; justify-self: start; }
+}

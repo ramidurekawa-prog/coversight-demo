@@ -8,7 +8,7 @@ import { CV_D, CV_DS, CV_ROOM, PageHead, Pill } from '../core';
 import { useEngine } from '../../engine';
 import { KINDS } from '../../../lib/data/ingest';
 import { SCHEMAS, attention, blockedWhy, dependsOn, pageState, stakes } from '../../../lib/data/page/inputs';
-import { Connections, DropStrip, FixNext, ReadyList, Summary } from './inputs-visual';
+import { Connections, DataRows, DropStrip, applies } from './inputs-visual';
 import { ToastImport } from '../toast-import';
 import { BringIn } from '../bring-in';
 import { boardRows } from './inputs-board';
@@ -50,7 +50,6 @@ function CvInputs() {
     return () => window.removeEventListener('hashchange', read);
   }, []);
   const setHash = (k) => { try { window.history.replaceState(null, '', k ? `#${k}` : window.location.pathname + window.location.search); } catch { /* no history */ } };
-  const scrollTo = (id) => requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   const open = (k, m = null) => { setPanel(null); setKind(k); setSeed(null); setStartMode(m); setEditing(true); setHash(k); };
   const closeEditor = React.useCallback(() => { setEditing(false); setSeed(null); setHash(''); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const review = (x) => { setPanel(null); setSeed(x); setKind(x.kind); setStartMode('csv'); setEditing(true); setHash(x.kind); };
@@ -93,70 +92,42 @@ function CvInputs() {
   const ownKinds = rows.filter((r) => r.src.key === 'hand' || r.src.key === 'linked').length;
   const head = pageState({ sample, items, own: ownKinds, connected: systems.filter((x) => !x.sample && x.state !== 'off').length });
 
+  const needs = items.length;
+  const headline = needs ? `${needs} of ${rows.length} need${needs === 1 ? 's' : ''} your data` : 'Your data is up to date';
+
   return (
-    <div className={`cv-page wide ${s.page}`} data-page="inputs" {...dropHandlers}>
-      <PageHead over={`Data & Connections · ${CV_ROOM.name}`} q={head.headline} sub={head.sub}
-        right={<>
-          <Pill tone={server ? 'good' : 'neutral'} icon={server ? 'Cloud' : 'HardDrive'}>{server ? 'Saved to your account' : 'Demo: saved in this browser only'}</Pill>
-        </>} />
-      {sample && (
-        <div className={s.sampleBar} role="note">
-          <Icon name="FlaskConical" size={18} />
-          <span className={s.sampleText}><b>You&apos;re viewing a sample restaurant.</b> Every figure here is an example, not your restaurant&apos;s result.</span>
-          <span className={s.sampleActs}>
-            <Button size="sm" variant="ghost" onClick={() => setPanel({ type: 'sample' })}>How the sample works</Button>
-            <Link className={`btn btn-sm ${s.inkBtn}`} href="/connect"><Icon name="PlugZap" size={15} />Connect your restaurant</Link>
-          </span>
-        </div>
-      )}
-      <Summary systems={systems} rows={rows} items={items}
-        onConnections={() => scrollTo('inputs-conns')} onReadiness={() => setPanel({ type: 'ready' })} onIssues={() => scrollTo('inputs-next')} />
+    <div className={`cv-page ${s.page} ${s.narrow}`} data-page="inputs" data-state={head.state} {...dropHandlers}>
+      <PageHead over={`Data & Connections · ${CV_ROOM.name}`} q={headline}
+        sub="Add or update anything here. Use it when a connection is missing or gets something wrong."
+        right={sample
+          ? <Button size="sm" variant="secondary" icon="FlaskConical" onClick={() => setPanel({ type: 'sample' })}>Sample data</Button>
+          : <Pill tone="good" icon="Cloud">Saved to your account</Pill>} />
 
-      <DropStrip over={dragging} onFiles={(f) => add('file', f)} onPhoto={(f) => add('scan', f)} onConnect={() => add('connect')} onType={() => add('manual')} />
+      <DropStrip over={dragging} onFiles={(f) => add('file', f)} onPhoto={(f) => add('scan', f)} />
 
-      <section className="cv-card" aria-labelledby="inputs-next-h" id="inputs-next" style={{ scrollMarginTop: 16 }}>
-        <div className="cv-card-head">
-          <div className="cv-col" style={{ gap: 2 }}>
-            <span className="cv-h4" id="inputs-next-h">Your data</span>
-            <span className="cv-xs cv-faint">Everything Coversight uses at {CV_ROOM.short}, each listed once</span>
-          </div>
-        </div>
-        <span className={s.groupHead}><Icon name={items.length ? 'TriangleAlert' : 'CircleCheck'} size={15} color={items.length ? 'var(--warning-600)' : 'var(--success-600)'} />Needs you · {items.length}</span>
-        <FixNext items={items} server={server} sample={sample} onOpen={open} onLink={() => add('connect')} onUnlocks={(k) => setPanel({ type: 'cap', kind: k })} quiet={editing} />
-        {items.length < rows.length && <>
-          <span className={s.groupHead}><Icon name="CircleCheck" size={15} color="var(--success-600)" />Ready · {rows.length - items.length}</span>
-          <ReadyList rows={rows} items={items} sample={sample} kind={editing ? kind : null} onPick={(k) => setPanel({ type: 'kind', kind: k })} />
-        </>}
+      <section className="cv-card" aria-label={`Data for ${CV_ROOM.short}`} id="inputs-next">
+        <DataRows rows={rows} items={items} sample={sample} server={server} quiet={editing}
+          onOpen={open} onLink={() => add('connect')} onDetails={(k) => setPanel({ type: 'kind', kind: k })} />
       </section>
 
-      <div className={s.split2}>
-        <section className="cv-card" aria-labelledby="inputs-conns-h" id="inputs-conns" style={{ scrollMarginTop: 16 }}>
-          <div className="cv-card-head">
-            <div className="cv-col" style={{ gap: 2 }}>
-              <span className="cv-h4" id="inputs-conns-h">Connections</span>
-              <span className="cv-xs cv-faint">{sample ? 'The sample restaurant’s systems' : 'The systems your data comes from'}</span>
-            </div>
-            <Link className="btn btn-ghost btn-sm" href="/sources">All connections<Icon name="ChevronRight" size={15} /></Link>
-          </div>
+      <nav className={s.moreLinks} aria-label="More">
+        <button type="button" onClick={() => setPanel({ type: 'conns' })}><Icon name="PlugZap" size={16} />Connections<span className={s.moreNote}>{systems.filter(applies).filter((x) => x.ok).length} of {systems.filter(applies).length} up to date</span></button>
+        <button type="button" onClick={() => { setHistKind(''); setPanel({ type: 'hist' }); }}><Icon name="History" size={16} />History and undo</button>
+        <Link href="/data"><Icon name="Download" size={16} />Export or delete</Link>
+      </nav>
+
+      {!editing && panel?.type === 'conns' && (
+        <SidePanel over={CV_ROOM.short} title="Connections" onClose={close} wide
+          foot={<Link className="btn btn-secondary btn-sm" href="/sources">All connections<Icon name="ChevronRight" size={15} /></Link>}>
           <Connections systems={systems} busy={linkBusy} onReadNow={readNow}
             onSettings={(l) => setPanel({ type: 'link', link: l })} onToastExports={() => setPanel({ type: 'toast' })} />
-        </section>
-        <div id="inputs-history-card" style={{ scrollMarginTop: 16 }}><History server={server} onChanged={roomHistory.reload} kindFilter={histKind} /></div>
-      </div>
-
-      <div className={s.trust} aria-label={server ? 'How your data is kept' : 'About this demo'}>
-        {server ? <>
-          <span><Icon name="Cloud" size={15} />Saved to your account for your whole team</span>
-          <span><Icon name="Users" size={15} />Owners see every location; a manager sees only their own</span>
-          <span><Icon name="History" size={15} />Every change is recorded and can be undone</span>
-          <span><Icon name="ShieldCheck" size={15} />New data never re-prices a verified saving</span>
-          <Link className={s.trustLink} href="/data">Export or delete your data<Icon name="ChevronRight" size={14} /></Link>
-        </> : <>
-          <span><Icon name="HardDrive" size={15} />Demo only: what you enter here stays in this browser and isn&apos;t shared</span>
-          <span><Icon name="Cloud" size={15} />A real account saves to your restaurant&apos;s account, with a login for each teammate</span>
-          <Link className={s.trustLink} href="/data">Export or delete your data<Icon name="ChevronRight" size={14} /></Link>
-        </>}
-      </div>
+        </SidePanel>
+      )}
+      {!editing && panel?.type === 'hist' && (
+        <SidePanel over={CV_ROOM.short} title="History and undo" onClose={close} wide>
+          <History server={server} onChanged={roomHistory.reload} kindFilter={histKind} />
+        </SidePanel>
+      )}
 
       {editing && (
         <SidePanel workspace over={CV_ROOM.short} title={seed ? 'Import a file' : 'Edit data'} onClose={closeEditor}>
@@ -166,7 +137,7 @@ function CvInputs() {
       {!editing && panel?.type === 'kind' && (() => { const r = rows.find((x) => x.kind === panel.kind); return (
         <KindPanel row={r} item={items.find((x) => x.kind === panel.kind)} stake={stake.find((x) => x.kind === panel.kind)} last={lastFor(panel.kind)} link={linkFor(panel.kind)} server={server} sample={sample}
           onEdit={open} onLink={() => add('connect')} onReadNow={readNow}
-          onHistory={(k) => { setPanel(null); setHistKind(k); scrollTo('inputs-history-card'); }} onClose={close} />
+          onHistory={(k) => { setHistKind(k); setPanel({ type: 'hist' }); }} onClose={close} />
       ); })()}
       {!editing && panel?.type === 'ready' && <ReadinessPanel rows={rows} items={items} onPick={(k) => setPanel({ type: 'kind', kind: k })} onClose={close} />}
       {!editing && panel?.type === 'cap' && <CapabilityPanel kind={panel.kind} stake={stake.find((x) => x.kind === panel.kind)} findings={findingsFor(panel.kind)} sample={sample} onEdit={open} onClose={close} />}
