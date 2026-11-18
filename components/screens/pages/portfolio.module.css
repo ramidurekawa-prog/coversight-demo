@@ -126,7 +126,7 @@
 .prov dd { margin: 0; color: var(--fg-2); line-height: 1.5; }
 
 /* ---- Restaurant tiles */
-.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
 .tile { display: flex; flex-direction: column; gap: 12px; padding: 16px 18px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
 .tile.urgent { border-top: 4px solid var(--signal-bad); }
 .tile.watch { border-top: 4px solid var(--signal-warn); }
@@ -168,3 +168,62 @@
 .sparkBox { position: relative; display: block; width: 100%; height: 34px; }
 .sparkBox .spark { position: absolute; inset: 0; width: 100%; height: 100%; }
 .sparkDot { position: absolute; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%; box-shadow: 0 0 0 2px var(--surface); }
+
+/* ---- Scoreboard tabs (Every room | Day by day), shared with Daily detail */
+.scoreBar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+.scoreTabs { display: inline-flex; padding: 4px; gap: 4px; border-radius: var(--radius-lg); background: var(--surface-sunken); border: 1px solid var(--border); }
+.scoreTabs button { display: inline-flex; align-items: center; gap: 8px; min-height: 42px; padding: 0 18px; border: 0; border-radius: var(--radius-md); background: transparent; color: var(--fg-2); font: 700 var(--text-base)/1 var(--font-sans); cursor: pointer; white-space: nowrap; }
+.scoreTabs button:hover { color: var(--fg-1); }
+.scoreTabs button.on { background: var(--surface); color: var(--fg-1); box-shadow: var(--shadow-xs), inset 0 -3px 0 var(--cv-selected, var(--accent)); }
+.scoreTabs button:focus-visible { outline: none; box-shadow: var(--ring); }
+.scoreCount { display: inline-grid; place-items: center; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 99px; background: var(--surface-sunken); font-size: var(--text-xs); font-weight: 700; color: var(--fg-2); }
+.roomChips { display: flex; flex-wrap: wrap; gap: 6px; }
+.roomChip { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 0 12px; border-radius: 99px; border: 1px solid transparent; font: 600 var(--text-sm)/1 var(--font-sans); cursor: pointer; }
+.roomChip.on { border-color: var(--fg-1); box-shadow: var(--shadow-xs); }
+.roomChip:focus-visible { outline: none; box-shadow: var(--ring); }
+
+/* Good / mid / bad: green, amber, red, always with an icon and words. */
+.mgood { background: var(--signal-good-bg); color: var(--signal-good); }
+.mmid { background: var(--signal-warn-bg); color: var(--signal-warn); }
+.mbad { background: var(--signal-bad-bg); color: var(--signal-bad); }
+.mnone { background: var(--surface-sunken); color: var(--fg-3); }
+.mark { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 99px; font-size: var(--text-xs); font-weight: 700; white-space: nowrap; }
+
+/* Sortable headers */
+.sortBtn { all: unset; display: inline-flex; align-items: center; gap: 4px; cursor: pointer; border-radius: var(--radius-sm); color: inherit; }
+.sortBtn svg { opacity: 0.45; }
+.sortBtn.on { color: var(--fg-1); }
+.sortBtn.on svg { opacity: 1; }
+.sortBtn:focus-visible { box-shadow: var(--ring); }
+.rowBtn { cursor: pointer; }
+.rowBtn:hover td { background: var(--surface-sunken); }
+.rowSel td { background: color-mix(in srgb, var(--cv-selected, var(--accent)) 8%, transparent); }
+
+/* Room standing: a ranked scoreboard strip */
+.standing { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; }
+.standing b { font-variant-numeric: tabular-nums; }
+.rankBadge { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--fg-1); color: var(--surface); font: 800 var(--text-sm)/1 var(--font-sans); flex: none; }
+.badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 99px; font-size: var(--text-xs); font-weight: 700; background: var(--surface-sunken); color: var(--fg-1); border: 1px solid var(--border); }
+
+/* Day by day: the last two weeks as marked tiles */
+.dayStrip { display: grid; grid-template-columns: repeat(14, minmax(0, 1fr)); gap: 6px; }
+.dayCell { all: unset; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 2px; border-radius: var(--radius-md); cursor: pointer; border: 2px solid transparent; min-width: 0; }
+.dayCell .dw { font-size: var(--text-xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; opacity: 0.8; }
+.dayCell .dd { font: 800 var(--text-base)/1 var(--font-sans); font-variant-numeric: tabular-nums; }
+.dayCell .dv { font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dayCell.on { border-color: var(--fg-1); }
+.dayCell:focus-visible { box-shadow: var(--ring); }
+@media (max-width: 760px) {
+  .dayStrip { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+  .scoreTabs { width: 100%; }
+  .scoreTabs button { flex: 1; justify-content: center; padding: 0 10px; }
+}
+
+.tileName { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: var(--text-lg, 1.1rem); }
+.dayCell.mgood { background: var(--signal-good-bg); color: var(--signal-good); }
+.dayCell.mmid { background: var(--signal-warn-bg); color: var(--signal-warn); }
+.dayCell.mbad { background: var(--signal-bad-bg); color: var(--signal-bad); }
+.dayCell.mnone { background: var(--surface-sunken); color: var(--fg-3); }
+.dayCell:hover { border-color: var(--border-strong); }
+.dayCell.on { border-color: var(--fg-1); }

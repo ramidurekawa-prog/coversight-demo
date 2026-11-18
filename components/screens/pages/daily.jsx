@@ -10,6 +10,9 @@ import { COMPARISONS, DEFAULT_DAYPARTS, addDays, calendar, change, compareDay, d
 import { DayChart } from './daily-chart';
 import { Checks, DayItems, DayNote, DayParts, Delta, Fold, Hours, MoneyBreakdown } from './daily-day';
 import { readDailyFiles, useDailyData } from './daily-store';
+import { Mark, ScoreTabs, SortTh } from './portfolio.tabs';
+import { MARKS, dayBoard, dayHeadline, sortRows, tally } from '../../../lib/data/page/scoreboard';
+import pf from './portfolio.module.css';
 import s from './daily.module.css';
 
 /* Daily detail: what happened on one restaurant day, and what to do about it.
@@ -32,11 +35,11 @@ const METRICS = {
   net: { label: 'Net sales', fmt: $, get: (d) => d.net },
   covers: { label: 'Covers', fmt: n0, get: (d) => d.covers },
   check: { label: 'Avg check', fmt: (v) => (v == null ? '—' : cvMoney(v, { cents: true })), get: (d) => d.check },
-  labour: { label: 'Labour %', fmt: (v) => (v == null ? '—' : `${v.toFixed(1)}%`), get: (d) => (d.labour != null && d.net ? (d.labour / d.net) * 100 : null), needs: 'labour' },
-  earned: { label: 'After food & labour', fmt: $, get: (d) => d.earned, needs: 'earned' },
+  labour: { label: 'Labor %', fmt: (v) => (v == null ? '—' : `${v.toFixed(1)}%`), get: (d) => (d.labour != null && d.net ? (d.labour / d.net) * 100 : null), needs: 'labour' },
+  earned: { label: 'After food & labor', fmt: $, get: (d) => d.earned, needs: 'earned' },
 };
 const RANGES = [['7', '7 days'], ['30', '30 days'], ['90', '90 days'], ['364', '1 year'], ['728', '2 years'], ['custom', 'Custom']];
-const HEAT = [['covers', 'Covers'], ['sales', 'Sales'], ['splh', 'Sales per labour hour', 'labourHours'], ['cps', 'Covers per server', 'servers'], ['ticketMin', 'Ticket min', 'ticket'], ['seatUse', 'Seats used', 'seatUse']];
+const HEAT = [['covers', 'Covers'], ['sales', 'Sales'], ['splh', 'Sales per labor hour', 'labourHours'], ['cps', 'Covers per server', 'servers'], ['ticketMin', 'Ticket min', 'ticket'], ['seatUse', 'Seats used', 'seatUse']];
 
 function download(name, text) {
   const url = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' }));
@@ -83,7 +86,7 @@ function nextStep({ day, base, why, dev, own, notes, iso, cmpLabel }) {
   if (!base || !why) return { text: 'There’s nothing to compare this day with yet. Pick another comparison above.', icon: 'Info' };
   const lp = (d) => ratio(d.labour, d.net);
   const labPts = day.labour != null && base.labour != null && lp(day) != null && lp(base) != null ? (lp(day) - lp(base)) * 100 : null;
-  if (labPts != null && labPts > 3) return { text: `Labour was ${labPts.toFixed(1)} points of sales above ${cmpLabel}. Check the hours where staff outnumbered guests.`, act: 'hours', btn: 'See the hours', icon: 'Users' };
+  if (labPts != null && labPts > 3) return { text: `Labor was ${labPts.toFixed(1)} points of sales above ${cmpLabel}. Check the hours where staff outnumbered guests.`, act: 'hours', btn: 'See the hours', icon: 'Users' };
   if (day.voids != null && base.voids != null && day.voids - base.voids > 50) return { text: `${$(day.voids)} was voided after it reached the kitchen (usually ${$(base.voids)}). Go through those checks with the kitchen.`, act: own ? 'checks' : 'hours', btn: own ? 'See the checks' : 'See the hours', icon: 'Ban' };
   if (day.discounts - (base.discounts ?? 0) > 50 && change(day.discounts, base.discounts) > 0.5) return { text: `Discounts were ${$(day.discounts)} (usually ${$(base.discounts)}). See which checks carried them.`, act: own ? 'checks' : 'money', btn: own ? 'See the checks' : 'See the money', icon: 'Receipt' };
   if (why.flat) return { text: `A normal ${day.dow}. Nothing here needs action.`, icon: 'CircleCheck', good: true };
@@ -146,7 +149,7 @@ function LoadExports({ data, onDone, onCancel }) {
       {read && !read.ok && <Callout tone="warn" icon="TriangleAlert">{read.error}</Callout>}
       {read?.ok && (
         <div className="cv-col" style={{ gap: 10 }}>
-          <Callout icon="CircleCheck"><span><b>{read.days.length} days</b>, {dayName(read.first)} to {dayName(read.last)}.{!read.kinds.includes('time') ? ' No labour without TimeEntries.' : ''}{!read.kinds.includes('items') ? ' No dishes without ItemSelectionDetails.' : ''}{partial ? ` ${partial} still trading: shown as partial.` : ''}{read.unknown.length ? ` Not read: ${read.unknown.join(', ')}.` : ''}</span></Callout>
+          <Callout icon="CircleCheck"><span><b>{read.days.length} days</b>, {dayName(read.first)} to {dayName(read.last)}.{!read.kinds.includes('time') ? ' No labor without TimeEntries.' : ''}{!read.kinds.includes('items') ? ' No dishes without ItemSelectionDetails.' : ''}{partial ? ` ${partial} still trading: shown as partial.` : ''}{read.unknown.length ? ` Not read: ${read.unknown.join(', ')}.` : ''}</span></Callout>
           <div className="cv-row" style={{ gap: 8 }}>
             <Button icon="Check" disabled={!!busy} onClick={save}>{busy?.startsWith('save') ? `Saving… ${busy.slice(5)}` : `Save ${read.days.length} days`}</Button>
             <Button variant="secondary" disabled={!!busy} onClick={() => setRead(null)}>Choose other files</Button>
@@ -281,7 +284,7 @@ function MonthBars({ list, calMonth, setMonth, byMonth, has }) {
       <Fold label="See the month table">
         <div className="cv-tablewrap" tabIndex={0} role="group" aria-label="Months">
           <table className="cv-table">
-            <thead><tr><th>Month</th><th className="r">Days held</th><th className="r">Net sales</th><th className="r">Covers</th><th className="r">Avg check</th>{has.food && <th className="r">Food</th>}{has.labour && <th className="r">Labour</th>}<th className="r">Discounts</th>{has.earned && <th className="r">After food &amp; labour</th>}</tr></thead>
+            <thead><tr><th>Month</th><th className="r">Days held</th><th className="r">Net sales</th><th className="r">Covers</th><th className="r">Avg check</th>{has.food && <th className="r">Food</th>}{has.labour && <th className="r">Labor</th>}<th className="r">Discounts</th>{has.earned && <th className="r">After food &amp; labor</th>}</tr></thead>
             <tbody>
               {[...list].slice(-13).reverse().map((x) => (
                 <tr key={x.month}>
@@ -322,6 +325,7 @@ function CvDaily() {
   const [detail, setDetail] = React.useState(null);
   const [loading, setLoading] = React.useState(false);
   const [msg, setMsg] = React.useState(null);
+  const [daySort, setDaySort] = React.useState({ key: 'iso', dir: 'desc' });
   const top = React.useRef(null);
 
   // The selected day lives in the address (#2026-10-24), so a reload or a link back keeps it.
@@ -350,7 +354,7 @@ function CvDaily() {
     return () => { live = false; };
   }, [iso, own, loadDay, lastHeld]);
 
-  const head = () => <PageHead over={`Daily detail · ${CV_ROOM.name}`} q="What happened on this day?" right={<Button variant="secondary" icon="Upload" onClick={() => setLoading(true)}>Load Toast exports</Button>} />;
+  const head = (q = 'What happened on this day?') => <><ScoreTabs tab="daily" /><PageHead over={`Day by day · ${CV_ROOM.name}`} q={q} right={<Button variant="secondary" icon="Upload" onClick={() => setLoading(true)}>Load Toast exports</Button>} /></>;
 
   if (!view) {
     if (data.status === 'loading' || data.status === 'error') {
@@ -397,21 +401,26 @@ function CvDaily() {
 
   // Contribution after the costs this data knows. Never called profit; a missing cost is never zero.
   const contrib = has.food && day.earned != null
-    ? { label: 'After food and labour', get: (d) => d.earned, sub: 'not profit', metric: 'earned' }
-    : day.labour != null ? { label: 'After labour', get: (d) => (d.labour != null ? d.net - d.labour : null), sub: 'food cost isn’t in Toast; not profit', metric: 'labour' }
-      : { label: 'After known costs', get: () => null, sub: 'needs labour (TimeEntries)', metric: null };
+    ? { label: 'After food and labor', get: (d) => d.earned, sub: 'not profit', metric: 'earned' }
+    : day.labour != null ? { label: 'After labor', get: (d) => (d.labour != null ? d.net - d.labour : null), sub: 'food cost isn’t in Toast; not profit', metric: 'labour' }
+      : { label: 'After known costs', get: () => null, sub: 'needs labor (TimeEntries)', metric: null };
   const contribV = contrib.get(day), contribB = base ? (contrib.metric === 'earned' ? base.earned : base.labour != null ? base.net - base.labour : null) : null;
   // The biggest other deviation against the comparison.
   const lp = (d) => ratio(d.labour, d.net);
   const devs = base ? [
     { k: 'Covers', d: change(day.covers, base.covers), show: `${n0(day.covers)} vs ${n0(base.covers)}`, metric: 'covers', get: (d) => d.covers },
     { k: 'Average check', d: change(day.check, base.check), show: `${$c(day.check)} vs ${$c(base.check)}`, metric: 'check', get: (d) => d.check },
-    ...(day.labour != null && base.labour != null && lp(day) != null && lp(base) != null ? [{ k: 'Labour %', d: lp(day) - lp(base), pts: true, invert: true, show: `${(lp(day) * 100).toFixed(1)}% vs ${(lp(base) * 100).toFixed(1)}%`, metric: 'labour', get: (d) => (lp(d) == null ? null : lp(d) * 100) }] : []),
+    ...(day.labour != null && base.labour != null && lp(day) != null && lp(base) != null ? [{ k: 'Labor %', d: lp(day) - lp(base), pts: true, invert: true, show: `${(lp(day) * 100).toFixed(1)}% vs ${(lp(base) * 100).toFixed(1)}%`, metric: 'labour', get: (d) => (lp(d) == null ? null : lp(d) * 100) }] : []),
     ...(Math.abs(day.discounts - (base.discounts ?? 0)) > 50 ? [{ k: 'Discounts', d: change(day.discounts, base.discounts), invert: true, show: `${$(day.discounts)} vs ${$(base.discounts)}`, get: (d) => d.discounts }] : []),
     ...(day.voids != null && base.voids != null && Math.abs(day.voids - base.voids) > 50 ? [{ k: 'Voids after send', d: change(day.voids, base.voids), invert: true, show: `${$(day.voids)} vs ${$(base.voids)}`, get: (d) => d.voids }] : []),
   ].filter((x) => x.d != null).sort((a, b) => Math.abs(b.pts ? b.d * 4 : b.d) - Math.abs(a.pts ? a.d * 4 : a.d)) : [];
   const dev = devs[0];
   const step = nextStep({ day, base, why, dev, own, notes, iso, cmpLabel });
+  // The last 14 days held, each marked good / mid / bad against the same comparison as the day above.
+  const board = dayBoard(days, { n: 14, end: latest, method });
+  const marks = tally(board);
+  const DSORT = { iso: 'iso', net: 'net', vs: 'vs', covers: 'covers', check: 'check', after: 'after', labor: 'labourPct' };
+  const boardRows = sortRows(board, DSORT[daySort.key], daySort.dir);
 
   const chart = (m) => { setMetric(m); setTimeout(() => document.getElementById('daily-history')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 30); };
   const doStep = (act) => {
@@ -453,7 +462,7 @@ function CvDaily() {
 
   return (
     <div className="cv-page wide" ref={top}>
-      {head()}
+      {head(dayHeadline(day, change(day.net, base?.net)))}
 
       <div className={s.source} role="status">
         {own ? <Pill tone="good" icon="Database">Your Toast data</Pill> : <Pill icon="FlaskConical">Sample data</Pill>}
@@ -487,6 +496,61 @@ function CvDaily() {
             {Object.entries(COMPARISONS).map(([k, c]) => <option key={k} value={k}>{c.label}</option>)}
           </select>
         </label>
+      </section>
+
+      <section className="cv-card" aria-labelledby="daily-board">
+        <div className="cv-card-head">
+          <div className="cv-col" style={{ gap: 2 }}>
+            <span className="cv-over" id="daily-board">Last 14 days</span>
+            <span className={s.take}>{marks.good} of {board.length} beat usual{marks.bad ? ` · ${marks.bad} below` : ''}</span>
+          </div>
+          <div className={pf.standing}>
+            {['good', 'mid', 'bad'].map((k) => <Mark key={k} mark={k} label={`${MARKS[k].day} · ${marks[k]}`} />)}
+          </div>
+        </div>
+        <div className={pf.dayStrip} role="list">
+          {board.map((d) => {
+            const p = d.vs == null ? '—' : `${d.vs >= 0 ? '+' : '−'}${Math.abs(Math.round(d.vs * 100))}%`;
+            return (
+              <button key={d.iso} type="button" role="listitem" className={`${pf.dayCell} ${pf['m' + d.mark]} ${d.iso === iso ? pf.on : ''}`} onClick={() => go(d.iso)} aria-current={d.iso === iso ? 'date' : undefined} aria-label={`${longDay(d.iso)}: ${$(d.net)}, ${MARKS[d.mark].day}${d.vs == null ? '' : ` (${p})`}`}>
+                <span className={pf.dw}>{d.dow}</span>
+                <span className={pf.dd}>{+d.iso.slice(8)}</span>
+                <span className={pf.dv}><Icon name={MARKS[d.mark].icon} size={11} /> {p}</span>
+              </button>
+            );
+          })}
+        </div>
+        <Fold label="See these days as a table">
+          <div className="cv-tablewrap" tabIndex={0} role="group" aria-label="Last 14 days">
+            <table className="cv-table">
+              <thead><tr>
+                <SortTh k="iso" label="Day" sort={daySort} setSort={setDaySort} />
+                <th scope="col">Against usual</th>
+                <SortTh k="net" label="Net sales" sort={daySort} setSort={setDaySort} right />
+                <SortTh k="vs" label="Change" sort={daySort} setSort={setDaySort} right />
+                <SortTh k="covers" label="Guests" sort={daySort} setSort={setDaySort} right />
+                <SortTh k="check" label="Per guest" sort={daySort} setSort={setDaySort} right />
+                {has.food ? <SortTh k="after" label="After food & labor" sort={daySort} setSort={setDaySort} right /> : <SortTh k="after" label="After labor" sort={daySort} setSort={setDaySort} right />}
+                <SortTh k="labor" label="Labor %" sort={daySort} setSort={setDaySort} right first="asc" />
+              </tr></thead>
+              <tbody>
+                {boardRows.map((d) => (
+                  <tr key={d.iso} className={`${pf.rowBtn} ${d.iso === iso ? pf.rowSel : ''}`} onClick={() => go(d.iso, true)}>
+                    <td><button type="button" className={pf.linkish} onClick={(e) => { e.stopPropagation(); go(d.iso, true); }}>{d.dow} {dayName(d.iso)}</button>{d.partial && <span className="cv-xs cv-faint"> · partial</span>}{notes[d.iso] && <Icon name="StickyNote" size={12} />}</td>
+                    <td><Mark mark={d.mark} /></td>
+                    <td className="r cv-num">{$(d.net)}</td>
+                    <td className="r cv-num">{d.vs == null ? '—' : `${d.vs >= 0 ? '+' : '−'}${Math.abs(d.vs * 100).toFixed(1)}%`}</td>
+                    <td className="r cv-num">{n0(d.covers)}</td>
+                    <td className="r cv-num">{$c(d.check)}</td>
+                    <td className="r cv-num">{$(d.after)}</td>
+                    <td className="r cv-num">{d.labourPct == null ? '—' : `${(d.labourPct * 100).toFixed(1)}%`}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <span className="cv-xs cv-faint">Usual is {cmp.label.toLowerCase()}. Beat usual means at least 2% above it; below usual means more than 5% under. Days not held are left out.</span>
+        </Fold>
       </section>
 
       <div className="cv-grid g4">

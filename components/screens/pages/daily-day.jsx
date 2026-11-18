@@ -71,7 +71,7 @@ export function MoneyBreakdown({ day, base, has, own }) {
     line('orders', 'Checks', (d) => d.orders, { count: true }),
     line('covers', 'Covers', (d) => d.covers, { count: true }),
     line('check', 'Average check (net ÷ covers)', (d) => d.check, { cents: true }),
-    ...(has.labour ? [line('lab', 'Labour (actual pay)', (d) => d.labour, { invert: true }), line('labp', 'Labour % of net', (d) => ratio(d.labour, d.net), { pct: true, invert: true })] : []),
+    ...(has.labour ? [line('lab', 'Labor (actual pay)', (d) => d.labour, { invert: true }), line('labp', 'Labor % of net', (d) => ratio(d.labour, d.net), { pct: true, invert: true })] : []),
     ...(has.food ? [line('fc', 'Food cost (sample)', (d) => d.food, { invert: true })] : []),
     ...(has.voids ? [line('void', 'Voids after the kitchen saw them', (d) => d.voids, { invert: true })] : []),
     ...(has.tax ? [line('tax', 'Tax collected (not sales)', (d) => d.tax, { aside: true })] : []),
@@ -206,7 +206,7 @@ function PartsEditor({ parts, onSave }) {
 const HOUR_METRICS = {
   sales: { label: 'Sales', get: (h) => h.sales, fmt: $ },
   covers: { label: 'Covers', get: (h) => h.covers, fmt: n0 },
-  splh: { label: 'Sales per labour hour', get: (h) => (h.labourHours ? h.sales / h.labourHours : null), fmt: $, needs: true },
+  splh: { label: 'Sales per labor hour', get: (h) => (h.labourHours ? h.sales / h.labourHours : null), fmt: $, needs: true },
 };
 
 /** Hour by hour as bars you can point at and tap; tap an hour to see its checks. */
@@ -235,7 +235,7 @@ export function Hours({ day, base, has, onHour, hour }) {
             <b>{hourLabel(cur.h)}</b>
             <span>{m.label} <b className="cv-num">{m.fmt(m.get(cur))}</b></span>
             {curB && <span className="cv-faint">comparison {m.fmt(m.get(curB))}</span>}
-            <span className="cv-faint">{n0(cur.orders)} checks · {n0(cur.covers)} covers{cur.labourHours ? ` · ${n1(cur.labourHours)} labour h` : ''}</span>
+            <span className="cv-faint">{n0(cur.orders)} checks · {n0(cur.covers)} covers{cur.labourHours ? ` · ${n1(cur.labourHours)} labor h` : ''}</span>
           </> : <span className="cv-faint">{onHour ? 'Point at an hour to read it; tap to see its checks.' : 'Point at an hour to read it.'}</span>}
         </div>
         <div className={s.hourBars}>
@@ -259,7 +259,7 @@ export function Hours({ day, base, has, onHour, hour }) {
       <Fold label="See every hour">
         <div className="cv-tablewrap" tabIndex={0} role="group" aria-label="Hours">
           <table className="cv-table">
-            <thead><tr><th>Hour</th><th className="r">Sales</th>{base && <th className="r">Comparison</th>}<th className="r">Checks</th><th className="r">Covers</th><th className="r">Avg check</th>{lab && <th className="r">Labour h</th>}{lab && <th className="r">Labour</th>}{lab && <th className="r">Sales / labour h</th>}{has.servers && <th className="r">Servers</th>}{has.ticket && <th className="r">Ticket</th>}{has.seatUse && <th className="r">Seats used</th>}</tr></thead>
+            <thead><tr><th>Hour</th><th className="r">Sales</th>{base && <th className="r">Comparison</th>}<th className="r">Checks</th><th className="r">Covers</th><th className="r">Avg check</th>{lab && <th className="r">Labor h</th>}{lab && <th className="r">Labor</th>}{lab && <th className="r">Sales / labor h</th>}{has.servers && <th className="r">Servers</th>}{has.ticket && <th className="r">Ticket</th>}{has.seatUse && <th className="r">Seats used</th>}</tr></thead>
             <tbody>
               {list.map((h) => (
                 <tr key={h.h}>
@@ -274,7 +274,7 @@ export function Hours({ day, base, has, onHour, hour }) {
             </tbody>
           </table>
         </div>
-        <span className="cv-xs cv-faint">By the hour each check was opened{lab ? '; labour spread over the hours each shift was on the clock' : ''}.</span>
+        <span className="cv-xs cv-faint">By the hour each check was opened{lab ? '; labor spread over the hours each shift was on the clock' : ''}.</span>
       </Fold>
     </section>
   );

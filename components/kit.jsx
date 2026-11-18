@@ -172,6 +172,9 @@ import {
   User,
   ChevronLeft,
   StickyNote,
+  ArrowUpDown,
+  Trophy,
+  Rocket,
 } from 'lucide-react';
 
 const ICONS = {
@@ -342,6 +345,9 @@ const ICONS = {
   User,
   ChevronLeft,
   StickyNote,
+  ArrowUpDown,
+  Trophy,
+  Rocket,
 };
 
 /** Every icon name the screens use. A unit test keeps this list complete. */
