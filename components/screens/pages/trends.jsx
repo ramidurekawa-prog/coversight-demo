@@ -133,6 +133,16 @@ const STATE = {
   unknown: { word: 'Building history', icon: 'Hourglass', cls: '' },
 };
 
+/** One plain sentence on what the verdict means. */
+function verdictNote(dir, t) {
+  const lead = 'Contribution is what\'s left of sales after food and labor, before rent and overheads.';
+  if (dir.state === 'unknown') return `Trends compares each week with your own usual. It needs ${MIN_BASELINE + 1} weeks of this room's data to learn what usual looks like, then it flags anything out of the ordinary.`;
+  const vs = `${fmtMetric('earned', dir.recent)} a week over the last ${dir.weeks} weeks against ${fmtMetric('earned', dir.base)} before`;
+  if (dir.state === 'improving') return `${lead} It's ${vs}: more than normal week-to-week swings, so the gain is real.${dir.yoy ? '' : ' Part of it may be seasonal, since there are no matching weeks from last year yet.'}`;
+  if (dir.state === 'slipping') return `${lead} It's ${vs}: a bigger drop than normal week-to-week swings. Start with the first thing to look at.`;
+  return `${lead} It's ${vs}: inside normal week-to-week swings, so nothing has really changed${t.signals.some((x) => !x.good) ? ', though one measure below is worth a look' : ''}.`;
+}
+
 function Verdict({ t, notes, onInvestigate }) {
   const dir = directionOf(t);
   const st = STATE[dir.state];
@@ -169,6 +179,7 @@ function Verdict({ t, notes, onInvestigate }) {
           )}
         </>
       )}
+      <p className={s.vNote}>{verdictNote(dir, t)}</p>
       <div className={s.vAct}>
         {open.length ? (
           <>
@@ -236,6 +247,16 @@ function NoteForm({ note, onSave, onRemove, onCancel }) {
   );
 }
 
+/** What to look for next week, for one change. Thresholds only; never a cause. */
+function watchText(sig) {
+  const m = METRIC[sig.metric], e = sig.expected, f = (v) => fmtMetric(sig.metric, v);
+  if (sig.good) return `Next week: does it hold? If it stays ${sig.dir === 'up' ? `above ${f(e.mean)}` : `below ${f(e.mean)}`}, note what changed so you can keep doing it.`;
+  if (sig.kind === 'shift') return `Next week: watch for ${m.short.toLowerCase()} back ${sig.dir === 'up' ? 'below' : 'above'} its average of ${f(e.mean)}. ${sig.ongoing ? 'Until then it has settled at a new level.' : 'It has already moved back.'}`;
+  const edge = sig.dir === 'up' ? e.ucl : e.lcl;
+  if (!sig.ongoing) return `It's back inside its usual range now. Another week ${sig.dir === 'up' ? 'over' : 'under'} ${f(edge)} would make it a pattern, not a one-off.`;
+  return `Next week: back ${sig.dir === 'up' ? 'under' : 'over'} ${f(edge)} means it was a one-off. Another week past it means something has changed.`;
+}
+
 function ChangeCard({ sig, t, note, open, editing, onPick, onToggle, onEdit, onSave, onRemove, onCancel, onCompare }) {
   const cv = useCv();
   const rows = t.rows;
@@ -263,6 +284,8 @@ function ChangeCard({ sig, t, note, open, editing, onPick, onToggle, onEdit, onS
         {isMoney(sig.metric) && <Claim k={t.metrics[sig.metric].claim} />}
       </div>
       <RangeBar value={shown} lim={sig.expected} tone={sig.good ? 'good' : sig.severity === 'high' ? 'crit' : 'bad'} />
+      <p className={s.cardWhat}>{m.help}</p>
+      <p className={s.cardWatch}><Icon name="Eye" size={15} /><span>{watchText(sig)}</span></p>
       <div className={s.cardAct}>
         {sig.good ? <Pill tone="good" icon="TrendingUp">Good news</Pill>
           : cause ? <Pill tone={explained ? 'neutral' : 'warn'} icon={explained ? 'CircleCheck' : 'Hourglass'}>{cause.label}</Pill>
@@ -345,6 +368,53 @@ function Changes({ t, notes, setNotes, focus, setFocus, onPick, onCompare }) {
           {good.length > 0 && <button type="button" className={s.more} onClick={() => setShowGood((v) => !v)} aria-expanded={showGood}>{showGood ? 'Hide good news' : `Show ${good.length} good news`}</button>}
         </div>
       )}
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------- next week */
+
+/**
+ * What to watch next week: the line each open change has to get back inside,
+ * then the floor for contribution and sales. Thresholds come from the same
+ * usual ranges the flags use, so "watch" and "flag" always agree.
+ */
+function LookAhead({ t, notes, onPick }) {
+  if (!t.w.ready) return null;
+  const items = [];
+  const seen = new Set();
+  const open = t.signals.filter((x) => !x.good && !isExplained(notes[signalKey(x, t.rows)]) && (x.ongoing || x.to >= t.rows.length - 4));
+  for (const sig of open) {
+    if (seen.has(sig.metric)) continue;
+    seen.add(sig.metric);
+    const e = sig.expected, f = (v) => fmtMetric(sig.metric, v);
+    const line = sig.kind === 'shift' ? e.mean : sig.dir === 'up' ? e.ucl : e.lcl;
+    items.push({ key: sig.metric, tone: sig.severity === 'high' ? 'crit' : 'bad', label: METRIC[sig.metric].short, fig: `${sig.dir === 'up' ? 'Under' : 'Over'} ${f(line)}`, text: sig.kind === 'shift' ? `Back across its average would end the run.` : 'Back inside its usual range would make it a one-off.' });
+  }
+  for (const k of ['earned', 'net', 'covers']) {
+    const x = t.metrics[k];
+    if (items.length >= 4 || seen.has(k) || !x.available || !x.lim) continue;
+    const up = METRIC[k].up;
+    items.push({ key: k, tone: 'ok', label: METRIC[k].short, fig: `${up ? 'Above' : 'Under'} ${fmtMetric(k, up ? x.lim.lcl : x.lim.ucl)}`, text: `A normal week stays ${up ? 'above' : 'under'} this. Past it would be flagged.` });
+  }
+  if (!items.length) return null;
+  return (
+    <section className="cv-card" aria-labelledby="trends-ahead">
+      <div className="cv-card-head">
+        <span className="cv-col" style={{ gap: 2 }}>
+          <span className="cv-h4" id="trends-ahead">What to watch next week</span>
+          <span className={s.headSub}>The lines that tell you whether a change is real or a one-off.</span>
+        </span>
+      </div>
+      <div className={s.ahead}>
+        {items.slice(0, 4).map((it) => (
+          <button key={it.key} type="button" className={s.aheadItem} data-tone={it.tone} onClick={() => onPick(it.key)}>
+            <span className={s.aheadLabel}>{it.label}</span>
+            <span className={s.aheadFig}>{it.fig}</span>
+            <span className={s.aheadText}>{it.text}</span>
+          </button>
+        ))}
+      </div>
     </section>
   );
 }
@@ -497,12 +567,14 @@ function RoomView({ t, notes, setNotes }) {
               <Button size="sm" variant="ghost" icon="FileSpreadsheet" aria-pressed={table} aria-label={table ? 'Hide data table' : 'Show data table'} title="Data table" onClick={() => setTable((v) => !v)} />
             </span>
           </div>
-          {selected == null && <span className="cv-xs cv-faint">Tap a week for every measure.</span>}
+          {selected == null && <p className={s.howTo}><b>{m.short}:</b> {m.help} {x.lim ? `The grey band is the usual range, worked out from ${x.lim.n} of your past weeks. A week outside it, or ${RUN} weeks in a row on one side of the dashed average, gets flagged.` : 'The usual range appears once there are enough weeks.'} Tap any week to see every measure for it.</p>}
           {table && <DataTable t={t} metric={m.key} start={start} end={end} cmp={cmp} />}
           {selected != null && <WeekPanel t={t} i={selected} metric={m.key} setMetric={pickMetric} notes={notes} metrics={metrics} onClose={() => setSel(null)} />}
         </section>
         <Changes t={t} notes={notes} setNotes={setNotes} focus={focus} setFocus={setFocus} onPick={pick} onCompare={compare} />
       </div>
+
+      <LookAhead t={t} notes={notes} onPick={(k) => { pickMetric(k); toChart(); }} />
 
       {metrics.length > 4 && (
         <details className={`cv-card ${s.disclosure}`}>

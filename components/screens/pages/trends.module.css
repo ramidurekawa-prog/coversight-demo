@@ -234,3 +234,22 @@
 .about :global(.cv-xs) { font-size: 15px; line-height: 1.5; }
 .tileFoot { display: flex; align-items: center; justify-content: space-between; gap: 6px 10px; flex-wrap: wrap; }
 .tileHead > :global(.cv-xs) { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---- plain-language notes (2026-11-17: a bit more explanation where it helps) */
+.vNote { flex: 1 1 100%; order: 10; margin: 0; padding-top: 14px; border-top: 1px solid var(--border); max-width: none; font-size: 15px; line-height: 1.5; color: var(--fg-2); }
+.cardWhat { margin: 0; font-size: 15px; line-height: 1.45; color: var(--fg-2); }
+.cardWatch { display: flex; align-items: flex-start; gap: 8px; margin: 0; padding: 10px 12px; border-radius: 10px; background: var(--surface-sunken); font-size: 15px; line-height: 1.45; color: var(--fg-1); }
+.cardWatch svg { flex: none; margin-top: 3px; color: var(--fg-2); }
+.howTo { margin: 0; font-size: 15px; line-height: 1.5; color: var(--fg-2); }
+.howTo b { color: var(--fg-1); font-weight: 600; }
+.headSub { font-size: 15px; color: var(--fg-2); }
+.ahead { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.aheadItem { all: unset; box-sizing: border-box; cursor: pointer; position: relative; overflow: hidden; display: flex; flex-direction: column; gap: 6px; padding: 14px 16px 14px 20px; border-radius: var(--card-r); background: var(--surface); box-shadow: var(--box); transition: box-shadow var(--dur-base, 160ms); }
+.aheadItem:hover { box-shadow: var(--box-hover); }
+.aheadItem:focus-visible { box-shadow: var(--ring); }
+.aheadItem::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--fg-1); }
+.aheadItem[data-tone="bad"]::before { background: var(--t-caution); }
+.aheadItem[data-tone="crit"]::before { background: var(--t-crit); }
+.aheadLabel { font-size: 15px; font-weight: 600; color: var(--fg-1); }
+.aheadFig { font: 600 25px/1.1 var(--font-sans); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; color: var(--fg-1); }
+.aheadText { font-size: 15px; line-height: 1.45; color: var(--fg-2); }
