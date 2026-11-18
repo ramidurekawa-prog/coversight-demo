@@ -382,3 +382,34 @@
   .barRow { grid-template-columns: minmax(0, 1fr) 80px; gap: 6px 10px; }
   .barTrack { grid-column: 1 / -1; grid-row: 2; }
 }
+
+/* ---------------------------------------------------------- looking ahead */
+.named { display: inline-flex; align-items: center; gap: 6px; width: fit-content; font: 700 12.5px/1 var(--font-sans); letter-spacing: 0.06em; text-transform: uppercase; color: var(--fg-2); }
+.outlook, .shape { gap: 18px; }
+.cols { display: flex; align-items: stretch; gap: 12px; height: 220px; }
+.col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.col[data-kind="past"] { padding-right: 12px; border-right: 1px dashed var(--border-strong); }
+.colVal, .colChip { font: 600 15px/1 var(--font-sans); font-variant-numeric: tabular-nums; color: var(--fg-1); white-space: nowrap; }
+.colChip { color: var(--fg-3); }
+.colTrack { position: relative; flex: 1 1 auto; width: 100%; max-width: 76px; border-radius: 8px; background: var(--surface-sunken); overflow: hidden; }
+.colBar { position: absolute; left: 0; right: 0; bottom: 0; border-radius: 8px 8px 0 0; background: var(--fg-3); }
+.colFcst { left: 22%; right: 22%; background: var(--fg-1); }
+.colRange { position: absolute; left: 0; right: 0; background: color-mix(in srgb, var(--fg-1) 16%, transparent); border-radius: 6px; }
+.colUp { background: var(--t-good); }
+.colDown { background: var(--t-crit); }
+.colLabel { display: flex; flex-direction: column; align-items: center; gap: 3px; font: 600 14px/1.1 var(--font-sans); color: var(--fg-2); text-align: center; }
+.colHol, .colSub { font-style: normal; font-weight: 500; font-size: 12.5px; color: var(--fg-3); }
+.outlookFoot { display: flex; align-items: center; justify-content: space-between; gap: 12px 24px; flex-wrap: wrap; }
+.outlookFoot .howTo { flex: 1 1 360px; margin: 0; }
+.shapeHead { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.shapeLine { font: 600 18px/1.35 var(--font-sans); color: var(--fg-1); }
+.clock { display: block; font-size: 13.5px; line-height: 1.4; color: var(--fg-2); }
+.clock svg { vertical-align: -2px; }
+.clock b { color: var(--t-crit); font-variant-numeric: tabular-nums; }
+@media (max-width: 520px) {
+  .cols { gap: 6px; height: 190px; }
+  .col[data-kind="past"] { padding-right: 6px; }
+  .colVal, .colChip { font-size: 12px; }
+  .colLabel { font-size: 12.5px; }
+  .colHol { display: none; }
+}

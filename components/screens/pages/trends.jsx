@@ -11,6 +11,8 @@ import {
   availableMetrics, cleanNotes, explainSignal, fmtChange, fmtMetric,
   directionOf, driversOf, isExplained, lastYearIndex, leaksOf, noteKey, rangesFor, resultsOf, signalKey, trendsCsv, trendsFor,
 } from '../../../lib/data/page/trends';
+import { driftClockOf, outlookOf, weekShapeOf } from '../../../lib/data/page/trends-outlook';
+import { covercastRoom, seriesFromSample } from '../../../lib/data/forecast/index.js';
 import { Spark, TrendChart } from './trends-chart';
 import { useTodayTheme } from './today.themes';
 import s from './trends.module.css';
@@ -243,6 +245,126 @@ function Drivers({ D, name }) {
   );
 }
 
+/* ------------------------------------------------------------- looking ahead */
+
+async function getJson(path) {
+  const res = await fetch(path, { credentials: 'same-origin' });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
+  return body;
+}
+
+/**
+ * Covercast for this room, four weeks ahead: from the server when there is one
+ * (the same call Service makes), else computed here from the room's data.
+ * Null until ready, or when there isn't enough history.
+ */
+function useCovercast(room, roomId, useServer) {
+  const [srv, setSrv] = React.useState(/** @type {any} */ (null));
+  React.useEffect(() => {
+    if (!useServer) return undefined;
+    let stop = false;
+    setSrv(null);
+    getJson(`/api/forecast?room=${encodeURIComponent(roomId)}&days=28`).then((b) => { if (!stop) setSrv(b.forecast?.ready ? b.forecast : false); }).catch(() => { if (!stop) setSrv(false); });
+    return () => { stop = true; };
+  }, [roomId, useServer]);
+  const local = React.useMemo(() => {
+    if (useServer) return null;
+    try { const f = covercastRoom(room, { days: 28, accuracy: false }); return f.ready ? f : null; } catch { return null; }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomId, useServer]);
+  return useServer ? (srv || null) : local;
+}
+
+/** A named Coversight analysis: the name sits above the plain title. */
+function Named({ name, icon }) {
+  return <span className={s.named}><Icon name={icon} size={14} />{name}</span>;
+}
+
+/**
+ * Covercast Outlook: the next four weeks of contribution, each with Covercast's
+ * 80% range, against the last four weeks. One move: plan the busiest week.
+ */
+function Outlook({ O, name }) {
+  const cv = useCv();
+  if (!O) return <div className={`cv-card ${s.emptyRow}`}><Icon name="Hourglass" size={22} /><span>Covercast needs more of {name}&apos;s daily history before it can look ahead.</span></div>;
+  const hi = Math.max(...O.weeks.map((w) => w.earned.high), O.recent.earned);
+  const lo = Math.min(...O.weeks.map((w) => w.earned.low), O.recent.earned) * 0.9;
+  const h = (v) => `${Math.max(2, ((v - lo) / (hi - lo)) * 100)}%`;
+  const diff = O.vsRecent;
+  return (
+    <section className={`cv-card ${s.outlook}`} aria-labelledby="trends-outlook">
+      <div className={s.resultsHead}>
+        <div className={s.resultsFig}>
+          <span className={s.kpiLabel}>Next 4 weeks, contribution</span>
+          <span className={s.big}>{usd(O.perWeek)}<small> a week</small></span>
+          <span className="cv-xs cv-faint">{Math.abs(diff) < 50 ? 'About the same as the last 4 weeks' : `${signedUsd(diff)} a week on the last 4 weeks (${usd(O.recent.earned)})`}</span>
+        </div>
+        <div className={s.resultsFig}>
+          <span className={s.kpiLabel}>Busiest week</span>
+          <span className={s.kpiVal}>Week of {O.best.label}</span>
+          <span className="cv-xs cv-faint">{O.best.covers ? `about ${Math.round(O.best.covers.value).toLocaleString('en-US')} guests, ${usd(O.best.sales.value)} in sales` : `${usd(O.best.sales.value)} in sales`}</span>
+        </div>
+        <Claim k="mod" />
+      </div>
+      <div className={s.cols} role="list" aria-label="Contribution, last 4 weeks and the next 4">
+        <div className={s.col} role="listitem" data-kind="past">
+          <span className={s.colVal}>{usd(O.recent.earned)}</span>
+          <span className={s.colTrack}><span className={s.colBar} style={{ height: h(O.recent.earned) }} /></span>
+          <span className={s.colLabel}>Last 4 wks</span>
+        </div>
+        {O.weeks.map((w) => (
+          <div key={w.start} className={s.col} role="listitem" aria-label={`Week of ${w.label}: about ${usd(w.earned.value)}, likely ${usd(w.earned.low)} to ${usd(w.earned.high)}`}>
+            <span className={s.colVal}>{usd(w.earned.value)}</span>
+            <span className={s.colTrack}>
+              <span className={s.colRange} style={{ bottom: h(w.earned.low), height: `calc(${h(w.earned.high)} - ${h(w.earned.low)})` }} />
+              <span className={`${s.colBar} ${s.colFcst}`} style={{ height: h(w.earned.value) }} />
+            </span>
+            <span className={s.colLabel}>{w.label}{w.holidays.length ? <i className={s.colHol}>{w.holidays[0]}</i> : null}</span>
+          </div>
+        ))}
+      </div>
+      <div className={s.outlookFoot}>
+        <p className={s.howTo}>Covercast&apos;s guests and sales for each week, times the share {name} has kept after food and labor lately ({(O.keep * 100).toFixed(1)}%). The light band is the likely range: 4 weeks in 5 land inside it.</p>
+        <Button size="sm" variant="secondary" iconRight="ArrowRight" onClick={() => cv.go('service')}>Plan the busy nights</Button>
+      </div>
+    </section>
+  );
+}
+
+/** Week Shape: guests per weekday lately, and which days really moved. */
+function WeekShape({ W, name }) {
+  const cv = useCv();
+  if (!W) return null;
+  const max = Math.max(...W.rows.map((r) => r.recent ?? 0), 1);
+  const lead = W.up || W.down;
+  const line = W.up && W.down ? `${W.up.name}s are up ${W.up.pct.toFixed(0)}% and ${W.down.name}s down ${Math.abs(W.down.pct).toFixed(0)}% on the ${W.weeks} weeks before.`
+    : W.up ? `${W.up.name}s are up ${W.up.pct.toFixed(0)}% on the ${W.weeks} weeks before: staff and prep for it.`
+      : W.down ? `${W.down.name}s are down ${Math.abs(W.down.pct).toFixed(0)}% on the ${W.weeks} weeks before: trim the schedule to match.`
+        : `No day has moved more than its normal wobble. ${W.busiest.name} is still the busiest day.`;
+  return (
+    <section className={`cv-card ${s.shape}`} aria-labelledby="trends-shape">
+      <div className={s.shapeHead}>
+        <span className={s.shapeLine}>{line}</span>
+        <Claim k="obs" />
+      </div>
+      <div className={s.cols} role="list" aria-label={`Guests per day of the week in ${name}, last ${W.weeks} weeks`}>
+        {W.rows.map((r) => (
+          <div key={r.wd} className={s.col} role="listitem" aria-label={`${r.name}: ${Math.round(r.recent ?? 0)} guests${r.pct != null ? `, ${r.pct >= 0 ? 'up' : 'down'} ${Math.abs(r.pct).toFixed(1)}%${r.sure ? '' : ', within normal wobble'}` : ''}`}>
+            <span className={`${s.colChip} ${r.sure ? (r.pct > 0 ? s.gain : s.loss) : ''}`}>{r.pct == null ? '—' : Math.abs(r.pct) < 0.5 ? '0%' : `${r.pct >= 0 ? '+' : '−'}${Math.abs(r.pct).toFixed(0)}%`}</span>
+            <span className={s.colTrack}><span className={`${s.colBar} ${r.sure ? (r.pct > 0 ? s.colUp : s.colDown) : ''}`} style={{ height: `${((r.recent ?? 0) / max) * 100}%` }} /></span>
+            <span className={s.colLabel}>{r.short}<i className={s.colSub}>{Math.round(r.recent ?? 0)}</i></span>
+          </div>
+        ))}
+      </div>
+      <div className={s.outlookFoot}>
+        <p className={s.howTo}>Average guests per day over the last {W.weeks} weeks, holidays left out. A change is colored only when it&apos;s bigger than that day&apos;s usual ups and downs.</p>
+        {lead && <Button size="sm" variant="secondary" iconRight="ArrowRight" onClick={() => cv.go('labour')}>Match the schedule</Button>}
+      </div>
+    </section>
+  );
+}
+
 /* ------------------------------------------------------------- every room */
 
 /**
@@ -373,6 +495,7 @@ function ChangeRow({ e, t, note, primary, open, editing, onToggle, onEdit, onSav
               <span className={`${s.cardVal} ${sig.good ? s.gain : s.loss}`}>{signedUsd(e.$.perWeek)}<small> a week</small></span>
               <span className="cv-xs cv-faint">{sig.ongoing ? `about ${usd(e.$.soFar)} ${sig.good ? 'gained' : 'lost'} so far` : `${usd(e.$.soFar)} ${sig.good ? 'gained' : 'lost'} while it lasted`}</span>
               {!e.counted && <span className="cv-xs cv-faint">{sig.good ? 'Part of a bigger gain' : 'Part of a bigger leak'}: counted once</span>}
+              {e.clock && e.counted && !sig.good && <span className={s.clock}><Icon name="Timer" size={14} /> <b>{signedUsd(e.clock.value)}</b> over the next {e.clock.weeks} weeks if it stays</span>}
             </>
           ) : <span className="cv-xs cv-faint">Not counted in dollars</span>}
           <Claim k={e.$?.claim ?? x.claim} />
@@ -441,11 +564,12 @@ function LeakList({ items, t, notes, setNotes, name, good }) {
 }
 
 /** A numbered step heading, so the page reads top to bottom. */
-function Step({ n, title, sub, id }) {
+function Step({ n, title, sub, id, named }) {
   return (
     <div className={s.step}>
       <span className={s.stepNum} aria-hidden="true">{n}</span>
       <span className="cv-col" style={{ gap: 2, minWidth: 0 }}>
+        {named}
         <h3 className={s.stepTitle} id={id}>{title}</h3>
         {sub && <span className={s.headSub}>{sub}</span>}
       </span>
@@ -517,12 +641,15 @@ function DataTable({ t, metric, start, end, cmp }) {
 
 /* ------------------------------------------------------------- the room */
 
-function RoomView({ t, notes, setNotes }) {
+function RoomView({ t, notes, setNotes, server }) {
   const n = t.rows.length;
   const L = React.useMemo(() => leaksOf(t, ctxOf(CV_D)), [t]);
   const R = React.useMemo(() => resultsOf(CV_D.proofs, t.rows), [t]);
   const D = React.useMemo(() => driversOf(t), [t]);
-  const moved = React.useMemo(() => [...L.leaks, ...L.wins].sort((a, b) => Number(b.s.ongoing) - Number(a.s.ongoing) || Number(a.s.good) - Number(b.s.good) || Math.abs(b.$?.perWeek ?? 0) - Math.abs(a.$?.perWeek ?? 0)), [L]);
+  const cc = useCovercast(CV_D.room, CV_D.id, server);
+  const O = React.useMemo(() => (cc ? outlookOf(t, cc) : null), [t, cc]);
+  const W = React.useMemo(() => { try { return weekShapeOf(seriesFromSample(CV_D.room)); } catch { return null; } }, [t]);
+  const moved = React.useMemo(() => [...L.leaks, ...L.wins].map((e) => ({ ...e, clock: driftClockOf(e, O) })).sort((a, b) => Number(b.s.ongoing) - Number(a.s.ongoing) || Number(a.s.good) - Number(b.s.good) || Math.abs(b.$?.perWeek ?? 0) - Math.abs(a.$?.perWeek ?? 0)), [L, O]);
   const metrics = availableMetrics(t);
   const ranges = rangesFor(t);
   const [metric, setMetric] = React.useState(metrics.find((mm) => mm.key === 'earned')?.key ?? metrics[0]?.key ?? 'net');
@@ -576,7 +703,7 @@ function RoomView({ t, notes, setNotes }) {
     <>
       <KpiStrip t={t} onPick={(k) => { pickMetric(k); toChart(); }} />
 
-      <Step n={1} id="trends-results" title={`What Coversight has added in ${roomName}`} sub="Money from changes that passed their test, added up week by week." />
+      <Step n={1} id="trends-results" named={<Named name="Proof Ledger" icon="BadgeCheck" />} title={`What Coversight has added in ${roomName}`} sub="Money from changes that passed their test, added up week by week." />
       <Results t={t} R={R} name={roomName} />
 
       <Step n={2} id="trends-chart" title="What's been going on" sub="Any number, week by week, against its usual range and last year. Change starts and holidays are marked." />
@@ -617,14 +744,24 @@ function RoomView({ t, notes, setNotes }) {
 
       {D && (
         <>
-          <Step n={3} id="trends-drivers" title="What's driving it" sub={`Why contribution moved over the last ${D.weeks} weeks, against a usual week.`} />
+          <Step n={3} id="trends-drivers" named={<Named name="Profit Bridge" icon="Workflow" />} title="What's driving it" sub={`Why contribution moved over the last ${D.weeks} weeks, against a usual week.`} />
           <Drivers D={D} name={roomName} />
+        </>
+      )}
+
+      <Step n={D ? 4 : 3} id="trends-outlook" named={<Named name="Covercast Outlook" icon="TrendingUp" />} title="What's coming next" sub="Covercast's next four weeks, with its likely range, before they happen." />
+      <Outlook O={O} name={roomName} />
+
+      {W && (
+        <>
+          <Step n={D ? 5 : 4} id="trends-shape" named={<Named name="Week Shape" icon="CalendarDays" />} title="Which days are changing" sub={`Guests per day of the week, the last ${W.weeks} weeks against the ${W.weeks} before.`} />
+          <WeekShape W={W} name={roomName} />
         </>
       )}
 
       {t.w.ready && (
         <>
-          <Step n={D ? 4 : 3} id="trends-moved" title="What moved more than normal" sub="Changes bigger than ordinary week-to-week swings, in dollars a week." />
+          <Step n={(D ? 5 : 4) + (W ? 1 : 0)} id="trends-moved" named={<Named name="Drift Radar" icon="ScanSearch" />} title="What moved more than normal" sub="Changes bigger than ordinary week-to-week swings, in dollars a week, and what they cost if nothing changes." />
           <LeakList items={moved} t={t} notes={notes} setNotes={setNotes} name={roomName} />
         </>
       )}
@@ -638,6 +775,9 @@ function RoomView({ t, notes, setNotes }) {
             <dt>Usual range</dt><dd>{x.lim ? `Average ± 3 standard deviations of ${x.lim.n} baseline weeks${x.lim.limited ? ' (limited history)' : ''}` : 'Not enough weeks yet'}</dd>
             <dt>Flagged when</dt><dd>A week leaves its usual range, or {RUN} weeks in a row sit on one side of the average. Holiday and no-sales weeks are never flagged.</dd>
             <dt>Dollars</dt><dd>Each change against its usual level, in contribution: cost shares × that week&apos;s sales, guests × what a guest usually leaves, margin per dish × dishes sold. Where two changes overlap (food and prime cost), only the bigger is added. Estimates, not causes.</dd>
+            <dt>Covercast Outlook</dt><dd>Covercast&apos;s weekly guests and sales with its 80% range, times the share of sales kept after food and labor over the last 4 normal weeks. <b>Modeled</b>.</dd>
+            <dt>Week Shape</dt><dd>Average guests per weekday, last 13 weeks against the 13 before, holiday weeks left out. A day counts as changed only past twice its standard error.</dd>
+            <dt>Drift Clock</dt><dd>A slow change&apos;s dollars a week over Covercast&apos;s next 4 weeks, scaled by forecast sales where it moves with sales. <b>Estimated</b>.</dd>
             <dt>Alerts</dt><dd>Medium and high changes nobody has explained are sent to the room once.</dd>
             <dt>Method</dt><dd>{METHOD}</dd>
           </dl>
@@ -674,10 +814,10 @@ function CvTrends() {
     <div className={`cv-page wide ${s.page}`}>
       <PageHead over={`Trends · ${own ? 'your Toast data' : 'sample data'} through ${shortDate(last?.iso)}`}
         q="How your business is trending, and why"
-        sub="What Coversight has added, what's been going on week by week, and what's driving it."
+        sub="What Coversight has added, what's driving your numbers, and what Covercast sees coming."
         right={<Button variant="secondary" size="sm" icon="Download" onClick={exportCsv}>CSV</Button>} />
       <LocationSwitch current={eng.room} onPick={(id) => engine.setRoom(id)} />
-      <RoomView key={eng.room} t={t} notes={notes} setNotes={setNotes} />
+      <RoomView key={eng.room} t={t} notes={notes} setNotes={setNotes} server={eng.mode === 'server'} />
     </div>
   );
 }
