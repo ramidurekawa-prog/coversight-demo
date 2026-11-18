@@ -46,7 +46,7 @@ export function clearServiceCache() { cache.clear(); pulls.clear(); casts.clear(
 const CAST_TTL_MS = 600_000;
 const casts = new Map<string, { at: number; date: string; f: any }>();
 /** Today's Covercast for a room, or null (not enough history, or it failed: the old rules then run, never a made-up number). */
-async function covercastFor(db: Db, v: V, roomId: string, date: string, now: Date, fetchImpl: Fetch) {
+export async function covercastFor(db: Db, v: V, roomId: string, date: string, now: Date, fetchImpl: Fetch) {
   const k = `${v.orgId}:${roomId}`;
   const c = casts.get(k);
   if (c && now.getTime() - c.at < CAST_TTL_MS && c.date === date) return c.f;

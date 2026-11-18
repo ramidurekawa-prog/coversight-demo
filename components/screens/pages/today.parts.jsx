@@ -209,7 +209,7 @@ export function tileData({ d, dense, sv, flags, now, live = null }) {
       label: 'Dinner pace', when: sv.source === 'manual' ? 'Tonight, your count' : 'Tonight, so far', live: true,
       fig: `${sv.pace >= 0 ? '+' : '−'}${Math.abs(sv.pace)}%`, cmp: `${sv.so} covers vs ${sv.usual} usual by ${clockOf(sv.asOf) || now?.time || 'now'}`, delta: sv.pace / 100,
       viz: sv.actual ? <PaceCurve comp={sv.comp} actual={sv.actual} times={serviceTimes(sv.comp.length)} /> : null, claim: sv.source === 'toast' ? 'obs' : null, warn: feedWarn,
-      facts: [['Covers so far', String(sv.so)], [`A usual ${sv.weekday}`, `${sv.usual} by the same time (average of the last ${sv.nights} ${sv.weekday}s)`], ['Pace so far', `${Math.abs(sv.pace)}% ${sv.pace >= 0 ? 'over' : 'under'} a usual ${sv.weekday}`],
+      facts: [['Covers so far', String(sv.so)], sv.engine ? [`A usual ${sv.weekday}`, `${sv.usual} by the same time (Covercast’s forecast for tonight, the same one Service uses)`] : [`A usual ${sv.weekday}`, `${sv.usual} by the same time (average of the last ${sv.nights} ${sv.weekday}s)`], ['Pace so far', `${Math.abs(sv.pace)}% ${sv.pace >= 0 ? 'over' : 'under'} a usual ${sv.weekday}`],
         ...(sv.servers != null ? [['Servers on', `${sv.servers} (${sv.serversFrom === 'manual' ? 'entered by hand' : 'from 7shifts'})`]] : [['Servers on', 'Not known: connect 7shifts or enter it below']]), ['Source', liveSrc]],
       entry, go: 'service',
     }
@@ -228,7 +228,7 @@ export function tileData({ d, dense, sv, flags, now, live = null }) {
     ? {
       label: 'Dinner pace', when: 'Tonight, so far', live: true, fig: `${sv.pace >= 0 ? '+' : '−'}${Math.abs(sv.pace)}%`, cmp: `${sv.so} covers vs ${sv.usual} usual by ${CV_NOW.time}`, delta: sv.pace / 100,
       viz: <PaceCurve comp={sv.comp} actual={sv.actual} times={serviceTimes(sv.comp.length)} />, claim: 'obs',
-      facts: [['Covers so far', `${sv.so} by ${CV_NOW.time} (the sample’s last count)`], [`A usual ${String(sv.day).split(' ')[0]}`, `${sv.usual} by the same time`], ['Pace so far', `${Math.abs(sv.pace)}% ${sv.pace >= 0 ? 'over' : 'under'} a usual ${String(sv.day).split(' ')[0]}`], ...(sv.tiles || []).map(([k, v, g]) => [k, `${v} (${g})`]), ['Source', src('live')]],
+      facts: [['Covers so far', `${sv.so} by ${CV_NOW.time} (the sample’s last count)`], [`A usual ${String(sv.day).split(' ')[0]}`, `${sv.usual} by the same time${sv.engine ? ' (Covercast’s forecast for tonight, the same one Service uses)' : ''}`], ['Pace so far', `${Math.abs(sv.pace)}% ${sv.pace >= 0 ? 'over' : 'under'} a usual ${String(sv.day).split(' ')[0]}`], ...(sv.tiles || []).map(([k, v, g]) => [k, `${v} (${g})`]), ['Source', src('live')]],
       go: 'service',
     }
     : { ...t.covers };

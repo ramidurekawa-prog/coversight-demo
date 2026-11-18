@@ -19,6 +19,7 @@ import { auditLog, posDays, serviceLive, staffConnections, toastConnections, use
 import { InputError } from './org';
 import { SyncError, toastClient, toastLogin } from './pos-sync';
 import { AuthError, type Viewer } from './session';
+import { covercastFor } from './page/service';
 import { SEVEN, pullStaff } from './sevenshifts';
 import { unseal } from './toast-conn';
 
@@ -84,11 +85,13 @@ export async function loadLive(db: Db, v: V, room: unknown, { now = new Date(), 
   const same = Array.from({ length: LIVE.comparableWeeks }, (_, i) => addDays(day, -7 * (i + 1)));
   const days = await db.select({ day: posDays.day, orders: posDays.orders }).from(posDays).where(and(eq(posDays.orgId, v.orgId), eq(posDays.roomId, p.data), inArray(posDays.day, same)));
   const usual = usualNight(days, day);
+  // Covercast, the same forecast (and cache) the Service page paces from, so the two pages agree.
+  const cc = inService ? await covercastFor(db, v, p.data, day, now, fetchImpl) : null;
   const iso = (d: Date | null | undefined) => (d ? d.toISOString() : null);
   const tonight = liveTonight({
     day, slots: row?.slots ?? null, orders: row?.orders ?? 0, pulledAt: iso(row?.pulledAt), error: row?.error ?? null,
     manual: row?.manual ?? null, staff: row?.staff ?? null, staffAt: iso(row?.staffAt), staffError: row?.staffError ?? null,
-  }, usual, { nowMs: now.getTime(), nowMin, connected: { toast: !!f.toast, staff: f.staff } });
+  }, usual, { nowMs: now.getTime(), nowMin, connected: { toast: !!f.toast, staff: f.staff }, cc });
   return { roomId: p.data, day, tz: f.tz, time: stamp.slice(11, 16), inService, refreshMs: LIVE.refreshMs, tonight };
 }
 
