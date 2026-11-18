@@ -163,6 +163,7 @@ import {
   Type,
   ArrowDownRight,
   ChevronRight,
+  User,
 } from 'lucide-react';
 
 const ICONS = {
@@ -324,6 +325,7 @@ const ICONS = {
   Type,
   ArrowDownRight,
   ChevronRight,
+  User,
 };
 
 /** Every icon name the screens use. A unit test keeps this list complete. */
