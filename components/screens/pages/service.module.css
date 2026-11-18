@@ -236,3 +236,45 @@
 .moreDetail:focus-visible { outline: none; box-shadow: var(--ring); }
 .stripSlim:not(:has(> :nth-child(3))) { grid-template-columns: 1fr 1fr; }
 .stripSlim:not(:has(> :nth-child(3))) > :last-child { grid-column: auto; }
+
+/* ---- problem vs fix: colour with meaning --------------------------------------- */
+/* Ink for the act card (structure), persimmon for the action and the fix, red for the
+   problem. Fixed ink so the card reads the same in both themes. */
+.ms_bad { background: color-mix(in srgb, var(--error-600) 14%, transparent); color: var(--error-600); }
+.ms_warn { background: var(--warning-50); color: var(--warning-700); }
+.mark { color: var(--primary); background: linear-gradient(transparent 62%, color-mix(in srgb, var(--primary) 26%, transparent) 62%); padding: 0 2px; }
+.h_act { background: #172536; color: #fff; box-shadow: 0 24px 50px -28px rgba(23, 37, 54, 0.75); }
+.h_act .heroKicker { align-self: flex-start; padding: 5px 12px; border-radius: 99px; background: var(--primary); color: #172536; }
+.h_act .heroKicker svg { color: #172536; }
+.h_act .heroOutcome { color: #fff; }
+.h_act .heroSub { color: rgba(255, 255, 255, 0.74); }
+.h_act .mark { color: #FF9A70; background: linear-gradient(transparent 62%, rgba(255, 128, 80, 0.3) 62%); }
+.h_act .heroActions :global(.btn):not(.cta) { color: #fff; background: transparent; border-color: rgba(255, 255, 255, 0.32); }
+.h_act .heroActions :global(.btn):not(.cta):hover { background: rgba(255, 255, 255, 0.08); }
+.h_act .handoff { border-color: rgba(255, 255, 255, 0.2); }
+.h_good { background: linear-gradient(120deg, color-mix(in srgb, var(--success-600) 7%, var(--surface)), var(--surface) 60%); }
+.h_warn { background: linear-gradient(120deg, var(--warning-50), var(--surface) 60%); }
+.heroPf { grid-template-columns: minmax(0, 1fr) 360px; }
+.pf { gap: 12px; padding: 20px; justify-content: center; }
+.h_act .pf { background: rgba(255, 255, 255, 0.04); border-color: rgba(255, 255, 255, 0.1); }
+.prob, .fix { display: flex; flex-direction: column; gap: 3px; padding: 14px 16px; border-radius: 14px; }
+.prob { background: color-mix(in srgb, var(--error-600) 10%, var(--surface)); box-shadow: inset 4px 0 0 var(--error-600); color: var(--fg-1); }
+.fix { background: color-mix(in srgb, var(--primary) 12%, var(--surface)); box-shadow: inset 4px 0 0 var(--primary); color: var(--fg-1); }
+.h_act .prob { background: rgba(198, 76, 80, 0.2); color: #fff; }
+.h_act .fix { background: rgba(255, 128, 80, 0.16); color: #fff; }
+.pfLabel { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; }
+.prob .pfLabel { color: var(--error-600); }
+.fix .pfLabel { color: var(--primary-active); }
+.h_act .prob .pfLabel { color: #FF8F92; }
+.h_act .fix .pfLabel { color: #FF9A70; }
+.pfHead { font-size: 15px; font-weight: 700; }
+.pfBig { font-size: 30px; font-weight: 800; line-height: 1.1; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.pfFoot { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 13.5px; line-height: 1.4; opacity: 0.85; }
+.fix .ba { font-size: 30px; }
+
+.h_act .seatDot { background: #fff; }
+.h_act .seatGone { background: transparent; border-color: #FF9A70; }
+.h_act .seatSpare { background: #E0A447; }
+@media (max-width: 1080px) { .heroPf { grid-template-columns: 1fr; } }
+.fix .baAfter { color: var(--primary-active); }
+.h_act .fix .baAfter { color: #FF9A70; }

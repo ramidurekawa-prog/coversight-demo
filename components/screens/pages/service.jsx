@@ -60,7 +60,7 @@ function outcomeFor(role, answer, { impact, perServer, usualRate, on }) {
     return { text: `One call, made in time: ${on} → ${on - 1} servers${impact != null ? `, about ${cvMoney(impact)} of labor back` : ''}`, money: impact != null };
   }
   if (answer.tone === 'warn') return role === 'owner' ? { text: 'Protect tonight’s sales: the floor needs everyone' } : role === 'floor' ? { text: 'Service is at risk if anyone leaves early' } : { text: 'No send-home tonight: guests are ahead of a usual night' };
-  if (answer.blocked) return { text: 'Your own staffing rule decides tonight: nothing to trim' };
+  if (answer.blocked) return { text: 'Your own staffing rule keeps an extra server on' };
   if (answer.tone === 'wait') return { text: role === 'owner' ? 'No labor at risk yet: checked again before any money is spent' : 'No guessing: the call comes when the numbers are sure' };
   return { text: role === 'owner' ? 'Labor matches demand: nothing to trim' : role === 'floor' ? 'Floor fully covered for the peak' : 'Staffing fits: no call needed' };
 }
@@ -413,7 +413,7 @@ function CvService() {
     if (l) {
       const done = nowMin >= l.end;
       const usualTotal = Math.round(l.comp.reduce((t, c) => t + c, 0));
-      return { big: done ? l.so : l.so + l.remaining, unit: done ? 'guests served' : 'guests expected', foot: done ? `${pct(l.pace)} usual` : `${l.so} so far · usual ${usualTotal}`, state: done ? 'Done' : l.source === 'sample' ? 'Sample' : 'Live', tone: done ? 'done' : 'now' };
+      return { big: done ? l.so : l.so + l.remaining, unit: done ? 'guests served' : 'guests expected', foot: done ? `${pct(l.pace)} usual` : `${l.so} so far · usual ${usualTotal}`, state: done ? 'Done' : l.mode === 'cut' ? 'Overstaffed' : l.so > Math.round(l.cmp * (1 + l.spread)) ? 'Busier than usual' : l.source === 'sample' ? 'Sample' : 'Live', tone: done ? 'done' : l.mode === 'cut' ? 'bad' : l.so > Math.round(l.cmp * (1 + l.spread)) ? 'warn' : 'now' };
     }
     if (mn) return { big: mn.covers, unit: 'guests, your count', foot: `for ${clockLabel(clockMinutes(mn.at))}${mn.typical ? ` · usual by then ${mn.typical}` : ''}`, state: state === 'Done' ? 'Done' : 'Typed', tone: 'typed' };
     if (!p) return { big: null, unit: 'no history', foot: isToday && own && state !== 'Later' ? 'Type your count to track it' : `No ${Mm.label.toLowerCase()} data for ${dayOf(day)}s`, state: null, tone: '' };
@@ -531,6 +531,23 @@ function CvService() {
   const detailTabs = [['slots', 'Every 15 minutes'], ['hours', 'Hour by hour'], ['rules', NAMES.guard], ['money', 'The money'], ['past', 'Past decisions'], ['busy', 'Busy times']];
   const pick = sel == null ? null : sel >= SLOT_FLOOR ? sel : sel * 60;
 
+  // The problem and the fix, side by side: only figures the page already computed.
+  const okChecks = checks.filter((c) => c.ok === true).length;
+  const yourChecks = checks.filter((c) => c.ok == null).length;
+  const spareHrs = rows.reduce((t, r) => t + r.spare, 0);
+  const peakNeed = rows.length ? Math.max(...rows.map((r) => r.need)) : null;
+  const busier = L && L.so > Math.round(L.cmp * (1 + L.spread));
+  const pf = cut ? {
+    problem: { head: `Overstaffed after ${clockLabel(cut.at)}`, big: '1 idle server', foot: `for about ${hl} hour${hoursLeft === 1 ? '' : 's'}${impact != null ? ` · ${cvMoney(impact)} of labor` : ''}`, est: impact != null },
+    fix: { label: NAMES.call, head: `Send 1 home at ${clockLabel(cut.at)}`, ba: [before.on, before.need], foot: `Every table still covered · ${NAMES.guard}: ${okChecks} checks pass${yourChecks ? `, ${yourChecks} for you to look at` : ''}` },
+  } : busier ? {
+    problem: { head: 'Busier than usual', big: `${Math.abs(L.pace)}% over`, foot: `guests against a usual ${dayOf(day)}` },
+    fix: { label: NAMES.guard, head: 'Keep everyone on', big: L.serversNow != null ? `${L.serversNow} servers` : 'Everyone', foot: 'Sending anyone home now puts service at risk' },
+  } : !L && !manual && plan && spareHrs > 0 ? {
+    problem: { head: `Idle labor on a usual ${dayOf(day)}`, big: `${spareHrs} server-hour${spareHrs === 1 ? '' : 's'}`, foot: wage ? `about ${cvMoney(spareHrs * wage)} with nothing to do` : 'with nothing to do', est: !!wage },
+    fix: { label: NAMES.brief, head: `Schedule for the ${clockLabel(rows.find((r) => r.need === peakNeed).hour * 60)} peak`, big: `${peakNeed} server${peakNeed === 1 ? '' : 's'}`, foot: plan.blocked ? `needed at the peak · your own rule keeps ${meal === 'dinner' ? fences.minDinner : fences.minAny} on` : 'needed at the peak, even in the busiest recent week' },
+  } : null;
+
   return (
     <div className="cv-page">
       <div className={s.lead}>
@@ -551,11 +568,15 @@ function CvService() {
         {both && <MealCard id="day" active={view.meal === 'day'} onPick={(id) => { setView({ meal: id }); setSel(null); }} title="Full day" big={dayTotal} unit="covers" foot={null} state={null} />}
       </div>
 
-      <section className={`${s.hero} ${s[`h_${answer.tone}`] || ''}`} aria-labelledby="svc-hero">
+      <section className={`${s.hero} ${s[`h_${answer.tone}`] || ''} ${pf ? s.heroPf : ''}`} aria-labelledby="svc-hero">
         <div className={s.heroMain}>
           <span className={s.heroKicker}><Icon name={TONE_ICON[answer.tone] || 'Activity'} size={16} />{view.meal === 'day' ? `Full day · ${M.label} now · ` : ''}{answer.kicker}</span>
           {promise && <p className={s.heroOutcome}><Icon name={role === 'floor' ? 'Users' : role === 'owner' ? 'TrendingUp' : 'Gauge'} size={18} /><span>{promise.text}</span>{promise.money && <Claim k="est" />}</p>}
-          <h2 id="svc-hero" className={s.heroTitle} role="status" aria-live="polite">{answer.title}</h2>
+          <h2 id="svc-hero" className={s.heroTitle} role="status" aria-live="polite">{(() => {
+            const m = cut ? clockLabel(cut.at) : null;
+            const i = m ? answer.title.lastIndexOf(m) : -1;
+            return i < 0 ? answer.title : <>{answer.title.slice(0, i)}<span className={s.mark}>{m}</span>{answer.title.slice(i + m.length)}</>;
+          })()}</h2>
           {answer.why && <p className={s.heroSub}>{answer.why}</p>}
           {night?.to && !yes && <span className={s.typedNote}><Icon name="UserPlus" size={14} />Handed to the {HANDOFF[night.to]}.</span>}
           {showManual && <ManualForm key={`${meal}:${manual?.saved ?? 'new'}`} meal={meal} entry={latest(meal)} nowMin={nowMin} onSave={saveManual} primary={!cut || !!state} />}
@@ -575,7 +596,23 @@ function CvService() {
           ))}
           {answer.empty && !showManual && <div className={s.heroActions}><Button className={s.cta} iconRight="ArrowRight" onClick={() => cv.go('inputs')}>Add Toast data</Button></div>}
         </div>
-        {(cut || L || manual) && <aside className={s.heroSide}>
+        {pf ? (
+          <aside className={`${s.heroSide} ${s.pf}`} aria-label="The problem and the fix">
+            <div className={s.prob}>
+              <span className={s.pfLabel}><Icon name="TriangleAlert" size={14} />The problem</span>
+              <span className={s.pfHead}>{pf.problem.head}</span>
+              <span className={s.pfBig}>{pf.problem.big}</span>
+              <span className={s.pfFoot}>{pf.problem.foot}{pf.problem.est && <Claim k="est" />}</span>
+            </div>
+            <div className={s.fix}>
+              <span className={s.pfLabel}><Icon name="ShieldCheck" size={14} />{pf.fix.label}</span>
+              <span className={s.pfHead}>{pf.fix.head}</span>
+              {pf.fix.ba ? <span className={s.ba}><b>{pf.fix.ba[0]}</b><Icon name="ArrowRight" size={18} /><b className={s.baAfter}>{pf.fix.ba[1]}</b></span> : <span className={s.pfBig}>{pf.fix.big}</span>}
+              {pf.fix.ba && <Seats on={pf.fix.ba[0]} need={pf.fix.ba[1]} gone />}
+              <span className={s.pfFoot}>{pf.fix.foot}</span>
+            </div>
+          </aside>
+        ) : (L || manual) ? <aside className={s.heroSide}>
           {cut ? (
             <div className={`${s.sideStack} ${role === 'floor' ? s.sideFlip : ''}`}>
               <div>
@@ -600,7 +637,7 @@ function CvService() {
                     : []).map(([k, v, f]) => <div key={k} className={s.sideStat}><span className={s.sideLabel}>{k}</span><span className={`${s.impact} ${v === '—' ? s.none : ''}`}>{v}</span><span className={s.sideFoot}>{f}</span></div>)}
             </div>
           )}
-        </aside>}
+        </aside> : null}
       </section>
 
       <div>
