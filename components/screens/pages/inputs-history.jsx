@@ -9,7 +9,7 @@ import { Button, Icon } from '../../kit';
 import { CV_D, CV_DS, CV_ROOM, Pill, useCv } from '../core';
 import { engine } from '../../engine';
 import { SCHEMAS } from '../../../lib/data/page/inputs';
-import { undoEntry, useHistory } from './inputs-data';
+import { goBackTo, undoEntry, useHistory } from './inputs-data';
 import s from './inputs.module.css';
 
 const META = (k) => SCHEMAS[k] || (k === 'toast' ? { title: 'Toast exports', icon: 'PlugZap' } : { title: k, icon: 'FilePen' });
@@ -35,6 +35,17 @@ export function History({ server, onChanged, kindFilter = '' }) {
       cv.toast(`Undone. ${META(e.kind).title} at ${roomName(e.room)} is back to what it was before.`);
       onChanged?.();
     } catch (err) { cv.toast(`Couldn’t undo: ${err.message}`); } finally { setBusy(null); }
+  };
+  // An older entry can be brought back in one click: every later live entry for it is undone.
+  const laterThan = (e) => { const i = hist.entries.indexOf(e); return hist.entries.slice(0, i).filter((x) => x.room === e.room && x.kind === e.kind && !x.undone); };
+  const goBack = async (e) => {
+    setBusy(e.id);
+    try {
+      await goBackTo(laterThan(e));
+      cv.toast(`${META(e.kind).title} at ${roomName(e.room)} is back to the ${e.at} version.`);
+      onChanged?.();
+      hist.reload();
+    } catch (err) { cv.toast(`Couldn’t go back: ${err.message}`); hist.reload(); } finally { setBusy(null); }
   };
   const reset = () => { engine.reset(); setConfirm(false); cv.toast('Back to the sample data. Every hand-entered row is cleared, and the history keeps a record.'); };
 
@@ -97,6 +108,7 @@ export function History({ server, onChanged, kindFilter = '' }) {
                   </button>
                   <Icon name={on ? 'ChevronUp' : 'ChevronDown'} size={16} className={s.chev} />
                   {e.current && !e.undone && <Button size="sm" variant="secondary" icon="Undo2" disabled={!!busy} onClick={() => undo(e)}>{busy === e.id ? 'Undoing…' : 'Undo'}</Button>}
+                  {!e.current && !e.undone && <Button size="sm" variant="ghost" icon="History" disabled={!!busy} onClick={() => goBack(e)}>{busy === e.id ? 'Going back…' : 'Go back to this'}</Button>}
                 </div>
                 {on && (
                   <dl className={s.histDetail} id={`hist-${e.id}`}>

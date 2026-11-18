@@ -34,6 +34,13 @@ const fmtVal = (field, v) => (typeof v === 'number' && /price|cost|sales|refunds
    the last commit is kept here and shown when the editor comes back. */
 const done = { key: null, result: null };
 
+/* Common choices offered in pick-lists before a location has data of its own. Suggestions only: any value can be typed. */
+const STARTERS = {
+  unit: ['each', 'lb', 'oz', 'case', 'gal', 'qt', 'pt', 'dozen', 'bunch', 'bag', 'box', 'bottle', 'can', 'kg', 'g', 'L'],
+  category: ['Appetizers', 'Salads', 'Soups', 'Mains', 'Sides', 'Desserts', 'Kids', 'Brunch', 'Beer', 'Wine', 'Cocktails', 'Non-alcoholic'],
+  role: ['Server', 'Bartender', 'Host', 'Busser', 'Food runner', 'Line cook', 'Prep cook', 'Dishwasher', 'Shift lead', 'Manager'],
+};
+
 function Grid({ kind, rows, setRows, issues, find = '', onRemove, only = null, cards = false, picks = {} }) {
   const cols = SCHEMAS[kind].columns;
   const bad = (i, k) => issues.find((x) => x.row === i + 1 && (x.col === k || x.col == null) && x.level === 'error') || issues.find((x) => x.row === i + 1 && x.col === k);
@@ -285,6 +292,8 @@ export function Editor({ kind, seed, startMode, lastEntry = null, onUndo, onHist
     const base = templateRows(kind, room);
     const out = Object.fromEntries(schema.columns.filter((c) => c.type === 'text' && c.k !== 'date').map((c) => [c.k, [...new Set(base.map((r) => String(r[c.k] ?? '').trim()).filter(Boolean))].slice(0, 200)]));
     if (kind === 'waste') out.item = [...new Set((room.counts || []).map((c) => c.label || c.item))];
+    // A new location has no data to suggest from, so common choices follow whatever is already there.
+    for (const [k, list] of Object.entries(STARTERS)) if (out[k]) out[k] = [...new Set([...out[k], ...list])];
     return out;
   }, [kind, room]); // eslint-disable-line react-hooks/exhaustive-deps
   const [csv, setCsvState] = React.useState(seed?.csv ?? '');

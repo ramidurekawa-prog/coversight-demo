@@ -69,3 +69,15 @@ export async function undoEntry(id) {
   await jfetch(`/api/inputs/${encodeURIComponent(id)}/undo`, { method: 'POST' });
   await engine.hydrate();
 }
+
+/**
+ * Go back to an older entry: undo every later live entry for the same room and
+ * kind, newest first, so that one is what the room holds again. `later` is
+ * those entries, newest first.
+ */
+export async function goBackTo(later) {
+  const eng = engine.get();
+  if (eng.mode !== 'server') { for (const e of later) engine.undo(e.id); return; }
+  for (const e of later) await jfetch(`/api/inputs/${encodeURIComponent(e.id)}/undo`, { method: 'POST' });
+  await engine.hydrate();
+}
