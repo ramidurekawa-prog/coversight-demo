@@ -113,7 +113,7 @@ describe('Service: approving tonight’s cut', () => {
     expect(live.live).toBe(false);
     const { servicePlan } = await import('../lib/data/page/service.js');
     const { loadDataset } = await import('../server/dataset');
-    const plan = servicePlan((await loadDataset(db, orgId))!.ds.rooms.oakland, 'Thu', FENCES(3));
+    const plan = servicePlan((await loadDataset(db, orgId))!.ds.rooms.oakland, 'Thu', FENCES(3), 'dinner');
     expect(plan?.cutFrom).not.toBeNull();
     const at = `${String(plan!.cutFrom).padStart(2, '0')}:00`;
 

@@ -278,3 +278,16 @@
 @media (max-width: 1080px) { .heroPf { grid-template-columns: 1fr; } }
 .fix .baAfter { color: var(--primary-active); }
 .h_act .fix .baAfter { color: #FF9A70; }
+
+/* ---- service vitals ------------------------------------------------------------- */
+.vitals { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.vital { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border-radius: 14px; background: var(--surface); box-shadow: 0 0 0 1px var(--border); border-top: 4px solid var(--border); }
+.vitalLabel { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; color: var(--fg-2); }
+.vitalBig { font-size: 30px; font-weight: 700; line-height: 1.1; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.vitalFoot { font-size: 13.5px; color: var(--fg-2); }
+.v_bad { border-top-color: var(--error-600); }
+.v_bad .vitalLabel svg { color: var(--error-600); }
+.v_warn { border-top-color: var(--warning-600); }
+.v_warn .vitalLabel svg { color: var(--warning-600); }
+.v_ok { border-top-color: var(--accent); }
+@media (max-width: 760px) { .vitals { grid-template-columns: repeat(2, minmax(0, 1fr)); } .vitalBig { font-size: 26px; } }

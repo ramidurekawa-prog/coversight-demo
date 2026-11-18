@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { addDays, dayOfDate, dayOutlook, hourRows, mealOf, slotRows, toCsv, bandSpread, calibratedBand, clockLabel, clockMinutes, cutApprovalId, cutExecution, fencesOf, isCutFor, lastOrderAt, liveNight, localNow, manualNight, pacing, serviceCall, serviceHealth, servicePlan, serversOn, serviceWindow, slotCovers } from '../lib/data/page/service.js';
+import { addDays, serviceRecap, dayOfDate, dayOutlook, hourRows, mealOf, slotRows, toCsv, bandSpread, calibratedBand, clockLabel, clockMinutes, cutApprovalId, cutExecution, fencesOf, isCutFor, lastOrderAt, liveNight, localNow, manualNight, pacing, serviceCall, serviceHealth, servicePlan, serversOn, serviceWindow, slotCovers } from '../lib/data/page/service.js';
 
 const hours = (day, rows) => rows.flatMap(([hour, covers, servers]) => [0, 1, 2, 3].map((week) => ({ week, day, hour, covers, servers })));
 // 24+ busy hours so the room's pace can be measured; Thursday has a spare server from 8 pm.
@@ -196,6 +196,13 @@ describe('manualNight (no live feed)', () => {
 });
 
 describe('lunch, dinner and the full day', () => {
+  it('looks back on a finished service: idle server-hours from its own counts', () => {
+    const plan = { rate: 10, hours: [{ hour: 11, covers: 8, servers: 3 }, { hour: 12, covers: 20, servers: 3 }] };
+    const r = serviceRecap({ plan, slots: [2, 2, 2, 2, 5, 5, 5, 5], start: 11 * 60, servers: 3, wage: 20 });
+    expect(r).toMatchObject({ guests: 28, usual: 28, pace: 0, idleHours: 3, idleCost: 60, peakNeed: 2, busiest: 12 });
+    expect(serviceRecap({ plan, slots: [], start: 660, servers: 3 })).toBeNull();
+    expect(serviceRecap({ plan, slots: [1], start: 660, servers: 3 }).idleCost).toBeNull();
+  });
   const room = { levers: { serviceHours: [
     ...[0, 1, 2, 3].flatMap((week) => [[11, 20, 3], [12, 30, 3], [13, 22, 3], [14, 8, 3]].map(([hour, covers, servers]) => ({ week, day: 'Tue', hour, covers, servers }))),
     ...[0, 1, 2, 3].flatMap((week) => [[17, 20, 5], [18, 40, 5], [19, 44, 5], [20, 24, 5], [21, 10, 5]].map(([hour, covers, servers]) => ({ week, day: 'Tue', hour, covers, servers }))),
