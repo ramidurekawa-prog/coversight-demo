@@ -174,6 +174,43 @@ function Fold({ icon, title, n, open, onToggle, children }) {
   );
 }
 
+/** Talk instead of type, where the browser can listen. Returns null where it can't, and the mic is simply not shown. */
+function useListen(onText) {
+  const [on, setOn] = React.useState(false);
+  const rec = React.useRef(null);
+  const can = typeof window !== 'undefined' && !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+  React.useEffect(() => () => { try { rec.current?.abort(); } catch { /* already stopped */ } }, []);
+  if (!can) return null;
+  const start = () => {
+    if (on) { rec.current?.stop(); return; }
+    try {
+      const R = window.SpeechRecognition || window.webkitSpeechRecognition;
+      const r = new R();
+      r.lang = 'en-US'; r.interimResults = false; r.maxAlternatives = 1;
+      r.onresult = (e) => { const said = e.results?.[0]?.[0]?.transcript; if (said) onText(said); };
+      r.onend = () => setOn(false);
+      r.onerror = () => setOn(false);
+      rec.current = r; setOn(true); r.start();
+    } catch { setOn(false); }
+  };
+  return { on, start };
+}
+
+/** Read an answer out loud, where the browser can speak. */
+function Hear({ text }) {
+  const [on, setOn] = React.useState(false);
+  React.useEffect(() => () => { try { window.speechSynthesis?.cancel(); } catch { /* nothing playing */ } }, []);
+  if (typeof window === 'undefined' || !window.speechSynthesis || !window.SpeechSynthesisUtterance) return null;
+  const play = () => {
+    window.speechSynthesis.cancel();
+    if (on) { setOn(false); return; }
+    const u = new window.SpeechSynthesisUtterance(text);
+    u.lang = 'en-US'; u.onend = () => setOn(false); u.onerror = () => setOn(false);
+    setOn(true); window.speechSynthesis.speak(u);
+  };
+  return <button type="button" className="cv-sous-hear" onClick={play} aria-pressed={on}><Icon name="Volume2" size={15} />{on ? 'Stop' : 'Hear it'}</button>;
+}
+
 const CHECK_ICON = { found: 'TriangleAlert', needs: 'CircleDashed', clear: 'CircleCheck' };
 const CHECK_WORD = { found: 'To fix', needs: 'Needs data', clear: 'Clear' };
 
@@ -188,10 +225,10 @@ function LineCheck({ book, name, openId, setOpenId, onGo, boxRef }) {
   const shown = all ? book.checks : book.checks.filter((c) => c.status === 'found' || c.id === openId);
   const hidden = book.checks.length - shown.length;
   return (
-    <section className="cv-check" ref={boxRef} aria-label={`${name}'s line check`}>
+    <section className="cv-check" ref={boxRef} aria-label={`${book.title.split(' ')[0]} checkup by ${name}`}>
       <header className="cv-check-h">
         <span className="ic" aria-hidden="true"><Icon name="ListChecks" size={17} /></span>
-        <span className="t"><b>{name}&apos;s line check</b><i>{book.title} · {book.covers}</i></span>
+        <span className="t"><b>{book.title.split(' ')[0]} checkup</b><i>{name} checked {book.checks.length} things: {book.covers}</i></span>
         <span className="cv-check-n">
           {book.found > 0 && <i className="found"><Icon name="TriangleAlert" size={13} />{book.found} to fix</i>}
           {book.needs > 0 && <i className="needs"><Icon name="CircleDashed" size={13} />{book.needs} need data</i>}
@@ -211,11 +248,11 @@ function LineCheck({ book, name, openId, setOpenId, onGo, boxRef }) {
               </button>
               {open && (
                 <div className="cv-check-b">
-                  <p>{c.text}</p>
-                  {c.value && <p className="u">{c.value} {c.unit}.</p>}
-                  {c.how && <p className="how"><b><Icon name="Wrench" size={13} />The fix</b>{c.how}</p>}
+                  <p className="say">{c.say || c.text}</p>
+                  {c.how && <p className="how"><b><Icon name="Wrench" size={13} />What to do</b>{c.how}</p>}
+                  {c.say && c.status !== 'needs' && <p className="fine">{c.text}{c.value ? ` ${c.value} ${c.unit}.` : ''}</p>}
                   {c.rule && <p className="rule"><b><Icon name="Scale" size={13} />The rule</b>{c.rule}</p>}
-                  {c.status === 'needs' && <p className="need"><b><Icon name="CircleDashed" size={13} />To check this</b>{c.needs}.{c.needsGo && <button type="button" className="cv-sous-more" onClick={() => onGo(c.needsGo)}>Add it</button>}</p>}
+                  {c.status === 'needs' && <p className="need"><b><Icon name="CircleDashed" size={13} />I need this to check</b>{c.needs}.{c.needsGo && <button type="button" className="cv-sous-more" onClick={() => onGo(c.needsGo)}>Add it</button>}</p>}
                 </div>
               )}
             </li>
@@ -249,12 +286,13 @@ function Answer({ t, last, onGo, onAsk, onDo }) {
   return (
     <div className="a">
       <p className="short">{short}</p>
+      {t.todo && <p className="todo"><b>Do this</b>{t.todo}</p>}
       {t.move && <Stake move={t.move} />}
       {t.move && <div className="cv-sous-acts"><Button icon={ACT[t.move.act.kind]?.icon} iconRight={ACT[t.move.act.kind] ? undefined : 'ArrowRight'} onClick={() => onDo(t.move)}>{ctaFor(t.move)}</Button></div>}
       {!t.move && t.claim && <span className="cv-sous-claim"><Claim k={t.claim} /></span>}
       {(rest.length > 0 || t.cites?.length > 0) && (
         <>
-          <button type="button" className="cv-sous-more" onClick={() => setWhy((x) => !x)} aria-expanded={why}>{why ? 'Hide' : 'Show why'}</button>
+          <span className="cv-sous-tools"><Hear text={[short, t.todo].filter(Boolean).join(' ')} /><button type="button" className="cv-sous-more" onClick={() => setWhy((x) => !x)} aria-expanded={why}>{why ? 'Hide the details' : 'Show me why'}</button></span>
           {why && <div className="cv-sous-why">{rest.map((para, n) => <p key={n}>{para}</p>)}<Cites cites={t.cites} onGo={onGo} /></div>}
         </>
       )}
@@ -283,6 +321,8 @@ export function SousPanel({ onClose, go, role: shellRole = 'owner', tools = fals
   const [check, setCheck] = React.useState('');
   const bookRef = React.useRef(null);
   const roomId = CV_D.id;
+  const askRef = React.useRef(null);
+  const listen = useListen((said) => askRef.current?.(said));
 
   React.useEffect(() => {
     const k = (e) => { if (e.key === 'Escape') onClose(); };
@@ -353,9 +393,11 @@ export function SousPanel({ onClose, go, role: shellRole = 'owner', tools = fals
     if (!a) a = agentAnswer(page, q, local.facts, { room: local.brief.room, role, move });
     // The button on an answer always comes from this browser's own move, never from text.
     const m = a.move ? local.moves.find((x) => x.id === a.move.id) || null : null;
-    setTurns((xs) => xs.map((t, i) => (i === xs.length - 1 ? { q, by: me.agent.name, a: a.text, short: a.short, move: m, cites: a.cites || sousCites([]), claim: a.claim, grounded: a.grounded, suggest: a.suggest || [] } : t)));
+    setTurns((xs) => xs.map((t, i) => (i === xs.length - 1 ? { q, by: me.agent.name, a: a.text, short: a.short, todo: a.todo || null, move: m, cites: a.cites || sousCites([]), claim: a.claim, grounded: a.grounded, suggest: a.suggest || [] } : t)));
     setBusy(false);
   };
+
+  askRef.current = ask;
 
   // A question or a move handed over from the page's strip, once.
   const started = React.useRef(false);
@@ -373,7 +415,8 @@ export function SousPanel({ onClose, go, role: shellRole = 'owner', tools = fals
         <header className="cv-pass-top">
           <span className="cv-sous-mark" aria-hidden="true"><Icon name="Sparkles" size={20} /></span>
           <form className="cv-pass-ask" onSubmit={(e) => { e.preventDefault(); ask(text); }}>
-            <input id="cv-sous-q" autoFocus value={text} onChange={(e) => setText(e.target.value)} placeholder={special ? `Ask ${me.agent.name}, or anything about ${brief.room}` : `Ask ${SOUS.name} anything about ${brief.room}`} maxLength={500} autoComplete="off" aria-label={`Ask ${SOUS.name} about ${brief.room}`} />
+            <input id="cv-sous-q" autoFocus value={text} onChange={(e) => setText(e.target.value)} placeholder={listen?.on ? 'Listening…' : 'Ask me anything'} maxLength={500} autoComplete="off" aria-label={`Ask ${SOUS.name} about ${brief.room}`} />
+            {listen && <button type="button" className={`cv-sous-mic${listen.on ? ' on' : ''}`} onClick={listen.start} aria-pressed={listen.on} aria-label={listen.on ? 'Stop listening' : 'Ask out loud'} title="Ask out loud"><Icon name="Mic" size={18} /></button>}
             <button type="submit" className="cv-sous-send" disabled={!text.trim() || busy} aria-label="Ask"><Icon name="ArrowUp" size={18} /></button>
           </form>
           <button className="iconbtn" onClick={onClose} aria-label="Close the Pass"><Icon name="X" size={18} /></button>
@@ -381,7 +424,8 @@ export function SousPanel({ onClose, go, role: shellRole = 'owner', tools = fals
 
         <div className="cv-pass-bd">
           {!turn && suggest.length > 0 && (
-            <div className="cv-sous-chips" aria-label="Things to ask">
+            <div className="cv-sous-chips big" aria-label="Things to ask">
+              <span className="l">Tap a question</span>
               {suggest.map((q) => <button key={q} type="button" onClick={() => ask(q)}>{q}</button>)}
             </div>
           )}
@@ -412,7 +456,7 @@ export function SousPanel({ onClose, go, role: shellRole = 'owner', tools = fals
 
           <div className="cv-pass-lanes" data-lane={lane}>
             <section className="cv-lane now" aria-label="Do now">
-              <h2><Icon name="Flame" size={15} />Do now<i>{board.now.length}</i></h2>
+              <h2>Do now<i>{board.now.length}</i></h2>
               {board.now.length === 0 && <p className="cv-lane-empty">Nothing needs you right now. I&apos;ll put it here when something does.</p>}
               {board.now.map((m, i) => {
                 const a = agentFor(m.go === 'finding' ? 'plan' : m.go);
@@ -447,7 +491,7 @@ export function SousPanel({ onClose, go, role: shellRole = 'owner', tools = fals
             </section>
 
             <section className="cv-lane watching" aria-label="Keeping an eye on">
-              <h2><Icon name="Eye" size={15} />Keeping an eye on<i>{board.watching.length}</i></h2>
+              <h2>Keeping an eye on<i>{board.watching.length}</i></h2>
               {board.watching.length === 0 && <p className="cv-lane-empty">No tests running and nothing set aside.</p>}
               {board.watching.map((w) => (
                 <article key={w.id} className="cv-ticket quiet">
@@ -464,7 +508,7 @@ export function SousPanel({ onClose, go, role: shellRole = 'owner', tools = fals
             </section>
 
             <section className="cv-lane proven" aria-label="Proven">
-              <h2><Icon name="BadgeCheck" size={15} />Proven<i>{board.proven.length}</i></h2>
+              <h2>Proven<i>{board.proven.length}</i></h2>
               {board.proven.length === 0 && <p className="cv-lane-empty">Nothing verified yet. A change lands here once a test proves it.</p>}
               {board.proven.map((w) => (
                 <article key={w.id} className="cv-ticket good">
@@ -499,7 +543,7 @@ export function SousPanel({ onClose, go, role: shellRole = 'owner', tools = fals
         </div>
 
         <footer className="cv-pass-foot">
-          <span>The Pass · every ticket comes from {brief.room}&apos;s own records. Nothing is changed or sent without you.</span>
+          <span>Everything here comes from {brief.room}&apos;s own records. Nothing is changed or sent without you.</span>
           {tools && <span>Engine: {!server ? 'built-in (browser preview)' : remote?.ai ? 'Claude Opus 5.5, checked against the records' : 'built-in (no AI key on the server)'}</span>}
         </footer>
       </div>

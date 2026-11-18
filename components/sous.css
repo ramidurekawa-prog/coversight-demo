@@ -337,3 +337,52 @@ button.cv-ticket-h:focus-visible { outline: none; box-shadow: var(--ring); borde
   .cv-check-b { padding-left: 2px; }
   .cv-check-row .cv-stake .cv-claim, .cv-check-row .cv-stake > :not(b) { display: none; }
 }
+
+/* A calmer Pass: plain cards, sentence-case labels, bigger questions and answers. */
+.cv-pass { border-radius: 22px; }
+.cv-pass-top { padding: 18px 20px; }
+.cv-pass-ask { padding: 5px 5px 5px 20px; border-radius: 16px; background: rgba(255, 255, 255, 0.1); }
+.cv-pass-ask input { height: 52px; font: 600 20px/1 var(--font-sans); }
+.cv-sous-mic { display: grid; place-items: center; width: 44px; height: 44px; flex: none; border: 0; border-radius: 12px; background: none; color: #F6F1E7; cursor: pointer; }
+.cv-sous-mic:hover { background: rgba(255, 255, 255, 0.12); }
+.cv-sous-mic.on { background: var(--primary); color: #172536; animation: cv-mic 1.2s ease-in-out infinite; }
+@keyframes cv-mic { 50% { box-shadow: 0 0 0 7px color-mix(in srgb, var(--primary) 30%, transparent); } }
+@media (prefers-reduced-motion: reduce) { .cv-sous-mic.on { animation: none; } }
+.cv-pass-ask .cv-sous-send { width: 44px; height: 44px; }
+.cv-pass-bd { gap: 20px; padding: 22px 24px 24px; }
+.cv-sous-chips.big { align-items: center; gap: 10px; }
+.cv-sous-chips.big .l { font: 600 14px/1.3 var(--font-sans); color: var(--fg-3); margin-right: 2px; }
+.cv-sous-chips.big button { padding: 12px 18px; border-radius: 14px; border-color: var(--border); font: 700 16px/1.25 var(--font-sans); box-shadow: 0 1px 2px rgba(23, 37, 54, 0.05); }
+.cv-sous-chips.big button:hover { border-color: var(--primary); }
+.cv-lane { padding: 0; background: none; gap: 12px; }
+.cv-lane h2 { font: 800 15px/1.3 var(--font-sans); letter-spacing: 0; text-transform: none; color: var(--fg-1); margin: 0 2px; }
+.cv-lane h2 i { background: var(--surface-sunken); }
+.cv-ticket { border-radius: 16px; border: 1px solid var(--border); border-top: 1px solid var(--border); padding: 16px 18px 18px; gap: 10px; box-shadow: 0 1px 2px rgba(23, 37, 54, 0.04), 0 12px 28px -22px rgba(23, 37, 54, 0.3); }
+.cv-lane.now .cv-ticket, .cv-lane.now .cv-ticket.warn, .cv-ticket.good, .cv-ticket.answer { border-top: 1px solid var(--border); }
+.cv-ticket-h .who { font: 600 13.5px/1.3 var(--font-sans); letter-spacing: 0; text-transform: none; color: var(--fg-3); }
+.cv-ticket-h .here { font: 700 12px/1.3 var(--font-sans); letter-spacing: 0; text-transform: none; }
+.cv-ticket .t { font-size: 18px; }
+.cv-ticket.quiet, .cv-ticket.good { box-shadow: none; background: var(--surface-sunken); border-color: transparent; }
+.cv-ticket-why, .cv-pass-earlier { border-top-style: solid; border-top-color: var(--border); }
+.cv-ticket.answer { padding: 22px 24px 24px; border-color: var(--border-strong); }
+.cv-ticket.answer .a { gap: 14px; }
+.cv-ticket.answer .a .short { font: 800 26px/1.3 var(--font-sans); letter-spacing: -0.02em; max-width: 30ch; }
+.cv-ticket.answer .a .todo { display: flex; flex-direction: column; gap: 3px; padding: 14px 16px; border-radius: 14px; background: color-mix(in srgb, var(--primary) 10%, transparent); font: 700 18px/1.4 var(--font-sans); max-width: 46ch; }
+.cv-ticket.answer .a .todo b { font: 800 12.5px/1.3 var(--font-sans); letter-spacing: 0.04em; text-transform: uppercase; color: color-mix(in srgb, var(--primary) 60%, var(--fg-1)); }
+.cv-sous-tools { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.cv-sous-hear { display: inline-flex; align-items: center; gap: 7px; padding: 8px 14px; border: 1px solid var(--border-strong); border-radius: 999px; background: var(--surface); font: 700 14.5px/1.2 var(--font-sans); color: var(--fg-1); cursor: pointer; }
+.cv-sous-hear[aria-pressed='true'] { border-color: var(--primary); }
+.cv-pass-foot { font-size: 13px; }
+@media (max-width: 640px) {
+  .cv-pass { border-radius: 0; }
+  .cv-pass-top { padding: 12px 12px; }
+  .cv-pass-ask input { height: 46px; font-size: 17px; }
+  .cv-pass-bd { padding: 16px 14px 20px; gap: 16px; }
+  .cv-sous-chips.big .l { display: none; }
+  .cv-ticket.answer .a .short { font-size: 22px; }
+  .cv-ticket.answer { padding: 18px 16px; }
+}
+.cv-check-b .say { font: 700 17px/1.45 var(--font-sans); color: var(--fg-1); max-width: 60ch; }
+.cv-check-b .fine { font-size: 13.5px; color: var(--fg-3); }
+.cv-pass-ask { min-width: 0; }
+@media (max-width: 640px) { .cv-pass-top { gap: 8px; } .cv-pass-ask { padding-left: 12px; gap: 2px; } .cv-pass-top .cv-sous-mark { width: 38px; height: 38px; } }

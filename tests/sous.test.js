@@ -342,7 +342,7 @@ describe('what the agents recommend', () => {
     // Any other question gets one sentence first and the records behind it.
     const b = agentAnswer('purchasing', 'How did last week go?', facts, { move });
     expect(b.short.length).toBeLessThan(b.text.length);
-    expect(b.text.startsWith(b.short.replace(/\.$/, ''))).toBe(true);
+    expect(b.short).toMatch(/^You kept \$/);
   });
 });
 
@@ -536,5 +536,25 @@ describe('each specialist’s line check', () => {
     const book = lineCheck('labour', nowhere);
     expect(book.checks.filter((c) => c.kind === 'law').map((c) => c.id)).toEqual(['labour:state']);
     expect(book.checks.map((c) => c.rule).join(' ')).not.toMatch(/California|meal break/);
+  });
+});
+
+describe('Sous talks plainly', () => {
+  it('every answer leads with short spoken sentences, and says what to do when it knows', async () => {
+    const { agentAnswer } = await import('../lib/ai/agents.js');
+    const words = (t) => t.split(/[.!?]\s+/).map((x) => x.trim().split(/\s+/).length);
+    for (const id of rooms) {
+      const d = room(id);
+      const facts = sousFacts(d);
+      for (const f of facts.filter((x) => x.say)) {
+        expect(f.say, f.id).not.toMatch(/undefined|NaN|\{[a-zA-Z]+\}/);
+        expect(Math.max(...words(f.say)), `${f.id}: ${f.say}`).toBeLessThanOrEqual(24);
+        expect(numbersOk(`${f.say} ${f.todo || ''}`, sousSheet(facts)), `${f.id}: ${f.say}`).toBe(true);
+      }
+      const a = agentAnswer('labour', 'Who is heading into overtime?', facts);
+      expect(a.short).toMatch(/about to hit overtime/);
+      expect(a.todo).toMatch(/^Give \d+ hours? to someone/);
+      expect(sousAnswer('How did last week go?', facts).short).toMatch(/^You kept \$/);
+    }
   });
 });

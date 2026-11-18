@@ -110,7 +110,10 @@ here ships to customers.
   there (`rulesFor(profile)`, from the room's `state`/`city`); never type a
   pay rate or state a rule for a place with no table, and every rule says it
   is a summary to confirm with payroll. A new skill for an agent is a new
-  check, which also becomes a fact and can become its move. The nightly `sous` job notifies
+  check, which also becomes a fact and can become its move. Sous talks to
+  people who do not want to read: a fact's `say` is one or two short spoken
+  sentences and `todo` the one thing to do (an answer shows those first, the
+  full record behind "Show me why"); write both for any new fact or check. The nightly `sous` job notifies
   what it noticed and pre-writes briefs. `tests/sous.test.js` and
   `tests/sous.test.ts` cover it; `tests/helpers/fake-claude.ts` stands in for
   the API.
