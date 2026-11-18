@@ -156,6 +156,7 @@ import {
   Verified,
   Wrench,
   Zap,
+<<<<<<< HEAD
   X,
   UserCheck,
   ArrowUpRight,
@@ -171,6 +172,12 @@ import {
   Settings,
   TrendingDown,
   User,
+=======
+  ChevronLeft,
+  ChevronRight,
+  StickyNote,
+  X,
+>>>>>>> pr62
 } from 'lucide-react';
 
 const ICONS = {
@@ -325,6 +332,7 @@ const ICONS = {
   Verified,
   Wrench,
   Zap,
+<<<<<<< HEAD
   X,
   UserCheck,
   ArrowUpRight,
@@ -340,6 +348,12 @@ const ICONS = {
   Settings,
   TrendingDown,
   User,
+=======
+  ChevronLeft,
+  ChevronRight,
+  StickyNote,
+  X,
+>>>>>>> pr62
 };
 
 /** Every icon name the screens use. A unit test keeps this list complete. */

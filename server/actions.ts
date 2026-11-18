@@ -85,6 +85,8 @@ export const ACTION_KEYS = {
   'week.review': { scope: 'room', schema: z.record(z.string().regex(/^\d{4}-\d{2}-\d{2}$/), z.object({ at: isoDate, note: z.string().trim().max(1000).optional() })).refine((r) => Object.keys(r).length <= 26, 'keeps at most 26 weeks') },
   /** All rooms: attention items acknowledged or snoozed in this room, by item id (`<roomId>:<kind>:<key>`). */
   'portfolio.handled': { scope: 'room', schema: z.record(z.string().regex(/^[^:\s]{1,60}:[a-z]+:\S{1,100}$/).max(120), z.object({ s: z.enum(['ack', 'snooze']), at: isoDate, until: isoDate.optional() })).refine((v) => Object.keys(v).length <= 50, 'at most 50 handled items') },
+  /** Daily detail: this room's day parts, whole hours on the service clock (4 = 4 am … 28 = 4 am next day), no overlaps. */
+  'daily.dayparts': { scope: 'room', schema: z.array(z.object({ name: z.string().trim().min(1).max(30), from: z.number().int().min(4).max(27), to: z.number().int().min(5).max(28) })).min(1).max(8).refine((a) => a.every((p) => p.to > p.from) && [...a].sort((x, y) => x.from - y.from).every((p, i, s) => !i || s[i - 1]!.to <= p.from), 'day parts must run forward and not overlap') },
 } as const;
 
 export type ActionKey = keyof typeof ACTION_KEYS;
