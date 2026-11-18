@@ -7,8 +7,10 @@
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 
-import { numbersOk, sousAnswer, sousBrief, sousCites, sousFacts, sousHash, sousNoticed, sousRole, sousSheet, sousSuggest, sousToday } from '../../lib/ai/sous.js';
-import { deriveRoom } from '../../lib/data/model.js';
+import { numbersOk, sousBrief, sousCites, sousFacts, sousHash, sousNoticed, sousRole, sousSheet, sousSuggest, sousToday } from '../../lib/ai/sous.js';
+import { agentAnswer, agentBrief, agentFor, agentRead } from '../../lib/ai/agents.js';
+import { deriveGroup, deriveRoom } from '../../lib/data/model.js';
+import { CV_PAGES } from '../../lib/pages.js';
 import { loadActions } from '../actions';
 import { loadDataset } from '../dataset';
 import type { Db } from '../db/client';
@@ -28,6 +30,8 @@ const ROLE_WORD: Record<string, string> = { owner: 'the owner', gm: 'the general
 
 /** What Sous is, said once, for every call. Stable text, so it caches. */
 const WHO = `You are Sous, the AI teammate inside Coversight, the platform a restaurant's owner and managers use to run it. You work alongside them: you have read every record for their restaurant and your job is to tell them what it means and what to do next.
+
+Sous works as a team of specialists, one for each page of the platform (Price Watch on Purchasing, Roster Coach on Labor, and so on). They are all you, reading the same records. When a message says which specialist you are, answer from that job's point of view first, then connect it to the rest of the restaurant when the records show a link.
 
 The people you talk to are busy and often reading on a phone between tasks. Write the way a sharp, trusted colleague talks: plain words, short sentences, the answer first. No jargon, no markdown, US spelling (labor, modeled).
 
@@ -82,7 +86,8 @@ async function context(db: Db, v: V, roomRaw: unknown, now: Date) {
   const role = sousRole(v.role);
   const today = sousToday(d, { stored: saved.queue ?? null, dismissed: saved.findings ?? {}, windows: wins, tasks, now: now.getTime() });
   const noticed = sousNoticed(d);
-  const facts = sousFacts(d, { role, windows: wins, card: today.card, open: today.open, noticed }) as Fact[];
+  // The group is the viewer's own rooms only (the dataset is already scoped), so a manager never reads another room.
+  const facts = sousFacts(d, { role, windows: wins, card: today.card, open: today.open, noticed, group: deriveGroup(loaded.ds) }) as Fact[];
   const brief = sousBrief(d, { role, facts, noticed, card: today.card, open: today.open }) as Brief;
   return { org: loaded.org as { sample?: boolean }, roomId, d, role, noticed, facts, brief };
 }
@@ -119,7 +124,7 @@ async function writeBrief(c: Awaited<ReturnType<typeof context>>, fetchImpl?: ty
  * Claude wrote is kept per room and role and reused until the room's facts
  * change, so opening Sous doesn't spend a call each time.
  */
-export async function loadSous(db: Db, v: V, roomRaw: unknown, { fetchImpl, now = new Date() }: { fetchImpl?: typeof fetch; now?: Date } = {}) {
+export async function loadSous(db: Db, v: V, roomRaw: unknown, { fetchImpl, now = new Date(), page }: { fetchImpl?: typeof fetch; now?: Date; page?: string | null } = {}) {
   const c = await context(db, v, roomRaw, now);
   const kind = `sous:${c.role}`;
   const hash = sousHash([...c.facts, { id: 'brief', topic: '', label: '', text: JSON.stringify([c.brief.headline, c.brief.lines.map((l) => l.id)]) }]);
@@ -139,10 +144,15 @@ export async function loadSous(db: Db, v: V, roomRaw: unknown, { fetchImpl, now 
       await db.insert(auditLog).values({ orgId: v.orgId, userId: v.userId, action: 'sous.brief', detail: { roomId: c.roomId, role: c.role, engine: written ? 'ai' : 'builtin' } });
     }
   }
-  return { roomId: c.roomId, role: c.role, engine, ai: aiConfigured(), brief, suggest: sousSuggest(c.facts, c.role) as string[] };
+  return { roomId: c.roomId, role: c.role, engine, ai: aiConfigured(), brief, suggest: sousSuggest(c.facts, c.role) as string[], agent: agentRead(pageId(page), c.facts, c.noticed) };
 }
 
+/** A page id the app really has; anything else is Sous with no specialty. */
+const pageId = (page: unknown) => (typeof page === 'string' && Object.hasOwn(CV_PAGES, page) ? page : '');
+
 const askBody = z.object({
+  /** The page the person is on: its agent answers. */
+  page: z.string().max(40).optional(),
   roomId: z.string().min(1).max(60).optional(),
   question: z.string().trim().min(1).max(500),
   /** The last few turns, so "and the week before?" makes sense. Never trusted for figures. */
@@ -154,7 +164,9 @@ export async function askSous(db: Db, v: V, raw: unknown, { fetchImpl, now = new
   const p = askBody.safeParse(raw);
   if (!p.success) throw new InputError('Ask Sous a question (up to 500 characters).');
   const c = await context(db, v, p.data.roomId, now);
-  const local = sousAnswer(p.data.question, c.facts, { room: c.brief.room, role: c.role }) as { text: string; used: string[]; cites: { label: string; go: string }[]; claim: string | null; grounded: boolean; suggest: string[] };
+  const page = pageId(p.data.page);
+  const agent = agentFor(page) as { id: string; name: string };
+  const local = agentAnswer(page, p.data.question, c.facts, { room: c.brief.room, role: c.role }) as { text: string; used: string[]; cites: { label: string; go: string }[]; claim: string | null; grounded: boolean; suggest: string[] };
   let out = { ...local, engine: 'builtin' as 'ai' | 'builtin' };
   if (aiConfigured() && (await aiAllowance(db, v.orgId, 'ask'))) {
     const turns = (p.data.history ?? []).flatMap((t) => [{ role: 'user' as const, content: t.q }, { role: 'assistant' as const, content: t.a }]);
@@ -165,7 +177,8 @@ export async function askSous(db: Db, v: V, raw: unknown, { fetchImpl, now = new
         { role: 'user', content: [{ type: 'text', text: `${records(c.facts)}\n\nYou are talking with ${ROLE_WORD[c.role]} of ${c.brief.room}.`, cache_control: { type: 'ephemeral' } }] },
         { role: 'assistant', content: 'I have read the records. What would you like to know?' },
         ...turns,
-        { role: 'user', content: p.data.question },
+        // Which specialist is answering goes with the question, after the cached records, so every page shares one cache.
+        { role: 'user', content: [agentBrief(page, (CV_PAGES as Record<string, { title: string }>)[page]?.title), p.data.question].filter(Boolean).join('\n\n') },
       ],
     }, fetchImpl);
     const sheet = sousSheet(c.facts);
@@ -179,8 +192,8 @@ export async function askSous(db: Db, v: V, raw: unknown, { fetchImpl, now = new
     }
   }
   // The question itself is not kept: only that one was asked, how it was answered and what it drew on.
-  await db.insert(auditLog).values({ orgId: v.orgId, userId: v.userId, action: 'sous.ask', detail: { roomId: c.roomId, role: c.role, engine: out.engine, grounded: out.grounded, used: out.used.slice(0, 6) } });
-  return { roomId: c.roomId, ...out };
+  await db.insert(auditLog).values({ orgId: v.orgId, userId: v.userId, action: 'sous.ask', detail: { roomId: c.roomId, role: c.role, agent: agent.id, engine: out.engine, grounded: out.grounded, used: out.used.slice(0, 6) } });
+  return { roomId: c.roomId, agent: agent.name, ...out };
 }
 
 /**

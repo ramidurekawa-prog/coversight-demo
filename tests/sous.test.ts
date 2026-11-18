@@ -139,6 +139,43 @@ describe('Sous with the AI engine on', () => {
   }, 60_000);
 });
 
+describe('a page’s own agent', () => {
+  it('reads its page from the same records, with the engine off', async () => {
+    const s = await loadSous(db, owner(), 'oakland', { now: NOW, page: 'purchasing' });
+    expect(s.agent.agent).toMatchObject({ id: 'purchasing', name: 'Price Watch' });
+    expect(s.agent.lead?.text).toMatch(/Bay Fish Co\. raised salmon fillet/);
+    expect(s.agent.ask.length).toBeGreaterThan(0);
+    // A page the app doesn't have is plain Sous, not an error.
+    expect((await loadSous(db, owner(), 'oakland', { now: NOW, page: 'nope' })).agent.agent.id).toBe('sous');
+    const a = await askSous(db, owner(), { roomId: 'oakland', page: 'purchasing', question: 'What should I do here?' }, { now: NOW });
+    expect(a).toMatchObject({ agent: 'Price Watch', engine: 'builtin', grounded: true });
+    expect(a.cites[0]).toEqual({ label: 'Purchasing', go: 'purchasing' });
+    expect((await logged('sous.ask'))[0]!.detail).toMatchObject({ agent: 'purchasing' });
+  });
+
+  it('an owner’s agent can compare rooms; a one-room manager’s cannot see the others', async () => {
+    const a = await askSous(db, owner(), { roomId: 'oakland', page: 'portfolio', question: 'Which room needs me most?' }, { now: NOW });
+    expect(a.grounded).toBe(true);
+    expect(a.text).toMatch(/Walnut Creek/);
+    const g = await askSous(db, gm(), { roomId: 'berkeley', page: 'portfolio', question: 'Which room needs me most?' }, { now: NOW });
+    expect(g.text).not.toMatch(/Oakland|Walnut Creek/);
+  });
+
+  it('tells Opus 5.5 which specialist it is after the shared records, so every page uses one cache', async () => {
+    process.env.ANTHROPIC_API_KEY = 'sk-test-key';
+    const c = fakeClaude({ answer: 'Bay Fish Co. raised salmon fillet from $11.40 to $13.65 a lb. Call them first.', answered: true, used: ['noticed:vendor:price'], follow_up: '' });
+    const a = await askSous(db, owner(), { roomId: 'oakland', page: 'purchasing', question: 'What should I do here?' }, { fetchImpl: c.f, now: NOW });
+    expect(a).toMatchObject({ agent: 'Price Watch', engine: 'ai', grounded: true });
+    const [first, last] = [c.calls[0]!.body.messages[0], c.calls[0]!.body.messages.at(-1)];
+    expect(JSON.stringify(first)).not.toContain('Price Watch');
+    expect(last.content).toMatch(/^Right now you are working as Price Watch.*\n\nWhat should I do here\?$/s);
+    const c2 = fakeClaude({ answer: 'ok', answered: false, used: [], follow_up: '' });
+    await askSous(db, owner(), { roomId: 'oakland', page: 'controls', question: 'What should I do here?' }, { fetchImpl: c2.f, now: NOW });
+    expect(c2.calls[0]!.body.system).toEqual(c.calls[0]!.body.system);
+    expect(c2.calls[0]!.body.messages[0]).toEqual(first);
+  });
+});
+
 describe('the nightly watch', () => {
   it('tells each room what Sous noticed once per week of data, for real groups only', async () => {
     expect(await runJob(db, 'sous', { now: NOW })).toEqual([]);

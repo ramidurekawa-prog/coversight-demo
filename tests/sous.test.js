@@ -155,3 +155,101 @@ describe('the figure check on AI-written text', () => {
     expect(sousHash(facts)).not.toBe(sousHash(sousFacts(room('berkeley'))));
   });
 });
+
+// ---- page agents -----------------------------------------------------------
+import { AGENT_PAGES, agentAnswer, agentBrief, agentFor, agentRead, agentTeam } from '../lib/ai/agents.js';
+import { deriveGroup } from '../lib/data/model.js';
+import { CV_PAGES } from '../lib/pages.js';
+
+describe('page agents', () => {
+  const rooms = Object.keys(SEED.rooms);
+  const factsFor = (roomId, role = 'owner') => {
+    const d = deriveRoom(SEED, roomId);
+    const noticed = sousNoticed(d);
+    return { d, noticed, facts: sousFacts(d, { role, noticed, group: deriveGroup(SEED) }) };
+  };
+
+  it('every page has an agent, and no agent is left without a page', () => {
+    for (const page of Object.keys(CV_PAGES)) expect(agentFor(page).id, page).not.toBe('sous');
+    for (const page of AGENT_PAGES) expect(CV_PAGES[page], page).toBeTruthy();
+  });
+
+  it('agents have unique names', () => {
+    const names = AGENT_PAGES.map((p) => agentFor(p)).filter((a) => a.id === a.page).map((a) => a.name);
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  it('on every page in every room the agent opens with a record, word for word, and only offers questions it can answer', () => {
+    for (const roomId of rooms) {
+      const { facts, noticed } = factsFor(roomId);
+      const sheet = sousSheet(facts);
+      for (const page of Object.keys(CV_PAGES)) {
+        const r = agentRead(page, facts, noticed);
+        expect(r.lead, `${roomId}/${page}`).toBeTruthy();
+        expect(facts.find((f) => f.id === r.lead.id).text.startsWith(r.lead.text.replace(/\.$/, ''))).toBe(true);
+        expect(numbersOk(r.lead.text, sheet)).toBe(true);
+        for (const q of r.ask) expect(agentAnswer(page, q, facts).grounded, `${roomId}/${page}: ${q}`).toBe(true);
+      }
+    }
+  });
+
+  it('different pages lead with different things from the same facts', () => {
+    const { facts, noticed } = factsFor(rooms[0]);
+    const leads = ['today', 'week', 'purchasing', 'controls', 'proof', 'sources', 'portfolio'].map((p) => agentRead(p, facts, noticed).lead.id);
+    expect(new Set(leads).size).toBe(leads.length);
+  });
+
+  it('what was noticed on a page leads that page and is not repeated under "other pages"', () => {
+    const { facts, noticed } = factsFor(rooms[0]);
+    const price = noticed.find((n) => n.go === 'purchasing');
+    expect(price).toBeTruthy();
+    const r = agentRead('purchasing', facts, noticed);
+    expect(r.lead.id).toBe(`noticed:${price.id}`);
+    expect(r.elsewhere.some((n) => n.id === price.id)).toBe(false);
+    expect(r.noticed.length + r.elsewhere.length).toBe(noticed.length);
+  });
+
+  it('"what should I do here?" is answered from the page\'s own area', () => {
+    const { facts } = factsFor(rooms[0]);
+    const a = agentAnswer('purchasing', 'What should I do here?', facts);
+    expect(a.grounded).toBe(true);
+    expect(a.cites[0].go).toBe('purchasing');
+    expect(agentAnswer('controls', 'What should I do here?', facts).cites[0].go).toBe('controls');
+  });
+
+  it('one brain: any agent can answer about another area, and about the other rooms', () => {
+    const { facts } = factsFor(rooms[0]);
+    expect(agentAnswer('kitchen', 'What have we actually saved?', facts).cites.some((c) => c.go === 'proof')).toBe(true);
+    const group = agentAnswer('menu', 'Which room needs me most?', facts);
+    expect(group.grounded).toBe(true);
+    for (const id of rooms) expect(facts.find((f) => f.id === 'group').text).toContain(deriveRoom(SEED, id).profile.short);
+  });
+
+  it('a manager of one room is told nothing about the other rooms', () => {
+    for (const role of ['gm', 'floor']) expect(factsFor(rooms[0], role).facts.some((f) => f.topic === 'group')).toBe(false);
+  });
+
+  it('a floor manager on a page outside their area gets a read from what they may see', () => {
+    const { facts, noticed } = factsFor(rooms[0], 'floor');
+    const r = agentRead('ledger', facts, noticed);
+    expect(r.lead).toBeTruthy();
+    expect(facts.some((f) => f.id === r.lead.id)).toBe(true);
+  });
+
+  it('the team lists each specialist once with its page', () => {
+    const { facts, noticed } = factsFor(rooms[0]);
+    const team = agentTeam(facts, noticed);
+    expect(team.length).toBeGreaterThan(15);
+    expect(new Set(team.map((a) => a.name)).size).toBe(team.length);
+    expect(team.reduce((s, a) => s + a.noticed, 0)).toBeGreaterThan(0);
+  });
+
+  it('the line that tells the AI which agent it is holds no figures', () => {
+    for (const page of Object.keys(CV_PAGES)) expect(agentBrief(page, CV_PAGES[page].title)).not.toMatch(/\d/);
+  });
+
+  it('holds back a Today recommendation built on a delayed feed', () => {
+    const { facts } = factsFor('oakland');
+    expect(facts.find((f) => f.id === 'today-first').text).toMatch(/check before you act/);
+  });
+});

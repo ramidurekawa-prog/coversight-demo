@@ -88,7 +88,12 @@ here ships to customers.
   derived room into plain-sentence *facts* and answers, briefs and notices from
   those only. AI-written text must pass `numbersOk()` (no figure the facts
   don't contain) or it is discarded. New things for Sous to know are new facts
-  in `sousFacts()`, never numbers in a prompt. The nightly `sous` job notifies
+  in `sousFacts()`, never numbers in a prompt. Every page has its own Sous
+  agent (`lib/ai/agents.js`: a name, a job, the fact topics it leads with and
+  its questions), shown above the page by `PageAgent` from the shell, so page
+  files stay untouched. Agents hold no data of their own: they all read the
+  same facts, which is the shared brain. A new page needs an entry there
+  (`tests/sous.test.js` fails without one). The nightly `sous` job notifies
   what it noticed and pre-writes briefs. `tests/sous.test.js` and
   `tests/sous.test.ts` cover it; `tests/helpers/fake-claude.ts` stands in for
   the API.

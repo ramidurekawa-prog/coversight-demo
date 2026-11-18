@@ -10,7 +10,7 @@ import { ApprovalModal, Claim, cvApproval, CV_CLAIM, CV_D, CV_LOCS, CvCtx, Deriv
 import { engine, useEngine } from './engine';
 import { useClock } from './clock';
 import { CV_PAGE_DEPS } from './screens/extra';
-import { SousButton, SousPanel } from './sous';
+import { PageAgent, SousButton, SousPanel } from './sous';
 import { useTodayCounts } from './screens/pages/today.badge';
 import './shell.css';
 
@@ -368,7 +368,10 @@ function AppShell({ children }) {
   const [approval, setApproval] = React.useState(null);
   const [toast, setToast] = React.useState(null);
   const [navOpen, setNavOpen] = React.useState(false);
-  const [ask, setAsk] = React.useState(false);
+  // Sous: open or not (with a question handed over from the page's agent), and one conversation that follows the person across pages.
+  const [ask, setAsk] = React.useState(null);
+  const [sousTurns, setSousTurns] = React.useState([]);
+  React.useEffect(() => { setSousTurns([]); }, [eng.room]);
   const scrollRef = React.useRef(null);
   const toastTimer = React.useRef(null);
 
@@ -392,7 +395,7 @@ function AppShell({ children }) {
       const t = e.target;
       if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
       e.preventDefault();
-      setAsk(true);
+      setAsk({});
     };
     window.addEventListener('keydown', k);
     return () => window.removeEventListener('keydown', k);
@@ -460,15 +463,16 @@ function AppShell({ children }) {
           <Sidebar page={page} role={role} onNavigate={() => setNavOpen(false)} />
           {navOpen && <div className="cv-scrim" style={{ zIndex: 'calc(var(--z-drawer) - 1)' }} onClick={() => setNavOpen(false)} />}
           <div className="content">
-            <TopBar page={page} loc={loc} onLoc={chooseLoc} role={role} onRole={chooseRole} go={go} onMenu={() => setNavOpen(true)} onAsk={() => setAsk(true)} tools={tools} />
+            <TopBar page={page} loc={loc} onLoc={chooseLoc} role={role} onRole={chooseRole} go={go} onMenu={() => setNavOpen(true)} onAsk={() => setAsk({})} tools={tools} />
             <main className="scroll" ref={scrollRef} tabIndex={0} aria-label="Screen">
+              <PageAgent page={page} role={role} onOpen={(q) => setAsk({ q: q || '' })} />
               <React.Fragment key={`${eng.room}-${eng.version}`}>{children}</React.Fragment>
             </main>
           </div>
         </div>
       </div>
       </div>
-      {ask && <SousPanel onClose={() => setAsk(false)} go={go} role={role} tools={tools} />}
+      {ask && <SousPanel onClose={() => setAsk(null)} go={go} role={role} tools={tools} page={page} first={ask.q || ''} turns={sousTurns} setTurns={setSousTurns} />}
       {deriv && <DerivDrawer id={deriv} onClose={() => setDeriv(null)} />}
       {approval && (
         <ApprovalModal
