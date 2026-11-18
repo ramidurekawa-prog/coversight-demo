@@ -238,3 +238,53 @@
   .results { grid-template-columns: minmax(0, 1fr); }
   .resultFigs { flex-direction: row; gap: 32px; padding: 0 0 14px; border-right: none; border-bottom: 1px solid var(--border); }
 }
+
+/* ================================================================
+ * Clean-up pass (Ramidu, 2026-11-18): fewer things on screen, one rhythm.
+ * Spacing: 8 / 12 / 16 / 24 / 32. Hierarchy per step: number + kicker, title,
+ * one short line, then content aligned under the title.
+ * ================================================================ */
+.page { gap: 24px; padding-top: 32px; }
+.head { display: flex; flex-direction: column; gap: 10px; }
+.context { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; font-size: 15px; font-weight: 500; color: var(--fg-1); }
+.contextMute { color: var(--fg-2); }
+.headline { margin: 0; max-width: 26ch; font-size: 36px; font-weight: 600; line-height: 1.12; letter-spacing: -0.03em; color: var(--fg-1); text-wrap: balance; }
+
+.step { padding: 28px 32px !important; gap: 24px !important; }
+.stepHead { gap: 16px; }
+.stepText { gap: 6px; }
+.stepSub { font-size: 15px; }
+@media (min-width: 761px) { .step > :not(.stepHead) { margin-left: 48px; } }
+@media (max-width: 640px) { .step { padding: 20px 18px !important; gap: 18px !important; } .headline { font-size: 28px; } }
+
+/* Plan rows: checkbox, title + one meta line, the number. */
+.planRow { gap: 14px; padding: 16px 0; align-items: flex-start; }
+.planRow .grow { gap: 6px; }
+.planMeta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 14px; color: var(--fg-2); }
+.inlineLink { padding: 0; border: none; background: none; font: inherit; font-size: 14px; font-weight: 600; color: var(--fg-1); cursor: pointer; text-decoration: underline; text-decoration-color: var(--border-strong); text-underline-offset: 3px; border-radius: 4px; }
+.inlineLink:hover { text-decoration-color: currentColor; }
+.inlineLink:focus-visible { outline: none; box-shadow: var(--ring); }
+.whyText { margin: 2px 0 0; max-width: 62ch; padding: 10px 12px; border-radius: 8px; background: var(--surface-sunken); font-size: 14.5px; line-height: 1.5; color: var(--fg-1); }
+.safety { display: flex; gap: 6px; align-items: flex-start; margin-top: 6px; color: var(--fg-2); }
+.safety svg { flex: none; margin-top: 3px; }
+.unit { font-size: 14px; font-weight: 500; letter-spacing: 0; color: var(--fg-2); margin-left: 1px; }
+.planNum { font-size: 22px; padding-top: 1px; }
+.blockedNote { font-size: 14px; }
+.planBlocked .planTitle { color: var(--fg-2); }
+.assign { margin-top: 2px; }
+.who { font-size: 14px; }
+
+.commitBar { margin-top: 4px; padding-top: 20px; }
+.total { display: flex; flex-direction: column; gap: 2px; }
+.totalLbl { font-size: 14px; font-weight: 500; color: var(--fg-2); }
+.totalNum { font-size: 28px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--fg-1); }
+.total > :last-child { align-self: flex-start; margin-top: 4px; }
+
+.hero { gap: 20px; }
+.heroNum { font-size: 44px; }
+.resultFigs { gap: 16px; }
+.resultFigs > :first-child { align-self: flex-start; }
+.links { gap: 4px 20px; }
+.rowList { gap: 12px; }
+.testRow { padding: 14px 0; }
+@media (max-width: 640px) { .guide { display: none; } }

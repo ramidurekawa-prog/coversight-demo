@@ -129,22 +129,48 @@ function Weeks({ v }) {
 }
 
 /* ---------------------------------------------------------------- the plan (spec §7.6, §7.9) */
-function PlanRow({ n, item, children, lead }) {
+/** One action: what, how long, what it could be worth. The why is one tap away. */
+function PlanRow({ item, children, lead, onData }) {
+  const [why, setWhy] = React.useState(false);
+  const hasWhy = !!(item.why || item.safety);
   return (
     <div className={`${s.planRow} ${item.blocked ? s.planBlocked : ''}`}>
       {lead}
-      <span className="cv-rank" aria-hidden="true">{n}</span>
       <div className={s.grow}>
         <span className={s.planTitle}>{item.title}</span>
-        <span className="cv-xs cv-faint">{leverName(item.lever)} · {minutes(item.hours)}{item.blocked ? '' : ' · '}{!item.blocked && <span className="cv-up">Ready</span>}</span>
-        {item.blocked && <span className={s.blockedNote}><Icon name="Lock" size={12} /> Blocked: {item.blocked.split('.')[0]}</span>}
-        {(item.why || item.safety) && <More label="Why and what could go wrong">{item.why} {item.safety && <><br /><Icon name="ShieldCheck" size={12} /> {item.safety}</>}</More>}
+        <span className={s.planMeta}>
+          {item.blocked
+            ? <><span className={s.blockedNote}><Icon name="Lock" size={13} />{item.blocked.split('.')[0]}</span>{onData && <button type="button" className={s.inlineLink} onClick={onData}>Bring the data in</button>}</>
+            : <><span>{leverName(item.lever)}</span><span aria-hidden="true">·</span><span>{minutes(item.hours)}</span></>}
+          {hasWhy && <button type="button" className={s.inlineLink} aria-expanded={why} onClick={() => setWhy((x) => !x)}>{why ? 'Hide why' : 'Why?'}</button>}
+        </span>
+        {why && <p className={s.whyText}>{item.why}{item.safety && <span className={s.safety}><Icon name="ShieldCheck" size={13} />{item.safety}</span>}</p>}
         {children}
       </div>
-      <div className={s.right}>
-        <span className={s.planNum}>{usd(item.conservative ?? item.value)}<span className="cv-faint" style={{ fontSize: '0.6em' }}>/wk</span></span>
-        <Claim k="est" />
-      </div>
+      <span className={s.planNum}>{usd(item.conservative ?? item.value)}<span className={s.unit}>/wk</span></span>
+    </div>
+  );
+}
+
+/** Who and when, shown as words; the fields open only to change them. */
+function Assign({ id, r, set, v }) {
+  const [edit, setEdit] = React.useState(false);
+  if (!edit) {
+    return (
+      <span className={s.planMeta}>
+        <span className={s.who}><Icon name="User" size={13} />{r.owner || 'No owner'}</span>
+        <span className={s.who}><Icon name="CalendarRange" size={13} />Due {day(r.due)}</span>
+        <button type="button" className={s.inlineLink} onClick={() => setEdit(true)}>Change</button>
+      </span>
+    );
+  }
+  return (
+    <div className={s.assign}>
+      <label className="sr-only" htmlFor={`own-${id}`}>Owner</label>
+      <input id={`own-${id}`} className={`input ${s.small}`} list="week-owners" maxLength={80} value={r.owner} onChange={(e) => set(id, { owner: e.target.value })} placeholder="Owner" />
+      <label className="sr-only" htmlFor={`due-${id}`}>Due</label>
+      <input id={`due-${id}`} className={`input ${s.small}`} type="date" min={v.period.start} max={addDays(v.period.end, 35)} value={r.due} onChange={(e) => set(id, { due: e.target.value })} />
+      <button type="button" className={s.inlineLink} onClick={() => setEdit(false)}>Done</button>
     </div>
   );
 }
@@ -171,31 +197,24 @@ function PlanDraft({ v, rec, defaults, onCancel }) {
   return (
     <>
       <div className={s.list}>
-        {visible.map((c, i) => {
+        {visible.map((c) => {
           const r = rows[c.id];
           return (
-            <PlanRow key={c.id} n={i + 1} item={c}
+            <PlanRow key={c.id} item={c} onData={c.blocked ? () => cv.go('inputs') : null}
               lead={<input type="checkbox" className={s.check} aria-label={`Include ${c.title}`} checked={r.on} disabled={!!c.blocked} onChange={(e) => set(c.id, { on: e.target.checked })} />}>
-              {r.on && !c.blocked && (
-                <div className={s.assign}>
-                  <label className="sr-only" htmlFor={`own-${c.id}`}>Owner</label>
-                  <span className={s.field}><Icon name="User" size={14} /><input id={`own-${c.id}`} className={`input ${s.small}`} list="week-owners" maxLength={80} value={r.owner} onChange={(e) => set(c.id, { owner: e.target.value })} placeholder="Owner" /></span>
-                  <label className="sr-only" htmlFor={`due-${c.id}`}>Due</label>
-                  <span className={s.field}><Icon name="CalendarRange" size={14} /><input id={`due-${c.id}`} className={`input ${s.small}`} type="date" min={v.period.start} max={addDays(v.period.end, 35)} value={r.due} onChange={(e) => set(c.id, { due: e.target.value })} /></span>
-                </div>
-              )}
-              {c.blocked && <div><Button size="sm" variant="secondary" icon="Upload" onClick={() => cv.go('inputs')}>Bring the data in</Button></div>}
+              {r.on && !c.blocked && <Assign id={c.id} r={r} set={set} v={v} />}
             </PlanRow>
           );
         })}
       </div>
       <datalist id="week-owners">{[CV_ROOM.gm, 'Owner', 'Kitchen lead', 'Bar lead'].filter(Boolean).map((n) => <option key={n} value={n} />)}</datalist>
-      {(pool.length > PLAN_TOP || extra.length > 0) && <button className="cv-link" style={{ alignSelf: 'flex-start' }} onClick={() => setShowMore((x) => !x)}>{showMore ? 'Top three only' : `${pool.length - PLAN_TOP + extra.length} more ideas`} <Icon name={showMore ? 'ChevronUp' : 'ChevronDown'} size={14} /></button>}
+      {(pool.length > PLAN_TOP || extra.length > 0) && <button type="button" className={s.linkBtn} style={{ alignSelf: 'flex-start' }} aria-expanded={showMore} onClick={() => setShowMore((x) => !x)}>{showMore ? 'Show the top three only' : `Show ${pool.length - PLAN_TOP + extra.length} more ideas`}<Icon name={showMore ? 'ChevronUp' : 'ChevronDown'} size={14} /></button>}
       {rec.error && <Callout tone="warn" icon="TriangleAlert">{rec.error}</Callout>}
       <div className={s.commitBar}>
-        <div className="cv-col" style={{ gap: 0 }}>
-          <span className="cv-xs cv-faint">{picked.length} action{picked.length === 1 ? '' : 's'} picked · potential, if they verify</span>
-          <span className={s.planNum}>{usd(total)}<span className="cv-faint" style={{ fontSize: '0.6em' }}>/wk</span> <Claim k="est" /></span>
+        <div className={s.total}>
+          <span className={s.totalLbl}>{picked.length} action{picked.length === 1 ? '' : 's'} picked</span>
+          <span className={s.totalNum}>{usd(total)}<span className={s.unit}>/wk potential</span></span>
+          <Claim k="est" />
         </div>
         <div className="cv-row" style={{ gap: 8 }}>
           {onCancel && <Button variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>}
@@ -228,11 +247,11 @@ function PlanCommitted({ v, rec, plan, onRevise }) {
         </div>
       )}
       <div className={s.list}>
-        {plan.items.map((i, n) => (
-          <PlanRow key={i.id} n={n + 1} item={i}>
+        {plan.items.map((i) => (
+          <PlanRow key={i.id} item={i}>
             <div className={s.assign}>
-              <span className={s.who}><Icon name="User" size={13} /> {i.owner}</span>
-              <span className={s.who}><Icon name="CalendarRange" size={13} /> {day(i.due)}</span>
+              <span className={s.who}><Icon name="User" size={13} />{i.owner}</span>
+              <span className={s.who}><Icon name="CalendarRange" size={13} />Due {day(i.due)}</span>
               <div className={s.seg} role="radiogroup" aria-label={`Status of ${i.title}`}>
                 {Object.entries(STATUS_LABEL).map(([k, l]) => (
                   <button key={k} type="button" role="radio" aria-checked={i.status === k} className={i.status === k ? s.segOn : ''} disabled={rec.busy} onClick={() => i.status !== k && setStatus(i.id, k)}>{l}</button>
@@ -324,10 +343,10 @@ function StepWhy({ v, comparator, setComparator }) {
   const ch = dec?.contribution.change;
   return (
     <Step n={1} id="week-why" kicker="How the week went" title={dec ? whyOf(dec) : 'No earlier week to compare with yet'}
-      sub={dec ? `What you kept after food and labor, compared with ${vsPhrase(v.comparator)}. Not profit: rent and other costs aren’t taken off.` : 'This fills in once there’s an earlier week of your own data.'}>
+      sub={dec ? null : 'This fills in once there’s an earlier week of your own data.'}>
       <div className={s.hero}>
         <div className={s.heroFig}>
-          <span className={s.heroLbl}>Kept after food & labor, week of {v.period.label}</span>
+          <span className={s.heroLbl}>Kept after food & labor</span>
           <span className={s.heroNum}>{c.value == null ? '—' : <Money id="earned-week">{usd(c.value)}</Money>}</span>
           <span className={s.heroCmp}>
             {ch != null && <span className={s.delta}><Icon name={ch >= 0 ? 'ArrowUpRight' : 'ArrowDownRight'} size={14} />{usd(ch, true)} vs {vsPhrase(v.comparator)}</span>}
@@ -345,7 +364,7 @@ function StepWhy({ v, comparator, setComparator }) {
       <div className={s.links}>
         {v.history.length > 1 && <button type="button" className={s.linkBtn} aria-expanded={weeks} onClick={() => setWeeks((x) => !x)}><Icon name="ChartColumn" size={15} />{weeks ? 'Hide' : 'See'} the last {v.history.length} weeks<Icon name={weeks ? 'ChevronUp' : 'ChevronDown'} size={14} /></button>}
         <More>
-          Sales, food and labor add up exactly to the change. That describes the week; it doesn’t prove what caused it, and none of it is a saving we claim. Food cost is plates sold × recipe cost{c.status === 'estimated' ? '; labor isn’t measured yet, so it’s estimated' : ''}.
+          “Kept” is net sales minus food cost minus hourly labor. It isn’t profit: rent and other costs aren’t taken off. Sales, food and labor add up exactly to the change. That describes the week; it doesn’t prove what caused it, and none of it is a saving we claim. Food cost is plates sold × recipe cost{c.status === 'estimated' ? '; labor isn’t measured yet, so it’s estimated' : ''}.
           {dec ? ` Sales ${usd(line('net').now)} from ${Math.round(line('covers').now).toLocaleString('en-US')} covers at ${cvMoney(line('check').now, { cents: true })} each. ${v.comparator.desc}.` : ''}
           {missing.length ? ` Not available yet: ${missing.map((x) => `${x.label.toLowerCase()} (${x.reason.replace(/\.$/, '').toLowerCase()})`).join('; ')}.` : ''}
         </More>
@@ -372,7 +391,7 @@ function StepPlan({ v, rec }) {
   return (
     <Step n={2} id="week-plan" kicker="What to do this week"
       title={committed && !revising ? `Your plan: ${done} of ${live} done` : v.plan.ranked.length ? 'Pick this week’s actions, then commit them' : 'Nothing clears the bar this week'}
-      sub={committed && !revising ? `Committed ${stampDay(committed.committedAt)}${plan.committedBy ? ` by ${plan.committedBy}` : ''}. Mark each one as it moves.` : `${ready} ready, picked to fit ${hrs(v.plan.hours)} of manager time. Amounts are potential until a test verifies them.`}
+      sub={committed && !revising ? `Committed ${stampDay(committed.committedAt)}${plan.committedBy ? ` by ${plan.committedBy}` : ''} · mark each one as it moves` : `${ready} ready · fits ${hrs(v.plan.hours)} of manager time · amounts are potential until tested`}
       right={<button type="button" className={s.linkBtn} onClick={() => cv.go('meeting')}>Take it to the meeting<Icon name="ArrowRight" size={14} /></button>}>
       {!plan ? <span className="cv-small cv-muted">{rec.error ? `Couldn’t load the plan: ${rec.error}` : 'Loading…'}</span>
         : committed && !revising ? <PlanCommitted v={v} rec={rec} plan={plan} onRevise={() => setRevising(true)} />
@@ -393,7 +412,7 @@ function StepBlockers({ v }) {
   const list = all ? v.attention : v.attention.slice(0, 4);
   return (
     <Step n={3} id="week-attention" kicker="Clear what’s in the way" title={n ? `${n} ${n === 1 ? 'thing needs' : 'things need'} you` : 'Nothing is in the way'}
-      sub={n ? 'Stale data and open items hold advice back. Fix these and the plan gets better.' : `All clear at ${v.short}.`}>
+      sub={n ? 'Each one holds back advice or a test. Tap to fix it.' : `All clear at ${v.short}.`}>
       {n > 0 && (
         <ul className={s.rowList}>
           {list.map((a) => (
@@ -420,14 +439,13 @@ function StepResults({ v }) {
   const sample = v.sample;
   const m = (x) => cvMoney(sample ? Math.round(x) : x, { cents: !sample && x % 1 !== 0 });
   const tests = v.inFlight;
-  const next = tests.filter((t) => !t.waiting).map((t) => t.day ?? Math.round((t.progress / 100) * 28)).sort((a, x) => x - a)[0];
   return (
     <Step n={4} id="week-results" kicker="Are your changes working?"
       title={b.week > 0 ? `${m(b.week)}/wk confirmed so far` : 'Nothing confirmed yet'}
-      sub={`${tests.length ? `${tests.length} test${tests.length === 1 ? '' : 's'} running${next != null ? `; the furthest is on day ${next} of 28` : ''}. ` : ''}Only tested, verified changes count here.`}
-      right={<Claim k="book" />}>
+      sub={`${tests.length ? `${tests.length} test${tests.length === 1 ? '' : 's'} running · ` : ''}only verified changes count`}>
       <div className={s.results}>
         <div className={s.resultFigs}>
+          <Claim k="book" />
           <div><span className={s.heroLbl}>This week</span><span className={s.trioNum}>{m(b.accrued)}</span></div>
           <div><span className={s.heroLbl}>To date</span><span className={s.trioNum}><Fig id="to-date" show={sample}>{m(b.toDate)}</Fig></span></div>
         </div>
@@ -577,14 +595,15 @@ function CvThisWeek() {
   ];
   return (
     <div className={`cv-page ${s.page}`} data-page="week">
-      <PageHead over={`${CV_ROOM.name} · Week of ${v.period.label}${v.status === 'complete' ? '' : ' (in progress)'}`} q={answerOf(v)}
-        sub="Start here: see why, then commit this week’s plan, clear what’s in the way, and check your results."
-        right={reviewed ? <StateChip tone="good" icon="ClipboardCheck">Week reviewed</StateChip> : null} />
-      <div className="cv-row" style={{ gap: 8, marginTop: -8 }} aria-label="About this data">
-        <StateChip tone="mute" icon="Database">Data through {day(v.dataThrough)}</StateChip>
-        {v.sample ? <StateChip tone="mute" icon="FlaskConical">Sample data</StateChip> : v.own ? <StateChip tone="mute" icon="Store">Your Toast data</StateChip> : null}
-        {v.contribution.status === 'estimated' && <StateChip tone="warn" icon="CircleDashed">Labor estimated</StateChip>}
-      </div>
+      <header className={s.head}>
+        <span className={s.context}>
+          <span>{CV_ROOM.name} · Week of {v.period.label}{v.status === 'complete' ? '' : ' (in progress)'}</span>
+          <span className={s.contextMute}>Data through {day(v.dataThrough)}</span>
+          {v.contribution.status === 'estimated' && <StateChip tone="warn" icon="CircleDashed">Labor estimated</StateChip>}
+          {reviewed && <StateChip tone="good" icon="ClipboardCheck">Week reviewed</StateChip>}
+        </span>
+        <h2 className={s.headline}>{answerOf(v)}</h2>
+      </header>
       <Guide items={guide} />
       <StepWhy v={v} comparator={comparator} setComparator={setComparator} />
       <StepPlan v={v} rec={rec} />
