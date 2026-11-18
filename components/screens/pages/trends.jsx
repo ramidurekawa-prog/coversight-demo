@@ -138,6 +138,8 @@ function Progress({ have, need }) {
 
 const usd = (v) => `$${Math.round(Math.abs(v)).toLocaleString('en-US')}`;
 const signedUsd = (v) => `${v < 0 ? '−' : '+'}${usd(v)}`;
+/** A forecast or a rough figure: to the nearest $100, so it never reads more exact than it is. */
+const about = (v) => `$${(Math.round(Math.abs(v) / 100) * 100).toLocaleString('en-US')}`;
 /** What the dollar figures on each change need from the room: dishes sold a week and the average wage. */
 function ctxOf(d) {
   const staff = d?.room?.staff ?? [];
@@ -157,7 +159,7 @@ function KpiStrip({ t, onPick }) {
         const r = t.w.ready ? recentAvg(k) : x.latest;
         return (
           <button key={k} type="button" className={`cv-card ${s.kpi}`} onClick={() => onPick(k)} aria-label={`${m.label}: open the chart`}>
-            <span className={s.kpiLabel}>{{ earned: 'Contribution', covers: 'Guests' }[k] ?? m.label}<span className={s.kpiPer}>{m.unit === 'pct' ? 'of sales' : 'a week'}</span></span>
+            <span className={s.kpiLabel}>{{ earned: 'Kept after food & labor', covers: 'Guests' }[k] ?? m.label}<span className={s.kpiPer}>{m.unit === 'pct' ? 'of sales' : 'a week'}</span></span>
             <span className={s.kpiVal}>{fmtMetric(k, r)}</span>
             {x.lim ? <Delta metric={k} a={r} b={x.lim.mean} suffix="vs usual" /> : <span className="cv-xs cv-faint">Usual level not set yet</span>}
             <Spark vals={x.vals.slice(Math.max(t.w.from, n - 26))} lim={x.lim} height={40} ariaLabel={`${m.label}, last 26 weeks`} />
@@ -213,9 +215,20 @@ function Results({ t, R, name }) {
   );
 }
 
-/** What moved contribution: usual week → each driver → recent week, as bars that add up. */
+/** What moved what's kept after food and labor: usual week → each driver → recent week, as bars that add up. */
 function Drivers({ D, name }) {
+  const [more, setMore] = React.useState(false);
   if (!D) return null;
+  const quiet = Math.abs(D.change) < Math.abs(D.base) * 0.02;
+  if (quiet && !more) {
+    return (
+      <div className={`cv-card ${s.emptyRow}`}>
+        <Icon name="CircleMinus" size={22} />
+        <span className={s.quietText}>About the same as a usual week: {about(D.recent)} against {about(D.base)}. Nothing is pulling it up or down.</span>
+        <button type="button" className={s.linkBtn} onClick={() => setMore(true)}>Show the bars<Icon name="ChevronDown" size={15} /></button>
+      </div>
+    );
+  }
   const max = Math.max(...D.parts.map((p) => Math.abs(p.v)), 1);
   const show = (p) => (p.key === 'food' || p.key === 'labour' ? `${p.from.toFixed(1)}% → ${p.to.toFixed(1)}%` : p.key === 'check' ? `${fmtMetric('check', p.from)} → ${fmtMetric('check', p.to)}` : `${Math.round(p.from).toLocaleString('en-US')} → ${Math.round(p.to).toLocaleString('en-US')} a week`);
   const top = [...D.parts].sort((a, b) => Math.abs(b.v) - Math.abs(a.v))[0];
@@ -240,7 +253,7 @@ function Drivers({ D, name }) {
           </div>
         ))}
       </div>
-      <p className={s.howTo}>{top && Math.abs(top.v) >= 0.5 ? `${top.label} did the most: ${signedUsd(top.v)} a week in ${name}. ` : ''}Each bar is that one thing&apos;s effect on contribution, with everything else held at its usual level. The bars add up to the change.</p>
+      <p className={s.howTo}>{top && Math.abs(top.v) >= 0.5 ? `${top.label} did the most: ${signedUsd(top.v)} a week in ${name}. ` : ''}Each bar is that one thing&apos;s effect on what you keep after food and labor, with everything else held at its usual level. The bars add up to the change.</p>
     </section>
   );
 }
@@ -288,44 +301,44 @@ function Named({ name, icon }) {
 function Outlook({ O, name }) {
   const cv = useCv();
   if (!O) return <div className={`cv-card ${s.emptyRow}`}><Icon name="Hourglass" size={22} /><span>Covercast needs more of {name}&apos;s daily history before it can look ahead.</span></div>;
-  const hi = Math.max(...O.weeks.map((w) => w.earned.high), O.recent.earned);
-  const lo = Math.min(...O.weeks.map((w) => w.earned.low), O.recent.earned) * 0.9;
-  const h = (v) => `${Math.max(2, ((v - lo) / (hi - lo)) * 100)}%`;
+  const top = Math.max(...O.weeks.map((w) => w.earned.high), O.recent.earned) * 1.06;
+  const pct = (v) => `${(Math.max(0, v) / top) * 100}%`;
   const diff = O.vsRecent;
+  const same = Math.abs(diff) < Math.max(100, O.recent.earned * 0.01);
   return (
     <section className={`cv-card ${s.outlook}`} aria-labelledby="trends-outlook">
       <div className={s.resultsHead}>
         <div className={s.resultsFig}>
-          <span className={s.kpiLabel}>Next 4 weeks, contribution</span>
-          <span className={s.big}>{usd(O.perWeek)}<small> a week</small></span>
-          <span className="cv-xs cv-faint">{Math.abs(diff) < 50 ? 'About the same as the last 4 weeks' : `${signedUsd(diff)} a week on the last 4 weeks (${usd(O.recent.earned)})`}</span>
+          <span className={s.kpiLabel}>Next 4 weeks, kept after food & labor</span>
+          <span className={s.big}>about {about(O.perWeek)}<small> a week</small></span>
+          <span className="cv-xs cv-faint">{same ? `About the same as the last 4 weeks (${about(O.recent.earned)})` : `About ${about(diff)} a week ${diff > 0 ? 'more' : 'less'} than the last 4 weeks (${about(O.recent.earned)})`}</span>
         </div>
         <div className={s.resultsFig}>
           <span className={s.kpiLabel}>Busiest week</span>
           <span className={s.kpiVal}>Week of {O.best.label}</span>
-          <span className="cv-xs cv-faint">{O.best.covers ? `about ${Math.round(O.best.covers.value).toLocaleString('en-US')} guests, ${usd(O.best.sales.value)} in sales` : `${usd(O.best.sales.value)} in sales`}</span>
+          <span className="cv-xs cv-faint">{O.best.covers ? `about ${(Math.round(O.best.covers.value / 10) * 10).toLocaleString('en-US')} guests, ${about(O.best.sales.value)} in sales` : `${about(O.best.sales.value)} in sales`}</span>
         </div>
         <Claim k="mod" />
       </div>
-      <div className={s.cols} role="list" aria-label="Contribution, last 4 weeks and the next 4">
-        <div className={s.col} role="listitem" data-kind="past">
-          <span className={s.colVal}>{usd(O.recent.earned)}</span>
-          <span className={s.colTrack}><span className={s.colBar} style={{ height: h(O.recent.earned) }} /></span>
+      <div className={s.cols} role="list" aria-label="Kept after food and labor, last 4 weeks and the next 4">
+        <div className={s.col} role="listitem" data-kind="past" aria-label={`Last 4 weeks: ${about(O.recent.earned)} a week`}>
+          <span className={s.colVal}>{about(O.recent.earned)}</span>
+          <span className={s.colTrack}><span className={s.colBar} style={{ height: pct(O.recent.earned) }} /></span>
           <span className={s.colLabel}>Last 4 wks</span>
         </div>
         {O.weeks.map((w) => (
-          <div key={w.start} className={s.col} role="listitem" aria-label={`Week of ${w.label}: about ${usd(w.earned.value)}, likely ${usd(w.earned.low)} to ${usd(w.earned.high)}`}>
-            <span className={s.colVal}>{usd(w.earned.value)}</span>
+          <div key={w.start} className={s.col} role="listitem" aria-label={`Week of ${w.label}: about ${about(w.earned.value)}, likely ${about(w.earned.low)} to ${about(w.earned.high)}`}>
+            <span className={s.colVal}>{about(w.earned.value)}</span>
             <span className={s.colTrack}>
-              <span className={s.colRange} style={{ bottom: h(w.earned.low), height: `calc(${h(w.earned.high)} - ${h(w.earned.low)})` }} />
-              <span className={`${s.colBar} ${s.colFcst}`} style={{ height: h(w.earned.value) }} />
+              <span className={`${s.colBar} ${s.colFcst}`} style={{ height: pct(w.earned.value) }} />
+              <span className={s.whisker} style={{ bottom: pct(w.earned.low), height: `calc(${pct(w.earned.high)} - ${pct(w.earned.low)})` }} />
             </span>
             <span className={s.colLabel}>{w.label}{w.holidays.length ? <i className={s.colHol}>{w.holidays[0]}</i> : null}</span>
           </div>
         ))}
       </div>
       <div className={s.outlookFoot}>
-        <p className={s.howTo}>Covercast&apos;s guests and sales for each week, times the share {name} has kept after food and labor lately ({(O.keep * 100).toFixed(1)}%). The light band is the likely range: 4 weeks in 5 land inside it.</p>
+        <p className={s.howTo}>Covercast&apos;s guests and sales for each week, times the share {name} has kept after food and labor lately ({(O.keep * 100).toFixed(0)}%). The thin line is the likely range: 4 weeks in 5 land inside it.</p>
         <Button size="sm" variant="secondary" iconRight="ArrowRight" onClick={() => cv.go('service')}>Plan the busy nights</Button>
       </div>
     </section>
@@ -335,7 +348,17 @@ function Outlook({ O, name }) {
 /** Week Shape: guests per weekday lately, and which days really moved. */
 function WeekShape({ W, name }) {
   const cv = useCv();
+  const [more, setMore] = React.useState(false);
   if (!W) return null;
+  if (!W.up && !W.down && !more) {
+    return (
+      <div className={`cv-card ${s.emptyRow}`}>
+        <Icon name="CalendarDays" size={22} />
+        <span className={s.quietText}>No day of the week has really changed. {W.busiest.name} is still the busiest, with about {Math.round(W.busiest.recent)} guests.</span>
+        <button type="button" className={s.linkBtn} onClick={() => setMore(true)}>Show the days<Icon name="ChevronDown" size={15} /></button>
+      </div>
+    );
+  }
   const max = Math.max(...W.rows.map((r) => r.recent ?? 0), 1);
   const lead = W.up || W.down;
   const line = W.up && W.down ? `${W.up.name}s are up ${W.up.pct.toFixed(0)}% and ${W.down.name}s down ${Math.abs(W.down.pct).toFixed(0)}% on the ${W.weeks} weeks before.`
@@ -383,13 +406,17 @@ function LocationSwitch({ current, onPick }) {
   if (rooms.length < 2) return null;
   return (
     <div className={s.locs} role="group" aria-label="Location">
+      <button type="button" className={s.loc} aria-pressed={current === 'all'} onClick={() => onPick('all')} aria-label="All locations side by side">
+        <span className={s.locIco}><Icon name="LayoutGrid" size={16} /></span>
+        <span className={s.locName}>All</span>
+      </button>
       {rooms.map((d) => {
         const dir = directionOf(trendsFor(d.hist.rows));
         const st = STATE[dir.state];
         const name = d.profile?.short || d.id;
         return (
           <button key={d.id} type="button" className={s.loc} data-kind={st.kind} aria-pressed={d.id === current} onClick={() => onPick(d.id)}
-            aria-label={`${name}: contribution ${st.word.toLowerCase()}${dir.change ? `, ${dir.change.text} on its usual` : ''}`}>
+            aria-label={`${name}: ${st.word.toLowerCase()}${dir.change ? `, ${dir.change.text} on its usual` : ''}`}>
             <span className={s.locIco}><Icon name={st.icon} size={16} /></span>
             <span className={s.locName}>{name}</span>
             <span className={s.locFig}>{dir.change?.text ?? st.word}</span>
@@ -397,6 +424,63 @@ function LocationSwitch({ current, onPick }) {
         );
       })}
     </div>
+  );
+}
+
+/* ------------------------------------------------------------- all locations */
+
+/** One location at a glance: how it's doing, what's verified, what's leaking, what's coming. Tap to open it. */
+function RoomCard({ d, server, onOpen }) {
+  const t = React.useMemo(() => trendsFor(d.hist.rows), [d]);
+  const dir = directionOf(t);
+  const st = STATE[dir.state];
+  const L = React.useMemo(() => leaksOf(t, ctxOf(d)), [t, d]);
+  const R = React.useMemo(() => resultsOf(d.proofs, t.rows), [t, d]);
+  const cc = useCovercast(d.room, d.id, server);
+  const O = React.useMemo(() => (cc ? outlookOf(t, cc) : null), [t, cc]);
+  const x = t.metrics.earned;
+  const name = d.profile?.short || d.id;
+  const n = t.rows.length;
+  return (
+    <button type="button" className={`cv-card ${s.roomCard}`} data-kind={st.kind} onClick={onOpen} aria-label={`Open ${name}`}>
+      <span className={s.roomHead}>
+        <span className={s.roomName}>{name}</span>
+        <span className={`${s.roomState} ${st.kind === 'loss' ? s.loss : st.kind === 'ok' ? s.gain : ''}`}><Icon name={st.icon} size={15} />{st.word}{dir.change ? ` ${dir.change.text}` : ''}</span>
+      </span>
+      <span className={s.kpiLabel}>Kept after food & labor<span className={s.kpiPer}>a week</span></span>
+      <span className={s.kpiVal}>{dir.recent != null ? about(dir.recent) : fmtMetric('earned', x.latest)}</span>
+      <Spark vals={x.vals.slice(Math.max(t.w.from, n - 26))} lim={x.lim} height={40} ariaLabel={`${name}, kept after food and labor, last 26 weeks`} />
+      <span className={s.roomFacts}>
+        <span><Icon name="BadgeCheck" size={15} />Verified so far<b className={R.toDate > 0 ? s.gain : ''}>{usd(R.toDate)}</b></span>
+        <span><Icon name="ScanSearch" size={15} />Slow leaks<b className={L.leakWeek > 0 ? s.loss : ''}>{L.leakWeek > 0 ? `−${usd(L.leakWeek)}/wk` : 'None'}</b></span>
+        <span><Icon name="TrendingUp" size={15} />Next 4 weeks<b>{O ? `about ${about(O.perWeek)}/wk` : '…'}</b></span>
+      </span>
+      <span className={s.roomOpen}>Open {name}<Icon name="ArrowRight" size={15} /></span>
+    </button>
+  );
+}
+
+/** Every location side by side, with the group's totals on top. */
+function GroupView({ server, onOpen }) {
+  const rooms = CV_GROUP.rooms ?? [];
+  const sum = React.useMemo(() => rooms.reduce((a, d) => {
+    const t = trendsFor(d.hist.rows);
+    const dir = directionOf(t);
+    const L = leaksOf(t, ctxOf(d));
+    const R = resultsOf(d.proofs, t.rows);
+    return { kept: a.kept + (dir.recent ?? 0), verified: a.verified + R.toDate, leak: a.leak + L.leakWeek, leaking: a.leaking + (L.leakWeek > 0 ? 1 : 0) };
+  }, { kept: 0, verified: 0, leak: 0, leaking: 0 }), [rooms]);
+  return (
+    <>
+      <section className={`cv-card ${s.groupSum}`} aria-label="All locations">
+        <div className={s.resultsFig}><span className={s.kpiLabel}>Kept after food & labor, all {rooms.length}</span><span className={s.big}>about {about(sum.kept)}<small> a week</small></span><span className="cv-xs cv-faint">Average of the last 13 weeks</span></div>
+        <div className={s.resultsFig}><span className={s.kpiLabel}>Verified so far</span><span className={`${s.big} ${sum.verified > 0 ? s.gain : ''}`}>{usd(sum.verified)}</span><span className="cv-xs cv-faint">From Coversight changes that passed their test</span></div>
+        <div className={s.resultsFig}><span className={s.kpiLabel}>Slow leaks</span><span className={`${s.big} ${sum.leak > 0 ? s.loss : ''}`}>{sum.leak > 0 ? `−${usd(sum.leak)}` : '$0'}<small> a week</small></span><span className="cv-xs cv-faint">{sum.leaking ? `In ${plural(sum.leaking, 'location')}` : 'Nothing leaking'}</span></div>
+      </section>
+      <div className={s.roomGrid}>
+        {rooms.map((d) => <RoomCard key={d.id} d={d} server={server} onOpen={() => onOpen(d.id)} />)}
+      </div>
+    </>
   );
 }
 
@@ -433,20 +517,44 @@ function watchText(sig) {
   return `Next week: back ${sig.dir === 'up' ? 'under' : 'over'} ${f(edge)} means it was a one-off. Another week past it means something has changed.`;
 }
 
-/** A plain title and sentence for one change: what happened, against what's normal. */
+/** How far a value is from its usual, in words an owner uses ("36¢ less", "1.2 cents more of every dollar"). */
+function gapWords(key, v, mean) {
+  const d = v - mean, more = d > 0;
+  const a = Math.abs(d);
+  const u = METRIC[key]?.unit;
+  if (u === 'cents') return a < 1 ? `${Math.round(a * 100)}¢ ${more ? 'more' : 'less'}` : `$${a.toFixed(2)} ${more ? 'more' : 'less'}`;
+  if (u === 'money') return `${usd(a)} ${more ? 'more' : 'less'}`;
+  if (u === 'count') return `${Math.round(a).toLocaleString('en-US')} ${more ? 'more' : 'fewer'}`;
+  if (u === 'pct' || u === 'pct1') return `${a < 1 ? a.toFixed(1) : a.toFixed(1)}¢ ${more ? 'more' : 'less'} of every sales dollar`;
+  if (u === 'mins') return `${Math.round(a).toLocaleString('en-US')} minutes ${more ? 'more' : 'less'}`;
+  if (u === 'minutes') return `${a.toFixed(1)} minutes ${more ? 'longer' : 'shorter'}`;
+  return `${fmtMetric(key, a)} ${more ? 'more' : 'less'}`;
+}
+
+/** A plain title and sentence for one change: what it means for the business, then the two numbers. */
 function plainOf(sig, rows) {
   const m = METRIC[sig.metric], e = sig.expected, f = (v) => fmtMetric(sig.metric, v);
-  const name = { earned: 'Contribution', wcm: 'Margin per dish', exc: 'Voids and comps', covers: 'Guests', net: 'Sales' }[sig.metric] ?? m.label;
-  if (sig.kind === 'shift') {
-    return {
-      title: `${name} ${sig.dir} for ${plural(sig.weeks, 'week')}`,
-      text: `For ${sig.weeks} weeks in a row it has sat ${sig.dir === 'up' ? 'above' : 'below'} its usual average of ${f(e.mean)}, at about ${f(sig.avg)}. No single week looks odd, but a run this long isn't normal.`,
-    };
-  }
-  const when = sig.weeks === 1 ? `in the week of ${rows[sig.i]?.label}` : `in ${sig.breaches} of ${sig.weeks} weeks to ${sig.ongoing ? 'this week' : rows[sig.to]?.label}`;
+  const name = { earned: 'What you keep', wcm: 'Margin per dish', exc: 'Voids and comps', covers: 'Guests', net: 'Sales' }[sig.metric] ?? m.label;
+  const one = sig.weeks === 1;
+  const v = one ? sig.value : sig.avg;
+  const gap = gapWords(sig.metric, v, e.mean);
+  const when = one ? `in the week of ${rows[sig.i]?.label}` : sig.ongoing ? `for ${sig.weeks} weeks now` : `for ${sig.weeks} weeks, to ${rows[sig.to]?.label}`;
+  const what = {
+    wcm: `Each dish sold earned about ${gap} than it used to`,
+    check: `Each guest spent about ${gap} than usual`,
+    covers: `About ${gap} guests a week than usual`,
+    net: `Sales ran about ${gap} a week than usual`,
+    earned: `You kept about ${gap} a week after food and labor than usual`,
+    food: `Food cost took about ${gap}`,
+    labour: `Labor took about ${gap}`,
+    prime: `Food and labor together took about ${gap}`,
+    exc: `Voids, comps and discounts took about ${gap}`,
+    ot: `About ${gap} of overtime a week`,
+    turn: `Tables took about ${gap} than usual`,
+  }[sig.metric] ?? `${name} was ${gap} than usual`;
   return {
-    title: `${name} ${sig.dir === 'up' ? 'jumped' : 'dropped'}`,
-    text: `It ${sig.dir === 'up' ? 'reached' : 'fell to'} ${fmtNear(sig.metric, sig.value, sig.dir === 'up' ? e.ucl : e.lcl)} ${when}. A normal week is ${rangeNear(sig.metric, e, sig.value)}.`,
+    title: one ? `${name} ${sig.dir === 'up' ? 'jumped' : 'dropped'}` : `${name} ${sig.dir} for ${plural(sig.weeks, 'week')}`,
+    text: `${what}, ${when}: ${f(v)} against a usual ${f(e.mean)}.`,
   };
 }
 
@@ -744,7 +852,7 @@ function RoomView({ t, notes, setNotes, server }) {
 
       {D && (
         <>
-          <Step n={3} id="trends-drivers" named={<Named name="Profit Bridge" icon="Workflow" />} title="What's driving it" sub={`Why contribution moved over the last ${D.weeks} weeks, against a usual week.`} />
+          <Step n={3} id="trends-drivers" named={<Named name="Profit Bridge" icon="Workflow" />} title="What's driving it" sub={`Why what you keep after food and labor moved over the last ${D.weeks} weeks.`} />
           <Drivers D={D} name={roomName} />
         </>
       )}
@@ -774,7 +882,7 @@ function RoomView({ t, notes, setNotes, server }) {
             <dt>Data through</dt><dd>{shortDate(dataThrough || t.rows[n - 1]?.iso)}</dd>
             <dt>Usual range</dt><dd>{x.lim ? `Average ± 3 standard deviations of ${x.lim.n} baseline weeks${x.lim.limited ? ' (limited history)' : ''}` : 'Not enough weeks yet'}</dd>
             <dt>Flagged when</dt><dd>A week leaves its usual range, or {RUN} weeks in a row sit on one side of the average. Holiday and no-sales weeks are never flagged.</dd>
-            <dt>Dollars</dt><dd>Each change against its usual level, in contribution: cost shares × that week&apos;s sales, guests × what a guest usually leaves, margin per dish × dishes sold. Where two changes overlap (food and prime cost), only the bigger is added. Estimates, not causes.</dd>
+            <dt>Dollars</dt><dd>Each change against its usual level, in money kept after food and labor: cost shares × that week&apos;s sales, guests × what a guest usually leaves, margin per dish × dishes sold. Where two changes overlap (food and prime cost), only the bigger is added. Estimates, not causes.</dd>
             <dt>Covercast Outlook</dt><dd>Covercast&apos;s weekly guests and sales with its 80% range, times the share of sales kept after food and labor over the last 4 normal weeks. <b>Modeled</b>.</dd>
             <dt>Week Shape</dt><dd>Average guests per weekday, last 13 weeks against the 13 before, holiday weeks left out. A day counts as changed only past twice its standard error.</dd>
             <dt>Drift Clock</dt><dd>A slow change&apos;s dollars a week over Covercast&apos;s next 4 weeks, scaled by forecast sales where it moves with sales. <b>Estimated</b>.</dd>
@@ -782,8 +890,8 @@ function RoomView({ t, notes, setNotes, server }) {
             <dt>Method</dt><dd>{METHOD}</dd>
           </dl>
           <span className="cv-xs cv-muted">{t.w.own
-            ? <>The sample&apos;s weeks are never shown or used. Food is net sales × this room&apos;s food rate until supplier invoices are in, so food, prime cost and contribution are <b>Modelled</b>. Contribution is before rent and overheads: it is not profit.</>
-            : <>Sample history. Connect Toast and this page judges your own weeks, once {MIN_BASELINE + 1} are in. Contribution is before rent and overheads: it is not profit.</>}</span>
+            ? <>The sample&apos;s weeks are never shown or used. Food is net sales × this room&apos;s food rate until supplier invoices are in, so food, prime cost and what&apos;s kept are <b>Modeled</b>. What&apos;s kept after food and labor is before rent and overheads: it is not profit.</>
+            : <>Sample history. Connect Toast and this page judges your own weeks, once {MIN_BASELINE + 1} are in. What&apos;s kept after food and labor is before rent and overheads: it is not profit.</>}</span>
         </div>
       </details>
     </>
@@ -802,6 +910,7 @@ function CvTrends() {
   const own = CV_D.room.fromToast;
   const last = t.rows[t.rows.length - 1];
   const multi = (CV_GROUP.rooms?.length ?? 0) > 1;
+  const [allView, setAllView] = React.useState(false);
   const exportCsv = () => {
     if (multi) {
       const text = CV_GROUP.rooms.map((d, k) => trendsCsv(trendsFor(d.hist.rows), cleanNotes(engine.saved('trends.notes', d.id)), d.profile?.name ?? d.id, { header: k === 0 })).join('');
@@ -816,8 +925,10 @@ function CvTrends() {
         q="How your business is trending, and why"
         sub="What Coversight has added, what's driving your numbers, and what Covercast sees coming."
         right={<Button variant="secondary" size="sm" icon="Download" onClick={exportCsv}>CSV</Button>} />
-      <LocationSwitch current={eng.room} onPick={(id) => engine.setRoom(id)} />
-      <RoomView key={eng.room} t={t} notes={notes} setNotes={setNotes} server={eng.mode === 'server'} />
+      <LocationSwitch current={allView && multi ? 'all' : eng.room} onPick={(id) => { if (id === 'all') setAllView(true); else { setAllView(false); engine.setRoom(id); } }} />
+      {allView && multi
+        ? <GroupView server={eng.mode === 'server'} onOpen={(id) => { setAllView(false); engine.setRoom(id); }} />
+        : <RoomView key={eng.room} t={t} notes={notes} setNotes={setNotes} server={eng.mode === 'server'} />}
     </div>
   );
 }
