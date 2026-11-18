@@ -63,7 +63,7 @@ function KindSelect({ value, onChange, label }) {
    kept here: committing one tab doesn't lose the rest of the list. */
 const keep = { found: null, picks: {}, link: '', room: null };
 
-export function BringIn({ onReview, setLinks = () => {}, files = null }) {
+export function BringIn({ onReview, setLinks = () => {}, files = null, startPaste = false }) {
   const cv = useCv();
   const eng = useEngine();
   const server = eng.mode === 'server';
@@ -74,7 +74,7 @@ export function BringIn({ onReview, setLinks = () => {}, files = null }) {
   const setPicks = (v) => setPicksState((prev) => { const next = typeof v === 'function' ? v(prev) : v; keep.picks = next; return next; });
   const [busy, setBusy] = React.useState(null);
   const [err, setErr] = React.useState(null);
-  const [paste, setPaste] = React.useState(null);
+  const [paste, setPaste] = React.useState(startPaste ? '' : null);
   const [link, setLinkState] = React.useState(keep.link);
   const setLink = (v) => { keep.link = v; setLinkState(v); };
   const [photo, setPhoto] = React.useState(null); // { configured }

@@ -60,7 +60,7 @@ function Block({ title, children, note }) {
 }
 
 /* ------------------------------------------------------------------ one kind: compact preview, freshness, checks, sync */
-export function KindPanel({ row, item, stake, last, link, server, sample, onEdit, onLink, onReadNow, onHistory, onClose }) {
+export function KindPanel({ row, item, stake, last, link, server, sample, onEdit, onLink, onReadNow, onHistory, onUndo, onDownload, onClose }) {
   const { kind, schema, entry, feed, src } = row;
   const st = STATE[src.key] || STATE.sample;
   const room = CV_DS.rooms[CV_D.id];
@@ -70,21 +70,23 @@ export function KindPanel({ row, item, stake, last, link, server, sample, onEdit
   const m = METHODS[method] || METHODS.upload;
   const fmt = (c, v) => (v == null || v === '' ? '—' : c.type === 'money' ? `$${(+v).toFixed(2)}` : typeof v === 'number' ? v.toLocaleString('en-US') : String(v));
   return (
-    <SidePanel over={`${CV_ROOM.short} · data`} title={schema.title} onClose={onClose} wide
-      foot={<>
-        <Button className={s.panelPrimary} icon={entry ? 'PencilLine' : 'Plus'} onClick={() => onEdit(kind)}>{entry ? `Update ${schema.title.toLowerCase()}` : `Enter ${schema.title.toLowerCase()}`}</Button>
-        <div className={s.panelMore}>
+    <SidePanel over={`${CV_ROOM.short} · manage`} title={schema.title} onClose={onClose} wide
+      foot={(method === 'toast' || (method === 'link' && server)) ? <div className={s.panelMore}>
           {method === 'toast' && <Link className="btn btn-secondary btn-sm" href="/connect"><Icon name="PlugZap" size={15} />Connect Toast</Link>}
           {method === 'link' && server && <Button size="sm" variant="secondary" icon="Link2" onClick={() => onLink(kind)}>Link a sheet</Button>}
-          <Button size="sm" variant="ghost" icon="Upload" onClick={() => onEdit(kind, 'csv')}>Upload a file</Button>
-        </div>
-      </>}>
+        </div> : null}>
       <div className={s.panelStatus}>
         <Pill tone={READY[kindStatus(row, item)].tone} icon={READY[kindStatus(row, item)].icon}>{READY[kindStatus(row, item)].label}</Pill>
         <span className={s.chipState}><i style={{ background: st.color }} /><Icon name={st.icon} size={14} />{src.label}</span>
         {item?.blocked?.length > 0 && <Pill tone="warn" icon="Ban">{item.blocked.length} finding{item.blocked.length === 1 ? '' : 's'} on hold</Pill>}
       </div>
 
+      <div className={s.manage} role="group" aria-label={`Manage ${schema.title.toLowerCase()}`}>
+        <button type="button" onClick={() => onEdit(kind, 'grid')}><Icon name="PencilLine" size={18} /><b>Edit in a table</b><span>Change, add or remove rows</span></button>
+        <button type="button" onClick={() => onEdit(kind, 'csv')}><Icon name="Upload" size={18} /><b>Replace from a file</b><span>Upload or paste a new version</span></button>
+        <button type="button" onClick={() => onDownload(kind)}><Icon name="Download" size={18} /><b>Download</b><span>A spreadsheet of what’s there now</span></button>
+        <button type="button" disabled={!last} onClick={() => onUndo(last)}><Icon name="Undo2" size={18} /><b>Undo last change</b><span>{last ? `Made ${entry?.date ?? 'recently'}` : 'Nothing to undo yet'}</span></button>
+      </div>
       <Block title="Freshness">
         <dl className={s.facts}>
           <dt>Source</dt><dd>{entry ? (link ? 'Linked sheet' : 'Entered here') : feed ? `Sample feed (${feed.name})` : 'Sample data'}</dd>
@@ -138,7 +140,7 @@ export function KindPanel({ row, item, stake, last, link, server, sample, onEdit
         </Block>
       )}
       <Block title="Access and removal">
-        <p className={s.blockNote}>Owners see every room; a manager sees only their own. Every change is recorded with who made it. To remove an import, undo it in Recent activity.</p>
+        <p className={s.blockNote}>Owners see every room; a manager sees only their own. Every change is recorded with who made it. To remove an import, use Undo last change above.</p>
       </Block>
       {onHistory && <span><button type="button" className={s.textLink} onClick={() => onHistory(kind)}>See its history<Icon name="ChevronRight" size={15} /></button></span>}
       <span className="cv-xs cv-faint"><Icon name={m.icon} size={12} style={{ verticalAlign: -2 }} /> Best way in: {m.label}. {m.how}</span>
@@ -320,9 +322,9 @@ export function AddPanel({ server, start = null, onManual, onToastExports, child
           <Block title="Other systems"><p className={s.blockText}>Labor, kitchen display and accounting connections are managed on <Link href="/sources">Sources</Link>.</p></Block>
         </>
       )}
-      {(way === 'file' || way === 'scan') && (
+      {(way === 'file' || way === 'scan' || way === 'paste') && (
         <>
-          <p className={s.blockText}>{way === 'file' ? 'Drop the file. We recognize what it is, match its columns and show you only what needs a decision.' : 'Take or drop a photo or PDF of an invoice, count sheet or statement. The rows it reads always come back for you to check.'}</p>
+          <p className={s.blockText}>{way === 'paste' ? 'Copy the cells in Excel or Google Sheets, with the header row, and paste them in the box below.' : way === 'file' ? 'Drop the file. We recognize what it is, match its columns and show you only what needs a decision.' : 'Take or drop a photo or PDF of an invoice, count sheet or statement. The rows it reads always come back for you to check.'}</p>
           {children}
         </>
       )}

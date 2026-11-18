@@ -113,6 +113,7 @@ export function DataRows({ rows, items, sample, server, quiet, onOpen, onLink, o
               <span className={s.dataText}><b>{r.schema.title}</b><span>{sub}</span></span>
               <Pill tone={st.tone} icon={st.icon}>{st.label}</Pill>
             </button>
+            <Button size="sm" variant="ghost" icon="Settings" onClick={() => onDetails(k)}>Manage</Button>
             {it
               ? <FixAction it={it} primary={i === 0 && !quiet} server={server} onOpen={onOpen} onLink={onLink} />
               : <Button size="sm" variant="secondary" icon="PencilLine" onClick={() => onOpen(k, 'grid')}>Update</Button>}
@@ -124,19 +125,36 @@ export function DataRows({ rows, items, sample, server, quiet, onOpen, onLink, o
 }
 
 /* ------------------------------------------------------------------ the one way in: drop anything */
-export function DropStrip({ over, onFiles, onPhoto }) {
+const ADD_WAYS = [
+  { id: 'file', icon: 'Upload', title: 'Upload a file', sub: 'Excel, CSV or a Toast export' },
+  { id: 'photo', icon: 'Camera', title: 'Take a photo', sub: 'Invoice, count sheet or statement' },
+  { id: 'paste', icon: 'ClipboardPaste', title: 'Paste from a spreadsheet', sub: 'Copy the cells, paste them in' },
+  { id: 'link', icon: 'Link2', title: 'Link a Google Sheet', sub: 'Stays up to date every morning' },
+  { id: 'type', icon: 'PencilLine', title: 'Type it in', sub: 'A short form, a few rows' },
+  { id: 'connect', icon: 'PlugZap', title: 'Connect your POS', sub: 'Sales and hours come in on their own' },
+];
+
+/** Every easy way to add data, side by side. A file dropped anywhere on the page works too. */
+export function AddWays({ over, onFiles, onPhoto, onWay }) {
   const ref = React.useRef(null);
   const cam = React.useRef(null);
+  const go = (id) => (id === 'file' ? ref.current?.click() : id === 'photo' ? cam.current?.click() : onWay(id));
   return (
-    <div className={`${s.dropStrip} ${over ? s.dropOver : ''}`}>
-      <span className={s.dropStripIco}><Icon name="FileSpreadsheet" size={20} /></span>
-      <span className={s.dropStripText}><b className={s.notPhone}>{over ? 'Drop it anywhere' : 'Drop a file anywhere on this page'}</b><b className={s.onlyPhone}>Add a file or a photo</b><span>Spreadsheet, export, photo or PDF. Coversight works out what it is.</span></span>
-      <span className={s.sampleActs}>
-        <Button size="sm" variant="secondary" icon="Upload" onClick={() => ref.current?.click()}>Choose a file</Button>
-        <span className={s.onlyPhone}><Button size="sm" variant="secondary" icon="Camera" onClick={() => cam.current?.click()}>Take a photo</Button></span>
-      </span>
-      <input ref={cam} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} aria-hidden="true" tabIndex={-1} onChange={(e) => { const f = [...e.target.files]; e.target.value = ''; if (f.length) onPhoto(f); }} />
+    <section className={`${s.addWays} ${over ? s.dropOver : ''}`} aria-labelledby="add-ways-h">
+      <div className={s.addHead}>
+        <span className="cv-h4" id="add-ways-h">{over ? 'Drop it anywhere' : 'Add data'}</span>
+        <span className={`${s.addHint} ${s.notPhone}`}>Or drop a file anywhere on this page</span>
+      </div>
+      <div className={s.wayGrid}>
+        {ADD_WAYS.map((w) => (
+          <button key={w.id} type="button" className={s.wayTile} onClick={() => go(w.id)}>
+            <span className={s.dataIco}><Icon name={w.icon} size={20} /></span>
+            <span className={s.dataText}><b>{w.title}</b><span>{w.sub}</span></span>
+          </button>
+        ))}
+      </div>
+      <input ref={cam} type="file" accept="image/*,application/pdf" capture="environment" style={{ display: 'none' }} aria-hidden="true" tabIndex={-1} onChange={(e) => { const f = [...e.target.files]; e.target.value = ''; if (f.length) onPhoto(f); }} />
       <input ref={ref} type="file" multiple style={{ display: 'none' }} aria-hidden="true" tabIndex={-1} onChange={(e) => { const f = [...e.target.files]; e.target.value = ''; if (f.length) onFiles(f); }} />
-    </div>
+    </section>
   );
 }

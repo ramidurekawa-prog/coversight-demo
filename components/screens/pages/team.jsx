@@ -70,7 +70,7 @@ function Groups() {
       ) : (
         <form className="cv-col" style={{ gap: 8, borderTop: '1px solid var(--border)', paddingTop: 12 }} onSubmit={create}>
           <span className="cv-small" style={{ fontWeight: 600 }}>Start your own group</span>
-          <span className="cv-xs cv-faint">Each room starts on sample numbers so every page works today, labelled as such; loading its Toast exports on Data inputs replaces them with its own.</span>
+          <span className="cv-xs cv-faint">Each room starts on sample numbers so every page works today, labelled as such; loading its Toast exports on Add & Manage Data replaces them with its own.</span>
           <input style={inputStyle} placeholder="Group name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required minLength={2} maxLength={80} aria-label="Group name" />
           {form.rooms.map((r, i) => (
             <span key={i} className="cv-row nowrap" style={{ gap: 8 }}>

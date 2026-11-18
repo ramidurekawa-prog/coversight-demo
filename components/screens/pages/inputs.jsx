@@ -2,13 +2,14 @@
 
 import * as React from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 import { Button, Icon } from '../../kit';
-import { CV_D, CV_DS, CV_ROOM, PageHead, Pill } from '../core';
+import { CV_D, CV_DS, CV_ROOM, PageHead, Pill, useCv } from '../core';
 import { useEngine } from '../../engine';
 import { KINDS } from '../../../lib/data/ingest';
-import { SCHEMAS, attention, blockedWhy, dependsOn, pageState, stakes } from '../../../lib/data/page/inputs';
-import { Connections, DataRows, DropStrip, applies } from './inputs-visual';
+import { SCHEMAS, attention, blockedWhy, dependsOn, pageState, safeCSV, stakes } from '../../../lib/data/page/inputs';
+import { AddWays, Connections, DataRows, applies } from './inputs-visual';
 import { ToastImport } from '../toast-import';
 import { BringIn } from '../bring-in';
 import { boardRows } from './inputs-board';
@@ -16,11 +17,12 @@ import { Editor } from './inputs-editor';
 import { History } from './inputs-history';
 import { host, useLinkActions, when } from './inputs-links';
 import { AddPanel, CapabilityPanel, KindPanel, LinkPanel, ReadinessPanel, SamplePanel, SidePanel } from './inputs-panels';
-import { useHistory, useLinks } from './inputs-data';
+import { undoEntry, useHistory, useLinks } from './inputs-data';
+import { templateRows } from '../../../lib/data/ingest';
 import { useTodayTheme } from './today.themes';
 import s from './inputs.module.css';
 
-/* Data & Connections. Outcome and action first: is the data working, what
+/* Add & Manage Data. Outcome and action first: is the data working, what
  * needs fixing and what fixing it unlocks. Then connections (the systems) kept
  * apart from coverage (the kinds of data). Adding data has one entry point,
  * and the editor and import steps only appear in a focused workspace while
@@ -29,6 +31,8 @@ import s from './inputs.module.css';
 
 function CvInputs() {
   const eng = useEngine();
+  const router = useRouter();
+  const cv = useCv();
   useTodayTheme(false); // Today's Persimmon & Ink palette while this page is on screen
   const server = eng.mode === 'server';
   const sample = !server || !!eng.org?.sample;
@@ -71,6 +75,18 @@ function CvInputs() {
   const { busy: linkBusy, readNow, unlink } = useLinkActions(setLinks);
   const linkFor = (k) => links.find((l) => l.roomId === CV_D.id && l.picks.some((p) => p.kind === k)) || null;
   const lastFor = (k) => roomHistory.entries.find((e) => e.kind === k && e.room === CV_D.id && e.current) || null;
+  const download = (k) => {
+    const cols = SCHEMAS[k].columns.map((c) => c.k);
+    const data = CV_D.inputs?.[k]?.rows?.length ? CV_D.inputs[k].rows : templateRows(k, room);
+    try {
+      const url = URL.createObjectURL(new Blob([safeCSV(cols, data)], { type: 'text/csv' }));
+      const el = document.createElement('a'); el.href = url; el.download = `${k}-${CV_D.id}.csv`; document.body.appendChild(el); el.click(); el.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch { cv.toast('Couldn’t start the download in this browser.'); }
+  };
+  const undoLast = async (e) => {
+    try { await undoEntry(e.id); cv.toast(`Undone. ${SCHEMAS[e.kind].title} is back to what it was before.`); roomHistory.reload(); setPanel(null); } catch (err) { cv.toast(`Couldn’t undo: ${err.message}`); }
+  };
   const findingsFor = (k) => CV_D.candidates.filter((c) => dependsOn(k, c) && !c.prevent && c.value > 0)
     .map((c) => { const why = blockedWhy(c, room, CV_D.inputs || {}); return { id: c.id, title: c.title, value: c.value, claim: c.claim, held: why && (k === 'recipes' || c.needs === k) ? why : null }; })
     .sort((x, y) => y.value - x.value);
@@ -97,13 +113,14 @@ function CvInputs() {
 
   return (
     <div className={`cv-page ${s.page} ${s.narrow}`} data-page="inputs" data-state={head.state} {...dropHandlers}>
-      <PageHead over={`Data & Connections · ${CV_ROOM.name}`} q={headline}
-        sub="Add or update anything here. Use it when a connection is missing or gets something wrong."
+      <PageHead over={`Add & Manage Data · ${CV_ROOM.name}`} q={headline}
+        sub="Add it any way that’s easy, then keep it right. Use this when a connection is missing or gets something wrong."
         right={sample
           ? <Button size="sm" variant="secondary" icon="FlaskConical" onClick={() => setPanel({ type: 'sample' })}>Sample data</Button>
           : <Pill tone="good" icon="Cloud">Saved to your account</Pill>} />
 
-      <DropStrip over={dragging} onFiles={(f) => add('file', f)} onPhoto={(f) => add('scan', f)} />
+      <AddWays over={dragging} onFiles={(f) => add('file', f)} onPhoto={(f) => add('scan', f)}
+        onWay={(id) => (id === 'connect' ? router.push('/connect') : add(id === 'link' ? 'connect' : id === 'type' ? 'manual' : 'paste'))} />
 
       <section className="cv-card" aria-label={`Data for ${CV_ROOM.short}`} id="inputs-next">
         <DataRows rows={rows} items={items} sample={sample} server={server} quiet={editing}
@@ -136,7 +153,7 @@ function CvInputs() {
       )}
       {!editing && panel?.type === 'kind' && (() => { const r = rows.find((x) => x.kind === panel.kind); return (
         <KindPanel row={r} item={items.find((x) => x.kind === panel.kind)} stake={stake.find((x) => x.kind === panel.kind)} last={lastFor(panel.kind)} link={linkFor(panel.kind)} server={server} sample={sample}
-          onEdit={open} onLink={() => add('connect')} onReadNow={readNow}
+          onEdit={open} onLink={() => add('connect')} onReadNow={readNow} onUndo={undoLast} onDownload={download}
           onHistory={(k) => { setHistKind(k); setPanel({ type: 'hist' }); }} onClose={close} />
       ); })()}
       {!editing && panel?.type === 'ready' && <ReadinessPanel rows={rows} items={items} onPick={(k) => setPanel({ type: 'kind', kind: k })} onClose={close} />}
@@ -146,7 +163,7 @@ function CvInputs() {
       {!editing && panel?.type === 'toast' && <SidePanel workspace over="Toast" title="Upload Toast data exports" onClose={close}><ToastImport /></SidePanel>}
       {!editing && panel?.type === 'add' && (
         <AddPanel key={panel.start || 'menu'} server={server} start={panel.start} onManual={(k) => open(k, 'grid')} onToastExports={() => setPanel({ type: 'toast' })} onClose={close}>
-          <BringIn setLinks={setLinks} onReview={review} files={panel.files} />
+          <BringIn setLinks={setLinks} onReview={review} files={panel.files} startPaste={panel.start === 'paste'} />
         </AddPanel>
       )}
     </div>
