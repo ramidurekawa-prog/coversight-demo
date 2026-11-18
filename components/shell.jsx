@@ -81,7 +81,7 @@ function Sidebar({ page, role, onNavigate }) {
                   <span className="ico">
                     <Icon name={p.icon} size={18} />
                   </span>
-                  {p.title}
+                  {p.navTitle || p.title}
                   {id === 'today' && <TodayCount />}
                 </Link>
               );
