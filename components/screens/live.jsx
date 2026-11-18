@@ -150,9 +150,9 @@ function PlatformHealthDemo() {
 function ToastConnectionLine() {
   const cv = useCv();
   const t = CV_D.room.fromToast;
-  if (t) return <Callout tone="good" icon="PlugZap"><span>{CV_ROOM.name} runs on its own Toast data exports through {t.end} ({t.weeks} weeks). Upload the latest each week on <button className="cv-link" onClick={() => cv.go('inputs')}>Data inputs</button>; the live API sync arrives with Toast credentials.</span></Callout>;
-  if (!CV_D.ownData) return <Callout icon="FlaskConical"><span>{CV_ROOM.name} is on sample data. Load your Toast data exports on <button className="cv-link" onClick={() => cv.go('inputs')}>Data inputs</button> to put every figure on your own numbers.</span></Callout>;
-  return <Callout icon="PencilLine"><span>{CV_ROOM.name} has data entered by hand; the rest is still sample. Load your Toast data exports on <button className="cv-link" onClick={() => cv.go('inputs')}>Data inputs</button> for sales, team and timings.</span></Callout>;
+  if (t) return <Callout tone="good" icon="PlugZap"><span>{CV_ROOM.name} runs on its own Toast data exports through {t.end} ({t.weeks} weeks). Upload the latest each week on <button className="cv-link" onClick={() => cv.go('inputs')}>Add & Manage Data</button>; the live API sync arrives with Toast credentials.</span></Callout>;
+  if (!CV_D.ownData) return <Callout icon="FlaskConical"><span>{CV_ROOM.name} is on sample data. Load your Toast data exports on <button className="cv-link" onClick={() => cv.go('inputs')}>Add & Manage Data</button> to put every figure on your own numbers.</span></Callout>;
+  return <Callout icon="PencilLine"><span>{CV_ROOM.name} has data entered by hand; the rest is still sample. Load your Toast data exports on <button className="cv-link" onClick={() => cv.go('inputs')}>Add & Manage Data</button> for sales, team and timings.</span></Callout>;
 }
 
 export { ROOM_IDS, GROUP_NAME, pilotOf, locOf, SAMPLE_CLIENT, ago, runSummary, OUT_TONE, JobsPanel, PlatformHealth, PlatformHealthDemo, ToastConnectionLine };
