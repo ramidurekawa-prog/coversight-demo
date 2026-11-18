@@ -5,8 +5,9 @@ import { deriveRoom } from '../lib/data/model.js';
 import {
   changeText, checkEntry, costByRole, coverage, dayOfTitle, entryTotals, gapGrid, groupShare, hourLabel, loadGridFromHeat, loadGridFromPlans, moves, peakCell, planServices, sampleServices, serverWage, shortPhrase,
   splitMoves, stageOf, topIssue, trustOf, weekDays, weekSummary, weekTotals, withEntry,
-  checkCrew, deptSplit, followUps, kitchenLoad, lineCheck, loadGridFromServices, mathChecks, needFor,
+  checkCrew, deptSplit, followUps, forecastWeek, kitchenLoad, lineCheck, loadGridFromServices, mathChecks, needFor,
 } from '../lib/data/page/labour.js';
+import { covercastRoom, serverRate, shiftPulseDay } from '../lib/data/forecast/index.js';
 import { buildSeed } from '../lib/data/seed.js';
 import { ACTION_KEYS } from '../server/actions';
 
@@ -281,5 +282,34 @@ describe('Labor page', () => {
     expect(schema.safeParse({ Friday: { 17: 3 } }).success).toBe(false);
     expect(schema.safeParse({ Fri: { 25: 3 } }).success).toBe(false);
     expect(schema.safeParse({ Fri: { 17: 99 } }).success).toBe(false);
+  });
+
+  test('the sample has one server pace: lever hours and the 13-week rows follow labour.kpis.rate', () => {
+    for (const id of rooms) {
+      const room = ds.rooms[id], pace = room.labour.kpis.rate;
+      /* the pace measured from the lever hours (what the forecast sizes servers with) sits within half a guest of the Labor page's */
+      expect(Math.abs(serverRate(room)! - pace), id).toBeLessThan(0.5);
+      for (const h of densify(room)!.hours) expect(h.servers).toBe(Math.max(2, Math.ceil(h.covers / pace)));
+    }
+  });
+
+  test('next week is the forecast held against the schedule the room runs now', () => {
+    const svcs = [{ day: 'Mon', label: 'Monday dinner', hours: [{ label: '5 PM', sched: 3 }, { label: '6 PM', sched: 5 }, { label: '7 PM', sched: 5 }] }];
+    const w = forecastWeek([
+      { iso: '2026-10-26', weekday: 'Monday', hours: [{ hour: 12, covers: 30, low: 25, high: 35, serversPlan: 6 }, { hour: 17, covers: 14, low: 12, high: 16, serversPlan: 3 }, { hour: 18, covers: 24, low: 21, high: 27, serversPlan: 6 }, { hour: 19, covers: 20, low: 18, high: 22, serversPlan: 4 }] },
+      { iso: '2026-10-27', weekday: 'Tuesday', hours: [{ hour: 18, covers: 20, low: 18, high: 22, serversPlan: 4 }] },
+    ], svcs);
+    expect(w.days[0]).toMatchObject({ day: 'Mon', covers: 58, low: 51, high: 65, peak: { label: '6 PM', need: 6 }, short: 1, spare: 1 });
+    expect(w.days[0].hours.length).toBe(3); // noon is not on the schedule, so it is not judged
+    expect(w.days[1]).toMatchObject({ day: 'Tue', svc: null, short: 0 });
+    expect(w).toMatchObject({ short: 1, spare: 1 });
+    expect(w.worst!.day).toBe('Mon');
+    for (const id of rooms) {
+      const room = ds.rooms[id], cc: any = covercastRoom(room, { accuracy: false });
+      const real = forecastWeek(cc.covers.days.slice(0, 7).map((x: any) => { const sp: any = shiftPulseDay(cc, x.iso); return { iso: x.iso, weekday: x.weekday, hours: [...(sp.lunch?.hours || []), ...(sp.dinner?.hours || [])] }; }), sampleServices(room.labour));
+      expect(real.days.length).toBe(7);
+      for (const x of real.days) { expect(x.hours.length, `${id} ${x.day}`).toBeGreaterThan(0); expect(x.low).toBeLessThanOrEqual(x.covers!); expect(x.high).toBeGreaterThanOrEqual(x.covers!); }
+      expect(real.short).toBe(real.days.reduce((t: number, x: any) => t + x.short, 0));
+    }
   });
 });

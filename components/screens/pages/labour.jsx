@@ -7,8 +7,9 @@ import { engine, useEngine, useSaved } from '../../engine';
 import { tonightPlan } from '../week';
 import { weeklySeries } from '../../../lib/data/readers';
 import { HOURLY_WEEKS } from '../../../lib/data/dense';
+import { covercastRoom, shiftPulseDay } from '../../../lib/data/forecast/index.js';
 import {
-  checkCrew, checkEntry, costByRole, DAYS, dayName, dayOfTitle, deptSplit, entryTotals, followUps, gapGrid, groupShare, kitchenLoad, lineCheck, listOf, loadGridFromPlans, loadGridFromServices,
+  checkCrew, checkEntry, costByRole, DAYS, dayName, dayOfTitle, deptSplit, entryTotals, followUps, forecastWeek, gapGrid, groupShare, kitchenLoad, lineCheck, listOf, loadGridFromPlans, loadGridFromServices,
   mathChecks, moves as movesOf, planServices, sampleServices, serverWage, shortPhrase, splitMoves, STAGES, stageOf, STATUS, trustOf, weekDays, weekSummary, weekTotals, withEntry,
 } from '../../../lib/data/page/labour';
 import { useCv, cvMoney, cvApproval, CV_D, CV_GROUP, CV_NOW, CV_ROOM, Claim } from '../core';
@@ -399,7 +400,7 @@ function ChecksPanel({ checks, own, weeks, onClose }) {
       </ul>
       <Block title="What this page does not do yet">
         <Facts rows={[
-          ['Demand', own ? 'Uses your typical guests by hour from past weeks. It is not a forecast, so a holiday or event week is not anticipated.' : 'Uses this week’s actual guests by hour. It is not a forecast, so a holiday or event week is not anticipated.'],
+          ['Demand', own ? 'Uses your typical guests by hour from past weeks. The next-week forecast is not connected for your own data yet.' : 'This week uses actual guests by hour. Next week uses the shared forecast, held against the schedule you run now.'],
           ['Cost', 'Hours × average wage. Payroll taxes, tips and overtime premiums are not included, so real cost is higher.'],
           ['Kitchen staffing', `Ticket times are observed (${weeks}-week average). Cooks by the hour are entered by hand.`],
           ['Confidence', 'High needs 8 or more weeks behind the hour and a current schedule. Medium needs 4. It is a rule of thumb, not a measured error rate.'],
@@ -491,6 +492,15 @@ function CvLabour() {
     cps: own ? loadGridFromPlans(plans) : services.length ? loadGridFromServices(services) : null,
     gap: services.length ? gapGrid(services) : null,
   };
+
+  /* Next week from the shared forecast (sample rooms compute it here; a room on its own data needs the server's copy, not wired yet). */
+  const cast = React.useMemo(() => {
+    if (own) return null;
+    try { const f = covercastRoom(room); return f.ready ? f : null; } catch { return null; }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [d.id, own]);
+  const ahead = cast && services.length ? forecastWeek(cast.covers.days.slice(0, 7).map((x) => { const sp = shiftPulseDay(cast, x.iso); return { iso: x.iso, weekday: x.weekday, hours: [...(sp?.lunch?.hours || []), ...(sp?.dinner?.hours || [])] }; }), services) : null;
+  const miss = cast?.accuracy?.covers?.days?.horizons?.[1]?.covercast || null;
 
   const depts = deptSplit(room.staff, { net: d.week.net, covers: d.week.covers }, room.levers?.ot);
   const kit = kitchenLoad(dense?.hours, room.tickets?.target);
@@ -725,6 +735,36 @@ function CvLabour() {
     </section>
   );
 
+  const aheadBlock = ahead && ahead.days.some((x) => x.hours.length) ? (
+    <section key="ahead" className={s.card} aria-label="Next week, forecast">
+      <div className={s.cardHead}>
+        <div><h2 className={s.cardTitle}>Next week: will this schedule hold?</h2><p className={s.cardSub}>{fmtDay(ahead.days[0].iso)} to {fmtDay(ahead.days.at(-1).iso)} · Forecast guests against the schedule you run now · Servers</p></div>
+        <Claim k="mod" />
+      </div>
+      <div className={s.heatWrap} tabIndex={0} role="group" aria-label="Next week by day">
+        <table className={s.table}>
+          <thead><tr><th>Day</th><th className={s.r}>Guests forecast</th><th className={s.r}>Likely range</th><th className={s.r}>Most servers needed</th><th>If you repeat this schedule</th></tr></thead>
+          <tbody>{ahead.days.map((x) => (
+            <tr key={x.iso} className={x.day === sel.day ? s.rowOn : undefined}>
+              <td><button type="button" className={s.textLink} onClick={() => pickDay(x.day)}>{dayName(x.day)}, {fmtDay(x.iso)}</button></td>
+              {x.hours.length ? <>
+                <td className={s.r}><b>{x.covers}</b></td><td className={s.r}>{x.low} to {x.high}</td><td className={s.r}>{x.peak.need} at {x.peak.label}</td>
+                <td>{x.short ? <span className={s.tShort}>{hrs(x.short)} short</span> : x.spare ? <span className={s.tSpare}>{hrs(x.spare)} spare</span> : 'Matches the forecast'}{x.short > 0 && x.spare > 0 ? <span className={s.tMute}> · {x.spare} spare in other hours</span> : null}</td>
+              </> : <td colSpan={4} className={s.tMute}>No hourly schedule for this day</td>}
+            </tr>
+          ))}</tbody>
+        </table>
+      </div>
+      <div className={s.cardFoot}>
+        <div>
+          <span className={s.sumStrong}>{ahead.short ? `Repeating this schedule leaves ${hrs(ahead.short)} short next week${ahead.worst ? `, most on ${dayName(ahead.worst.day)}` : ''}.` : ahead.spare ? `No hour is forecast short next week. ${hrs(ahead.spare)} look spare.` : 'This schedule matches next week’s forecast.'}</span>
+          <span className={s.sumSub}>Counts the hours your schedule covers ({ahead.days.find((x) => x.svc)?.svc.replace(/^\w+ /, '')}). Servers are sized a little above the forecast so most hours are covered.{miss ? ` Day-ahead forecasts missed by ${miss.wape.toFixed(1)}% on average over the last ${miss.n} days.` : ''}</span>
+        </div>
+        <button type="button" className={s.textLink} onClick={() => cv.go('service')}>Tonight on Service<Icon name="ChevronRight" size={15} /></button>
+      </div>
+    </section>
+  ) : null;
+
   const deptBlock = depts.length ? (
     <section key="depts" className={s.card} aria-label="Front of house and kitchen">
       <div className={s.cardHead}>
@@ -836,7 +876,7 @@ function CvLabour() {
     </section>
   );
 
-  const order = { gm: [workBlock, kitchenBlock, tilesBlock, deptBlock, resultsBlock], owner: [tilesBlock, deptBlock, resultsBlock, workBlock, kitchenBlock, locsBlock], ops: [locsBlock, tilesBlock, deptBlock, workBlock, kitchenBlock, resultsBlock] }[view] || [];
+  const order = { gm: [workBlock, aheadBlock, kitchenBlock, tilesBlock, deptBlock, resultsBlock], owner: [tilesBlock, deptBlock, resultsBlock, workBlock, aheadBlock, kitchenBlock, locsBlock], ops: [locsBlock, tilesBlock, deptBlock, workBlock, aheadBlock, kitchenBlock, resultsBlock] }[view] || [];
   const handDays = entryTotals(entries, weekFrom, weekTo).days;
 
   return (

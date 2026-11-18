@@ -418,3 +418,5 @@ button.sumCell:disabled { cursor: default; }
   .kWrap { height: 190px; }
   .deptFig { font-size: 30px; }
 }
+
+.rowOn td { background: var(--accent-subtle); }
