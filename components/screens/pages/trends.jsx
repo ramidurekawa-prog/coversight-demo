@@ -2,14 +2,13 @@
 
 import * as React from 'react';
 
-import { Button, Icon, Tabs } from '../../kit';
+import { Button, Icon } from '../../kit';
 import { engine, useEngine, useSaved } from '../../engine';
 import { CV_D, CV_GROUP, CV_ROOM, Callout, Claim, PageHead, Pill, useCv } from '../core';
-import { DenseTrends } from '../dense-sections';
 import { dataEnd } from '../../../lib/data/readers';
 import {
   CAUSES, JUDGE_WEEKS, METHOD, METRIC, METRICS, METRIC_GROUPS, MIN_BASELINE, RUN,
-  availableMetrics, cleanNotes, directionOf, explainSignal, fmtChange, fmtMetric, groupTrend,
+  availableMetrics, cleanNotes, directionOf, explainSignal, fmtChange, fmtMetric,
   isExplained, lastYearIndex, noteKey, rangesFor, signalKey, trendsCsv, trendsFor,
 } from '../../../lib/data/page/trends';
 import { Spark, TrendChart } from './trends-chart';
@@ -28,17 +27,12 @@ import s from './trends.module.css';
 // green for good, amber for caution, red only when it's genuinely critical.
 const SERIES_COLOR = 'var(--fg-1)';
 const CMP_COLOR = 'var(--fg-3)';
-const ROOM_COLORS = ['var(--fg-1)', 'var(--info-600)', 'var(--cat-3)'];
-const roomColor = (i) => ROOM_COLORS[i % ROOM_COLORS.length];
 const SEV_LABEL = { high: 'High', medium: 'Medium', low: 'Low', info: 'Good news' };
 const SEV_CLASS = { high: s.sevHigh, medium: s.sevMedium, low: s.sevLow, info: s.sevInfo };
 const tone = (key, v) => (v == null || Math.abs(v) < 0.05 ? 'cv-faint' : (v > 0) === METRIC[key].up ? 'cv-up' : 'cv-down');
 const shortDate = (iso) => (iso ? new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }) : '');
 const isMoney = (key) => ['money', 'cents'].includes(METRIC[key]?.unit);
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
-
-/** The four numbers an owner looks at first; the rest are one tap away. */
-const HEADLINE = ['earned', 'net', 'covers', 'prime'];
 
 /** One thing to do for a change in the wrong direction, and where to do it. */
 const TODO = {
@@ -135,51 +129,28 @@ const STATE = {
 
 /** One plain sentence on what the verdict means. */
 function verdictNote(dir, t) {
-  const lead = 'Contribution is what\'s left of sales after food and labor, before rent and overheads.';
-  if (dir.state === 'unknown') return `Trends compares each week with your own usual. It needs ${MIN_BASELINE + 1} weeks of this room's data to learn what usual looks like, then it flags anything out of the ordinary.`;
-  const vs = `${fmtMetric('earned', dir.recent)} a week over the last ${dir.weeks} weeks against ${fmtMetric('earned', dir.base)} before`;
-  if (dir.state === 'improving') return `${lead} It's ${vs}: more than normal week-to-week swings, so the gain is real.${dir.yoy ? '' : ' Part of it may be seasonal, since there are no matching weeks from last year yet.'}`;
-  if (dir.state === 'slipping') return `${lead} It's ${vs}: a bigger drop than normal week-to-week swings. Start with the first thing to look at.`;
-  return `${lead} It's ${vs}: inside normal week-to-week swings, so nothing has really changed${t.signals.some((x) => !x.good) ? ', though one measure below is worth a look' : ''}.`;
+  if (dir.state === 'unknown') return `Each week is compared with this room's own usual. That takes ${MIN_BASELINE + 1} weeks of its data to learn.`;
+  const what = 'Contribution (sales minus food and labor)';
+  const ch = dir.change?.text ?? '';
+  if (dir.state === 'improving') return `${what} is ${ch} on its usual, more than normal week-to-week swings, so the gain is real.${dir.yoy ? '' : ' Some of it may be seasonal.'}`;
+  if (dir.state === 'slipping') return `${what} is ${ch} on its usual, a bigger drop than normal week-to-week swings. Start with the first thing to look at.`;
+  return `${what} is within normal week-to-week swings of its usual${t.signals.some((x) => !x.good) ? '. One measure below is still worth a look.' : '.'}`;
 }
 
-function Verdict({ t, notes, onInvestigate }) {
+function Verdict({ t, notes, onInvestigate, name }) {
   const dir = directionOf(t);
   const st = STATE[dir.state];
   const open = t.signals.filter((x) => !x.good && x.severity !== 'low' && !isExplained(notes[signalKey(x, t.rows)]));
-  const have = Math.max(0, MIN_BASELINE + 1 - t.w.needWeeks);
+  const word = { improving: 'is improving', steady: 'is steady', slipping: 'is slipping', unknown: 'is still building its history' }[dir.state];
   return (
-    <section className={`cv-card ${s.verdict}`} data-state={dir.state} aria-label="The answer">
+    <section className={`cv-card ${s.verdict}`} data-state={dir.state} aria-label={`${name}: the answer`}>
       <div className={s.vPart}>
         <span className={`${s.vIcon} ${st.cls}`}><Icon name={st.icon} size={26} /></span>
-        <span className="cv-col" style={{ gap: 2 }}>
-          <span className={`${s.vWord} ${st.cls}`}>{st.word}</span>
-          <span className="cv-xs cv-faint">{dir.state === 'unknown' ? `${plural(t.w.needWeeks, 'more week')} of data to go` : dir.state === 'steady' ? 'Within normal ups and downs' : `Last ${dir.weeks} weeks vs the ${dir.baseWeeks} before`}</span>
+        <span className="cv-col" style={{ gap: 4, minWidth: 0 }}>
+          <span className={s.vWord}>{name} {word}</span>
+          <p className={s.vNote}>{verdictNote(dir, t)}</p>
         </span>
       </div>
-      {dir.state === 'unknown' ? (
-        <div className={s.vStat}>
-          <span className="cv-xs cv-faint">History</span>
-          <span className={s.big}>{have}<small> / {MIN_BASELINE + 1} weeks</small></span>
-          <Progress have={have} need={MIN_BASELINE + 1} />
-        </div>
-      ) : (
-        <>
-          <div className={s.vStat}>
-            <span className="cv-xs cv-faint cv-row" style={{ gap: 6 }}>Contribution a week <Claim k={t.metrics.earned.claim} /></span>
-            <span className={s.big}>{fmtMetric('earned', dir.recent)}</span>
-            <Delta metric="earned" a={dir.recent} b={dir.base} suffix="vs usual" neutral={dir.state === 'steady'} big />
-          </div>
-          {dir.yoy && (
-            <div className={s.vStat}>
-              <span className="cv-xs cv-faint">Same weeks last year</span>
-              <span className={s.big}>{fmtMetric('earned', dir.yoy.then)}</span>
-              <Delta metric="earned" a={dir.yoy.now} b={dir.yoy.then} suffix="now vs then" big />
-            </div>
-          )}
-        </>
-      )}
-      <p className={s.vNote}>{verdictNote(dir, t)}</p>
       <div className={s.vAct}>
         {open.length ? (
           <>
@@ -194,34 +165,58 @@ function Verdict({ t, notes, onInvestigate }) {
   );
 }
 
-/* ------------------------------------------------------------- big numbers */
+/* ------------------------------------------------------------- every room */
 
-function Tiles({ t, metric, onPick }) {
-  const avail = availableMetrics(t);
-  const keys = [...HEADLINE.filter((k) => t.metrics[k].available), ...avail.map((m) => m.key).filter((k) => !HEADLINE.includes(k))].slice(0, 4);
-  const n = t.rows.length;
+/**
+ * One card per room: is it getting better or worse, contribution a week, the
+ * last 13 weeks, and how many changes are waiting. Tap a card to open that room
+ * below. Every figure is the same trendsFor() the room view and the job use.
+ */
+function RoomCards({ current, onPick }) {
+  const rooms = CV_GROUP.rooms ?? [];
+  const cards = rooms.map((d) => {
+    const t = trendsFor(d.hist.rows);
+    const dir = directionOf(t);
+    const nb = cleanNotes(engine.saved('trends.notes', d.id));
+    const open = t.signals.filter((sig) => !sig.good && sig.severity !== 'low' && !isExplained(nb[signalKey(sig, t.rows)])).length;
+    const x = t.metrics.earned;
+    const value = dir.state === 'unknown' ? x.latest : dir.recent;
+    return { d, t, dir, open, x, value };
+  });
+  const total = cards.every((k) => k.value != null) ? cards.reduce((a, k) => a + k.value, 0) : null;
+  const n = (t) => t.rows.length;
   return (
-    <div className={s.tiles}>
-      {keys.map((k) => {
-        const m = METRIC[k];
-        const x = t.metrics[k];
-        const sig = t.signals.find((q) => q.metric === k && q.ongoing);
-        const mark = sig ? (sig.good ? 'good' : 'bad') : null;
-        return (
-          <button key={k} type="button" className={s.tile} aria-pressed={metric === k} onClick={() => onPick(k)}>
-            <span className={s.tileHead}>
-              <span className="cv-xs cv-muted cv-row" style={{ gap: 6 }}>{mark && <i className={`${s.dot} ${mark === 'bad' ? s.dotBad : s.dotGood}`} aria-label={mark === 'bad' ? 'Unusual, wrong direction' : 'Unusual, good direction'} />}{m.short}<span className={s.wk}> · this week</span></span>
-            </span>
-            <span className={s.tileVal}>{fmtMetric(k, x.latest)}</span>
-            <span className={s.tileFoot}>
-              {x.lim && x.latest != null ? <Delta metric={k} a={x.latest} b={x.lim.mean} suffix="vs usual" /> : <span className="cv-xs cv-faint">{x.latest == null ? 'No value this week' : 'No usual range yet'}</span>}
-              {isMoney(k) && <Claim k={x.claim} />}
-            </span>
-            <Spark vals={x.vals.slice(Math.max(t.w.from, n - JUDGE_WEEKS))} lim={x.lim} mark={mark} height={34} ariaLabel={`${m.label}, last ${JUDGE_WEEKS} weeks`} />
-          </button>
-        );
-      })}
-    </div>
+    <section aria-labelledby="trends-rooms" className={s.rooms}>
+      <div className={s.roomsHead}>
+        <span className="cv-h4" id="trends-rooms">{rooms.length === 1 ? 'Your room' : `Your ${rooms.length} rooms`}</span>
+        {rooms.length > 1 && total != null && <span className={s.headSub}>{fmtMetric('earned', total)} a week in contribution together</span>}
+      </div>
+      <div className={s.roomGrid}>
+        {cards.map(({ d, t, dir, open, x, value }) => {
+          const st = STATE[dir.state];
+          return (
+            <button key={d.id} type="button" className={s.roomCard} data-state={dir.state} aria-pressed={d.id === current} onClick={() => onPick(d.id)}>
+              <span className={s.roomTop}>
+                <span className={s.roomName}>{d.profile?.short || d.id}{t.w.own ? '' : <span className={s.wk}> · sample</span>}</span>
+                <span className={`${s.roomState} ${st.cls}`}><Icon name={st.icon} size={16} />{st.word}</span>
+              </span>
+              <span className={s.roomFig}>{fmtMetric('earned', value)}<small> a week</small></span>
+              <span className={s.roomLine}>
+                {dir.state !== 'unknown' ? <Delta metric="earned" a={dir.recent} b={dir.base} suffix="vs usual" neutral={dir.state === 'steady'} /> : <span className="cv-xs cv-faint">{plural(t.w.needWeeks, 'more week')} to go</span>}
+                <Claim k={x.claim} />
+              </span>
+              <Spark vals={x.vals.slice(Math.max(t.w.from, n(t) - JUDGE_WEEKS))} lim={x.lim} height={30} ariaLabel={`Contribution, last ${JUDGE_WEEKS} weeks`} />
+              <span className={s.roomFoot}>
+                {!t.w.ready ? <span className="cv-faint">Not judged yet</span>
+                  : open ? <span className={s.caution}><Icon name="TriangleAlert" size={15} />{plural(open, 'thing')} to look at</span>
+                    : <span className={s.allClear}><Icon name="CircleCheck" size={15} />All clear</span>}
+                {d.id === current ? <span className={s.viewing}>Showing below</span> : <span className={s.viewing}>Open <Icon name="ArrowRight" size={14} /></span>}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -254,6 +249,7 @@ function watchText(sig) {
   if (sig.kind === 'shift') return `Next week: watch for ${m.short.toLowerCase()} back ${sig.dir === 'up' ? 'below' : 'above'} its average of ${f(e.mean)}. ${sig.ongoing ? 'Until then it has settled at a new level.' : 'It has already moved back.'}`;
   const edge = sig.dir === 'up' ? e.ucl : e.lcl;
   if (!sig.ongoing) return `It's back inside its usual range now. Another week ${sig.dir === 'up' ? 'over' : 'under'} ${f(edge)} would make it a pattern, not a one-off.`;
+  if (sig.weeks > 1) return `It's been ${sig.dir === 'up' ? 'high' : 'low'} for ${sig.weeks} weeks. Next week: back ${sig.dir === 'up' ? 'under' : 'over'} ${f(edge)} would be the first sign it's recovering.`;
   return `Next week: back ${sig.dir === 'up' ? 'under' : 'over'} ${f(edge)} means it was a one-off. Another week past it means something has changed.`;
 }
 
@@ -284,7 +280,6 @@ function ChangeCard({ sig, t, note, open, editing, onPick, onToggle, onEdit, onS
         {isMoney(sig.metric) && <Claim k={t.metrics[sig.metric].claim} />}
       </div>
       <RangeBar value={shown} lim={sig.expected} tone={sig.good ? 'good' : sig.severity === 'high' ? 'crit' : 'bad'} />
-      <p className={s.cardWhat}>{m.help}</p>
       <p className={s.cardWatch}><Icon name="Eye" size={15} /><span>{watchText(sig)}</span></p>
       <div className={s.cardAct}>
         {sig.good ? <Pill tone="good" icon="TrendingUp">Good news</Pill>
@@ -298,6 +293,7 @@ function ChangeCard({ sig, t, note, open, editing, onPick, onToggle, onEdit, onS
       {note?.text && !editing && <span className={s.noteText}>“{note.text}”</span>}
       {open && why && (
         <div className={s.details}>
+          <p className={s.cardWhat}>{m.help}</p>
           <dl className={s.facts}>
             <dt>Weeks</dt><dd>{rows[sig.from]?.label} to {rows[sig.to]?.label} ({plural(sig.weeks, 'week')})</dd>
             <dt>Usual</dt><dd>{fmtMetric(sig.metric, sig.expected.lcl)} to {fmtMetric(sig.metric, sig.expected.ucl)}, average {fmtMetric(sig.metric, sig.expected.mean)}</dd>
@@ -337,12 +333,10 @@ function Changes({ t, notes, setNotes, focus, setFocus, onPick, onCompare }) {
     setEditing(null);
   };
   const have = Math.max(0, MIN_BASELINE - t.w.needWeeks);
-  const toAct = unexplained.filter((x) => x.sig.severity !== 'low').length; // same count as the verdict and the alerts
   return (
     <section className="cv-card" aria-labelledby="trends-signals">
       <div className="cv-card-head">
         <span className="cv-h4" id="trends-signals">What to look at</span>
-        {t.w.ready && <Pill tone={toAct ? 'warn' : 'good'} icon={toAct ? 'TriangleAlert' : 'CircleCheck'}>{toAct ? `${toAct} to act on` : 'All clear'}</Pill>}
       </div>
       {!t.w.ready ? (
         <div className={s.empty}>
@@ -395,7 +389,7 @@ function LookAhead({ t, notes, onPick }) {
     const x = t.metrics[k];
     if (items.length >= 4 || seen.has(k) || !x.available || !x.lim) continue;
     const up = METRIC[k].up;
-    items.push({ key: k, tone: 'ok', label: METRIC[k].short, fig: `${up ? 'Above' : 'Under'} ${fmtMetric(k, up ? x.lim.lcl : x.lim.ucl)}`, text: `A normal week stays ${up ? 'above' : 'under'} this. Past it would be flagged.` });
+    items.push({ key: k, tone: 'ok', label: METRIC[k].short, fig: `${up ? 'Above' : 'Under'} ${fmtMetric(k, up ? x.lim.lcl : x.lim.ucl)}`, text: `A normal week stays ${up ? 'above' : 'under'} this.` });
   }
   if (!items.length) return null;
   return (
@@ -535,8 +529,7 @@ function RoomView({ t, notes, setNotes }) {
   const rangeItems = ranges.map((r) => ({ v: r.v, label: r.label.replace(/^All (\d+) weeks$/, 'All') }));
   return (
     <>
-      <Verdict t={t} notes={notes} onInvestigate={(sig) => pick(sig, signalKey(sig, t.rows))} />
-      <Tiles t={t} metric={m.key} onPick={pickMetric} />
+      <Verdict t={t} notes={notes} name={CV_ROOM.short || CV_ROOM.name} onInvestigate={(sig) => pick(sig, signalKey(sig, t.rows))} />
 
       <div className={s.main}>
         <section className="cv-card" aria-labelledby="trends-chart" ref={chartRef}>
@@ -567,7 +560,7 @@ function RoomView({ t, notes, setNotes }) {
               <Button size="sm" variant="ghost" icon="FileSpreadsheet" aria-pressed={table} aria-label={table ? 'Hide data table' : 'Show data table'} title="Data table" onClick={() => setTable((v) => !v)} />
             </span>
           </div>
-          {selected == null && <p className={s.howTo}><b>{m.short}:</b> {m.help} {x.lim ? `The grey band is the usual range, worked out from ${x.lim.n} of your past weeks. A week outside it, or ${RUN} weeks in a row on one side of the dashed average, gets flagged.` : 'The usual range appears once there are enough weeks.'} Tap any week to see every measure for it.</p>}
+          {selected == null && <p className={s.howTo}>{x.lim ? 'Grey band: this room’s usual range. Colored dots: weeks flagged as unusual.' : 'The usual range appears once there are enough weeks.'} Tap a week for every number.</p>}
           {table && <DataTable t={t} metric={m.key} start={start} end={end} cmp={cmp} />}
           {selected != null && <WeekPanel t={t} i={selected} metric={m.key} setMetric={pickMetric} notes={notes} metrics={metrics} onClose={() => setSel(null)} />}
         </section>
@@ -575,26 +568,6 @@ function RoomView({ t, notes, setNotes }) {
       </div>
 
       <LookAhead t={t} notes={notes} onPick={(k) => { pickMetric(k); toChart(); }} />
-
-      {metrics.length > 4 && (
-        <details className={`cv-card ${s.disclosure}`}>
-          <summary><Icon name="ChevronDown" size={16} className={s.chev} />All {metrics.length} measures</summary>
-          <div className={s.minis}>
-            {metrics.map((mm) => {
-              const xx = t.metrics[mm.key];
-              const ongoing = t.signals.find((sig) => sig.metric === mm.key && sig.ongoing);
-              const mark = ongoing ? (ongoing.good ? 'good' : 'bad') : null;
-              return (
-                <button key={mm.key} type="button" className={s.mini} aria-pressed={m.key === mm.key} onClick={() => { pickMetric(mm.key); toChart(); }}>
-                  <span className={s.miniHead}><span className="cv-xs cv-muted">{mm.short}</span>{isMoney(mm.key) ? <Claim k={xx.claim} /> : null}</span>
-                  <span className={s.miniHead}><span className={s.miniVal}>{fmtMetric(mm.key, xx.latest)}</span>{xx.lim && xx.latest != null ? <Delta metric={mm.key} a={xx.latest} b={xx.lim.mean} /> : <span className="cv-xs cv-faint">—</span>}</span>
-                  <Spark vals={xx.vals.slice(Math.max(t.w.from, n - JUDGE_WEEKS))} lim={xx.lim} mark={mark} ariaLabel={`${mm.label}, last ${JUDGE_WEEKS} weeks`} />
-                </button>
-              );
-            })}
-          </div>
-        </details>
-      )}
 
       <details className={`cv-card ${s.disclosure}`}>
         <summary><Icon name="ChevronDown" size={16} className={s.chev} />About this data</summary>
@@ -616,105 +589,20 @@ function RoomView({ t, notes, setNotes }) {
   );
 }
 
-/* ------------------------------------------------------------- the group */
-
-const GROUP_METRICS = ['net', 'earned', 'covers', 'check', 'prime', 'food', 'labour'];
-
-function GroupView({ onOpen }) {
-  const rooms = CV_GROUP.rooms;
-  const [metric, setMetric] = React.useState('net');
-  const [sel, setSel] = React.useState(null);
-  const [table, setTable] = React.useState(false);
-  const perSeat = metric === 'earned';
-  const g = React.useMemo(() => groupTrend(rooms, metric), [rooms, metric]);
-  const seats = Object.fromEntries(rooms.map((d) => [d.id, d.profile?.seats || 1]));
-  const mDef = METRIC[metric];
-  const showTotal = !!g.total && !perSeat && mDef.agg !== 'sum';
-  const series = g.series.map((r, i) => ({ key: r.id, label: r.name, color: roomColor(i), vals: perSeat ? r.vals.map((v) => (v == null ? null : v / seats[r.id])) : r.vals, thin: showTotal }));
-  if (showTotal) series.push({ key: 'total', label: 'Group (weighted)', color: 'var(--fg-1)', vals: g.total, dash: '7 3', bold: true });
-  const fmt = (v) => (v == null ? '—' : perSeat ? `${fmtMetric('earned', v)}/seat` : fmtMetric(metric, v));
-  const n = g.isos.length;
-  const notesFor = (id) => cleanNotes(engine.saved('trends.notes', id));
-  const claim = rooms.some((d) => d.hist.rows.at(-1)?.own) && mDef.food ? 'mod' : 'obs';
-  const cards = rooms.map((d, k) => {
-    const t = trendsFor(d.hist.rows);
-    const x = t.metrics[metric];
-    const div = perSeat ? seats[d.id] : 1;
-    const recent = t.w.ready ? x.vals.slice(t.w.judgeFrom).filter((v) => v != null) : [];
-    const rMean = recent.length ? recent.reduce((a, b) => a + b, 0) / recent.length / div : null;
-    const bMean = x.lim ? x.lim.mean / div : null;
-    const nb = notesFor(d.id);
-    const open = t.signals.filter((sig) => !sig.good && sig.severity !== 'low' && !isExplained(nb[signalKey(sig, t.rows)])).length;
-    const latest = x.latest == null ? null : x.latest / div;
-    return { d, k, t, x, div, rMean, bMean, open, latest };
-  });
-  const top = Math.max(...cards.map((c) => Math.abs(c.latest ?? 0)), 1);
-  const groupNow = g.total ? g.total.at(-1) : null;
-  return (
-    <>
-      <div className={s.toolbar}>
-        <Seg label="Measure" value={metric} onChange={setMetric} items={GROUP_METRICS.map((k) => ({ v: k, label: k === 'earned' ? 'Contribution/seat' : METRIC[k].short }))} />
-        <Claim k={claim} />
-      </div>
-      <div className={s.tiles}>
-        {!perSeat && groupNow != null && (
-          <div className={`${s.tile} ${s.tileStatic}`}>
-            <span className={s.tileHead}><span className="cv-xs cv-muted">Group · this week{g.excluded.length ? ' (your rooms)' : ''}</span></span>
-            <span className={s.tileVal}>{fmtMetric(metric, groupNow)}</span>
-            <span className="cv-xs cv-faint">{g.weighted ? 'Weighted by sales' : 'All rooms added up'}</span>
-          </div>
-        )}
-        {cards.map(({ d, k, t, x, div, rMean, bMean, open, latest }) => (
-          <button key={d.id} type="button" className={s.tile} onClick={() => onOpen(d.id)} aria-label={`Open ${d.profile?.short || d.id}`}>
-            <span className={s.tileHead}>
-              <span className="cv-xs cv-muted cv-row" style={{ gap: 6 }}><i className={s.dot} style={{ background: roomColor(k) }} />{d.profile?.short || d.id}{t.w.own ? '' : ' · sample'}</span>
-              {t.w.ready && (open ? <Pill tone="warn" icon="TriangleAlert">{open}</Pill> : <span className="cv-up"><Icon name="CircleCheck" size={15} /></span>)}
-            </span>
-            <span className={s.tileVal}>{fmt(latest)}</span>
-            <span className={s.bar}><span style={{ width: `${Math.max(2, (Math.abs(latest ?? 0) / top) * 100)}%`, background: roomColor(k) }} /></span>
-            {rMean != null && bMean != null ? <Delta metric={metric} a={rMean} b={bMean} suffix={`last ${JUDGE_WEEKS} wks vs usual`} /> : <span className="cv-xs cv-faint">Building history</span>}
-            <Spark vals={x.vals.slice(Math.max(t.w.from, t.rows.length - JUDGE_WEEKS)).map((v) => (v == null ? null : v / div))} lim={x.lim && { mean: x.lim.mean / div, ucl: x.lim.ucl / div, lcl: x.lim.lcl / div }} color={roomColor(k)} height={30} />
-          </button>
-        ))}
-      </div>
-      <section className="cv-card" aria-labelledby="trends-group">
-        <div className="cv-card-head">
-          <span className="cv-h4" id="trends-group">{perSeat ? 'Contribution per seat' : mDef.label}, weekly</span>
-          <Button size="sm" variant="ghost" icon="FileSpreadsheet" aria-pressed={table} aria-label={table ? 'Hide data table' : 'Show data table'} title="Data table" onClick={() => setTable((v) => !v)} />
-        </div>
-        <TrendChart labels={g.labels} series={series} selected={sel} onSelect={setSel} fmt={fmt} height={300} ariaLabel={`${perSeat ? 'Contribution per seat' : mDef.label} by room, weekly. Use the arrow keys to move between weeks; the data table has every value.`} tip={{ title: (i) => `Week of ${shortDate(g.isos[i])}` }} />
-        <div className="cv-legend">{series.map((sr) => <span key={sr.key}><i className={s.legendLine} style={{ borderColor: sr.color, ...(sr.dash ? { borderTopStyle: 'dashed', borderTopWidth: 3 } : {}) }} />{sr.label}</span>)}</div>
-        {g.excluded.length > 0 && <Callout icon="Info">{g.excluded.map((e) => e.name).join(', ')}: {g.excluded[0].why}.</Callout>}
-        {table && (
-          <div className="cv-tablewrap" tabIndex={0} role="group" aria-label="Weekly values by room">
-            <table className="cv-table">
-              <thead><tr><th>Week of</th>{g.series.map((r) => <th key={r.id} className="r">{r.name}</th>)}{!perSeat && g.total && <th className="r">Group{g.weighted ? ' (weighted)' : ' total'}</th>}</tr></thead>
-              <tbody>{g.isos.map((_, k) => n - 1 - k).map((i) => (
-                <tr key={g.isos[i]}><td style={{ whiteSpace: 'nowrap' }}>{shortDate(g.isos[i])}</td>{series.filter((sr) => sr.key !== 'total').map((sr) => <td key={sr.key} className="r cv-num">{fmt(sr.vals[i])}</td>)}{!perSeat && g.total && <td className="r cv-num">{fmtMetric(metric, g.total[i])}</td>}</tr>
-              ))}</tbody>
-            </table>
-          </div>
-        )}
-      </section>
-    </>
-  );
-}
-
 /* ------------------------------------------------------------- the page */
 
 function CvTrends() {
   useTodayTheme(false); // the app's chosen palette, same as Today
   const eng = useEngine();
-  const [view, setView] = React.useState('room');
   const [rawNotes, setNotes] = useSaved('trends.notes', {});
   const notes = React.useMemo(() => cleanNotes(rawNotes), [rawNotes]);
   const rows = CV_D.hist.rows;
   const t = React.useMemo(() => trendsFor(rows), [rows]);
   const own = CV_D.room.fromToast;
-  const first = t.rows[t.w.from], last = t.rows[t.rows.length - 1];
+  const last = t.rows[t.rows.length - 1];
   const multi = (CV_GROUP.rooms?.length ?? 0) > 1;
   const exportCsv = () => {
-    if (view === 'group' && multi) {
+    if (multi) {
       const text = CV_GROUP.rooms.map((d, k) => trendsCsv(trendsFor(d.hist.rows), cleanNotes(engine.saved('trends.notes', d.id)), d.profile?.name ?? d.id, { header: k === 0 })).join('');
       download(`trends-all-rooms-${last?.iso ?? 'weeks'}.csv`, text);
     } else {
@@ -723,21 +611,12 @@ function CvTrends() {
   };
   return (
     <div className={`cv-page wide ${s.page}`}>
-      <PageHead over={`Trends · ${CV_ROOM.name} · ${own ? 'your Toast data' : 'sample data'}, ${shortDate(first?.iso)} to ${shortDate(last?.iso)}`}
-        q="Getting better or worse?"
-        right={<>
-          {multi && <Tabs value={view} onChange={setView} tabs={[{ value: 'room', label: CV_ROOM.short }, { value: 'group', label: 'All rooms' }]} />}
-          <Button variant="secondary" size="sm" icon="Download" onClick={exportCsv}>CSV</Button>
-        </>} />
-      {view === 'room' || !multi
-        ? <RoomView key={eng.room} t={t} notes={notes} setNotes={setNotes} />
-        : <GroupView onOpen={(id) => { engine.setRoom(id); setView('room'); }} />}
-      {!own && (
-        <details className={`cv-card ${s.disclosure}`}>
-          <summary><Icon name="ChevronDown" size={16} className={s.chev} />Month by month against last year</summary>
-          <DenseTrends />
-        </details>
-      )}
+      <PageHead over={`Trend Watch · ${own ? 'your Toast data' : 'sample data'} through ${shortDate(last?.iso)}`}
+        q="Catch a slide before it costs you"
+        sub="Every room, every week, against its own usual. Only real changes get flagged."
+        right={<Button variant="secondary" size="sm" icon="Download" onClick={exportCsv}>CSV</Button>} />
+      <RoomCards current={eng.room} onPick={(id) => engine.setRoom(id)} />
+      <RoomView key={eng.room} t={t} notes={notes} setNotes={setNotes} />
     </div>
   );
 }

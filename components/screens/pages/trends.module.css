@@ -78,7 +78,7 @@
 .verdict[data-state="improving"]::before { background: var(--t-good); }
 .verdict[data-state="slipping"]::before { background: var(--t-crit); }
 .verdict[data-state="unknown"]::before { background: var(--border-strong); }
-.vPart { display: flex; align-items: center; gap: 14px; min-width: 210px; }
+.vPart { display: flex; align-items: center; gap: 16px; min-width: 260px; flex: 1 1 420px; }
 .vIcon { width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-sunken); color: var(--fg-1); flex-shrink: 0; }
 .vIcon:global(.cv-up) { background: color-mix(in srgb, var(--t-good) 12%, transparent); color: var(--t-good); }
 .vIcon:global(.cv-down) { background: color-mix(in srgb, var(--t-crit) 10%, transparent); color: var(--t-crit); }
@@ -236,7 +236,7 @@
 .tileHead > :global(.cv-xs) { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* ---- plain-language notes (2026-11-17: a bit more explanation where it helps) */
-.vNote { flex: 1 1 100%; order: 10; margin: 0; padding-top: 14px; border-top: 1px solid var(--border); max-width: none; font-size: 15px; line-height: 1.5; color: var(--fg-2); }
+.vNote { margin: 0; max-width: 70ch; font-size: 15px; line-height: 1.5; color: var(--fg-2); }
 .cardWhat { margin: 0; font-size: 15px; line-height: 1.45; color: var(--fg-2); }
 .cardWatch { display: flex; align-items: flex-start; gap: 8px; margin: 0; padding: 10px 12px; border-radius: 10px; background: var(--surface-sunken); font-size: 15px; line-height: 1.45; color: var(--fg-1); }
 .cardWatch svg { flex: none; margin-top: 3px; color: var(--fg-2); }
@@ -253,3 +253,30 @@
 .aheadLabel { font-size: 15px; font-weight: 600; color: var(--fg-1); }
 .aheadFig { font: 600 25px/1.1 var(--font-sans); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; color: var(--fg-1); }
 .aheadText { font-size: 15px; line-height: 1.45; color: var(--fg-2); }
+
+/* ---- every room: one card each, tap to open it below */
+.rooms { display: flex; flex-direction: column; gap: 12px; }
+.roomsHead { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; }
+.roomGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+.roomCard { all: unset; box-sizing: border-box; cursor: pointer; position: relative; overflow: hidden; display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 18px 20px 14px 22px; border-radius: var(--card-r); background: var(--surface); box-shadow: var(--box); transition: box-shadow var(--dur-base, 160ms); }
+.roomCard::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--fg-1); }
+.roomCard[data-state="improving"]::before { background: var(--t-good); }
+.roomCard[data-state="slipping"]::before { background: var(--t-crit); }
+.roomCard[data-state="unknown"]::before { background: var(--border-strong); }
+.roomCard:hover { box-shadow: var(--box-hover); }
+.roomCard:focus-visible { box-shadow: var(--ring); }
+.roomCard[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--fg-1), 0 6px 18px -12px rgba(20, 28, 40, 0.25); }
+.roomTop { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.roomName { font: 600 17px/1.3 var(--font-sans); color: var(--fg-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.roomState { display: inline-flex; align-items: center; gap: 5px; font: 600 15px/1 var(--font-sans); color: var(--fg-1); white-space: nowrap; }
+.roomState:global(.cv-up) { color: var(--t-good); }
+.roomState:global(.cv-down) { color: var(--t-crit); }
+.roomFig { font: 600 36px/1 var(--font-sans); font-variant-numeric: tabular-nums; letter-spacing: -0.03em; color: var(--fg-1); }
+.roomFig small { font: 500 15px/1 var(--font-sans); letter-spacing: 0; color: var(--fg-2); }
+.roomLine { display: flex; align-items: center; justify-content: space-between; gap: 6px 10px; flex-wrap: wrap; }
+.roomCard > .sparkWrap { margin-top: 4px; }
+.roomFoot { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 10px; border-top: 1px solid var(--border); font-size: 15px; font-weight: 600; color: var(--fg-1); }
+.roomFoot > span { display: inline-flex; align-items: center; gap: 6px; }
+.allClear svg { color: var(--t-good); }
+.viewing { font-weight: 500; color: var(--fg-2); }
+@media (max-width: 520px) { .roomFig { font-size: 30px; } .roomGrid { gap: 10px; } }

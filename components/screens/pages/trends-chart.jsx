@@ -84,8 +84,6 @@ export function TrendChart({ labels, series, lim, start = 0, end, baseTo, sample
           <line x1={P.l} x2={W - P.r} y1={y(lim.ucl)} y2={y(lim.ucl)} className={s.limit} />
           <line x1={P.l} x2={W - P.r} y1={y(lim.lcl)} y2={y(lim.lcl)} className={s.limit} />
           <line x1={P.l} x2={W - P.r} y1={y(lim.mean)} y2={y(lim.mean)} className={s.mean} />
-          {!narrow && <text className="lbl" x={x(Math.max(start, sampleTo)) + 6} y={y(lim.ucl) - 5}>upper limit {fmt(lim.ucl)}</text>}
-          {!narrow && <text className="lbl" x={x(Math.max(start, sampleTo)) + 6} y={y(lim.lcl) + 13}>lower limit {fmt(lim.lcl)}</text>}
         </>}
         {baseTo != null && baseTo > start && baseTo < n && <>
           <line x1={x(baseTo - 0.5)} x2={x(baseTo - 0.5)} y1={P.t} y2={H - P.b} className={s.divider} />
