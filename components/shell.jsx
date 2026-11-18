@@ -9,12 +9,13 @@ import { Button, Icon } from './kit';
 import { ApprovalModal, Claim, cvApproval, CV_CLAIM, CV_D, CV_LOCS, CvCtx, DerivDrawer, Pill } from './screens/core';
 import { engine, useEngine } from './engine';
 import { useClock } from './clock';
-import { CV_PAGE_DEPS, CvAsk } from './screens/extra';
+import { CV_PAGE_DEPS } from './screens/extra';
+import { SousButton, SousPanel } from './sous';
 import { useTodayCounts } from './screens/pages/today.badge';
 import './shell.css';
 
 /* The app chrome around every screen: the sidebar grouped by how often each
- * screen is used, and a top bar with the page, Ask, one data-health notice
+ * screen is used, and a top bar with the page, Sous (the AI teammate), one data-health notice
  * (only when something needs updating), the room switcher and quiet
  * utilities. Demo tools (finished product / build plan, view-as roles,
  * build gaps) sit in a strip that's hidden unless turned on with ?tools=1
@@ -168,10 +169,7 @@ function TopBar({ page, loc, onLoc, role, onRole, go, onMenu, onAsk, tools }) {
           <i /><span className="cv-wl">{CV_D.staleCount} source{CV_D.staleCount === 1 ? ' needs' : 's need'} updating</span><span className="cv-ws" aria-hidden="true">{CV_D.staleCount}</span>
         </button>
       )}
-      <button className="cv-health" onClick={onAsk} aria-label="Ask">
-        <Icon name="MessageCircle" size={15} />
-        <span className="cv-hide-sm">Ask</span>
-      </button>
+      <SousButton onClick={onAsk} />
       <div className="cv-pop-wrap">
         <button className="locpick" onClick={() => setPop(pop === 'loc' ? null : 'loc')} aria-expanded={pop === 'loc'}>
           <Icon name="MapPin" size={15} color="var(--accent)" />
@@ -387,6 +385,18 @@ function AppShell({ children }) {
   }, [pathname]);
 
   const go = React.useCallback((p, params) => router.push(pathFor(p, params)), [router]);
+  // "/" opens Sous from anywhere, unless the person is typing.
+  React.useEffect(() => {
+    const k = (e) => {
+      if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = e.target;
+      if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      e.preventDefault();
+      setAsk(true);
+    };
+    window.addEventListener('keydown', k);
+    return () => window.removeEventListener('keydown', k);
+  }, []);
   const pickRoom = React.useCallback((id) => { setAllMode(false); engine.setRoom(id); }, []);
   const showToast = React.useCallback((m) => {
     setToast(m);
@@ -458,7 +468,7 @@ function AppShell({ children }) {
         </div>
       </div>
       </div>
-      {ask && <CvAsk onClose={() => setAsk(false)} go={go} />}
+      {ask && <SousPanel onClose={() => setAsk(false)} go={go} role={role} tools={tools} />}
       {deriv && <DerivDrawer id={deriv} onClose={() => setDeriv(null)} />}
       {approval && (
         <ApprovalModal

@@ -164,6 +164,7 @@ import {
   ChevronRight,
   TrendingDown,
   User,
+  Sparkles,
 } from 'lucide-react';
 
 const ICONS = {
@@ -326,6 +327,7 @@ const ICONS = {
   ChevronRight,
   TrendingDown,
   User,
+  Sparkles,
 };
 
 /** Every icon name the screens use. A unit test keeps this list complete. */

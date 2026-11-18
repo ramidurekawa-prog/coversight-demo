@@ -49,7 +49,7 @@ here ships to customers.
   hours, the period package) use `useSaved(key, initial)` from
   `components/engine.js`; each key needs a zod schema and scope in
   `server/actions.ts` `ACTION_KEYS`, or the server refuses it.
-- **Jobs and tests:** `server/jobs.ts` (sync, links, detection, proof, reverify, billing, cleanup)
+- **Jobs and tests:** `server/jobs.ts` (sync, links, detection, proof, reverify, billing, cleanup, sous)
   run from Vercel Cron (`vercel.json` → `/api/cron/<job>`, `CRON_SECRET`) or
   "Run now". Test windows (`server/proof.ts`) are measured in weeks of the
   room's *data* via `lib/data/readers.js` and closed with `lib/data/pilot.js`;
@@ -68,7 +68,7 @@ here ships to customers.
     `server/links.ts` fetches Google Sheets / Dropbox links (those hosts only)
     and re-reads linked ones daily (`links` job), committing only tabs with
     zero errors. `server/extract.ts` reads a photo or PDF into rows with
-    Claude when `ANTHROPIC_API_KEY` is set; rows always go back for review.
+    Claude (through the shared AI engine) when `ANTHROPIC_API_KEY` is set; rows always go back for review.
 - **The agent crew:** `lib/agents/` (pure). `crew.js` holds the 19 roles; each
   subscribes to events and returns *effects*; `policy.js` `authorize()` checks
   every effect (permission level, the one agent a job belongs to, and the
@@ -78,6 +78,20 @@ here ships to customers.
   commit data or confirm mappings: a person's accept in `server/agents/service.ts`
   does that, as that person. `tests/crew-scenarios.test.js` grades the crew on
   scenarios; add one when an agent learns something new.
+- **AI (Sous):** every AI call goes through `askClaude()` in `server/ai/claude.ts`
+  (one model, `claude-opus-5-5`, via `@anthropic-ai/sdk`; structured JSON
+  replies; a per-group daily allowance). It is a placeholder that switches on
+  with `ANTHROPIC_API_KEY`: with no key, or the provider down, every caller
+  falls back to its built-in path, so nothing may depend on AI to work.
+  Sous, the AI teammate (`lib/ai/sous.js`, pure; `server/ai/sous.ts`;
+  `components/sous.jsx`, opened from the top bar on every page), reads a
+  derived room into plain-sentence *facts* and answers, briefs and notices from
+  those only. AI-written text must pass `numbersOk()` (no figure the facts
+  don't contain) or it is discarded. New things for Sous to know are new facts
+  in `sousFacts()`, never numbers in a prompt. The nightly `sous` job notifies
+  what it noticed and pre-writes briefs. `tests/sous.test.js` and
+  `tests/sous.test.ts` cover it; `tests/helpers/fake-claude.ts` stands in for
+  the API.
 - **Groups and people:** `server/team.ts`. A person can belong to several
   groups; the `cv-org` cookie picks the one in view (`viewerFor` only honours
   it for their own memberships). Invite tokens are stored hashed. Never

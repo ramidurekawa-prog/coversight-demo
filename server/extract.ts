@@ -1,5 +1,5 @@
 // Lane 2, by photo: a picture or PDF of an invoice, a count sheet, a waste
-// log or a delivery statement, read into rows by Claude. The rows are never
+// log or a delivery statement, read into rows by Claude through the shared AI engine (server/ai/claude.ts). The rows are never
 // committed from here: they go back to the Data inputs screen to be checked,
 // previewed and committed like any upload. Runs only with ANTHROPIC_API_KEY;
 // the key is never logged or returned.
@@ -7,6 +7,7 @@ import { and, eq, gt, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { kindColumns } from '../lib/data/sniff.js';
+import { aiConfigured, askClaude } from './ai/claude';
 import type { Db } from './db/client';
 import { auditLog, orgs } from './db/schema';
 import { InputError } from './org';
@@ -19,7 +20,7 @@ const MAX = { image: 3 * 1024 * 1024, pdf: 3 * 1024 * 1024 };
 /** Reads per group per day: a sample visitor gets a taste, a real group a working allowance. */
 export const DAILY = { sample: 5, real: 300 };
 
-export const extractConfigured = () => !!process.env.ANTHROPIC_API_KEY;
+export const extractConfigured = aiConfigured;
 
 const body = z.object({
   name: z.string().max(300).default('photo'),
@@ -49,20 +50,19 @@ Rules:
 - Numbers without currency symbols or thousands separators (1234.50, not $1,234.50).
 - Skip subtotal, tax, delivery-fee and total lines; only item lines.
 - If a value is unreadable, leave it empty and say so in notes.
-Record the result with the record_rows tool.`;
+Reply with the kind, the column keys you filled (in order), one array of cell values per row in that same order, and any notes.`;
 }
 
-const tool = (kind?: string) => ({
-  name: 'record_rows',
-  description: 'Record the rows read from the document.',
-  input_schema: {
-    type: 'object',
-    properties: {
-      kind: { type: 'string', enum: kind ? [kind] : [...PHOTO_KINDS] },
-      rows: { type: 'array', maxItems: 500, items: { type: 'object', additionalProperties: { type: ['string', 'number', 'null'] } } },
-      notes: { type: 'string', description: 'Anything unreadable or uncertain, in one or two short sentences.' },
-    },
-    required: ['kind', 'rows'],
+/** The reply's shape: a small table (column keys, then rows of cells), so one schema fits every kind. */
+const shape = (kind?: string) => ({
+  type: 'object',
+  additionalProperties: false,
+  required: ['kind', 'columns', 'rows', 'notes'],
+  properties: {
+    kind: { type: 'string', enum: kind ? [kind] : [...PHOTO_KINDS] },
+    columns: { type: 'array', items: { type: 'string' }, description: 'The column keys for this kind, in the order the cells are given.' },
+    rows: { type: 'array', items: { type: 'array', items: { type: 'string' } }, description: 'One array of cell values per row, in the same order as columns. An empty string for a cell that is blank or unreadable.' },
+    notes: { type: 'string', description: 'Anything unreadable or uncertain, in one or two short sentences. Empty if nothing.' },
   },
 });
 
@@ -72,9 +72,8 @@ async function usedToday(db: Db, orgId: string) {
   return r?.n ?? 0;
 }
 
-export async function extractRows(db: Db, v: Pick<Viewer, 'orgId' | 'userId'>, raw: unknown, fetchImpl: typeof fetch = fetch) {
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) throw new InputError('Reading photos needs ANTHROPIC_API_KEY on the server. Until it’s set, type the rows in or upload a spreadsheet.');
+export async function extractRows(db: Db, v: Pick<Viewer, 'orgId' | 'userId'>, raw: unknown, fetchImpl?: typeof fetch) {
+  if (!aiConfigured()) throw new InputError('Reading photos needs ANTHROPIC_API_KEY on the server. Until it’s set, type the rows in or upload a spreadsheet.');
   const p = body.safeParse(raw);
   if (!p.success) throw new InputError(p.error.issues[0]?.path.join('.') === 'type' ? 'Send a JPEG, PNG, WebP or GIF photo, or a PDF.' : `Can’t read that upload: ${p.error.issues[0]?.message}`);
   const bytes = Math.floor((p.data.data.length * 3) / 4);
@@ -87,36 +86,31 @@ export async function extractRows(db: Db, v: Pick<Viewer, 'orgId' | 'userId'>, r
   const media = isPdf
     ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: p.data.data } }
     : { type: 'image', source: { type: 'base64', media_type: p.data.type, data: p.data.data } };
-  let res: Response;
-  try {
-    res = await fetchImpl('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({
-        model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-5-5',
-        max_tokens: 8000,
-        tools: [tool(p.data.kind)],
-        tool_choice: { type: 'tool', name: 'record_rows' },
-        messages: [{ role: 'user', content: [media, { type: 'text', text: prompt(p.data.kind) }] }],
-      }),
-      signal: AbortSignal.timeout(90_000),
-    });
-  } catch {
-    throw new InputError('Couldn’t reach the reader. Try again in a minute.');
+  const r = await askClaude<{ kind?: string; columns?: unknown; rows?: unknown; notes?: string }>({
+    system: 'You read restaurant paperwork into rows for the restaurant to check before it is loaded. You copy what is printed and never fill a gap with a guess, because these rows become the figures the restaurant is run on.',
+    schema: shape(p.data.kind),
+    maxTokens: 16000,
+    effort: 'medium',
+    timeoutMs: 90_000,
+    messages: [{ role: 'user', content: [media, { type: 'text', text: prompt(p.data.kind) }] as never }],
+  }, fetchImpl);
+  if (!r.ok) {
+    if (r.reason === 'auth') throw new InputError('The server’s ANTHROPIC_API_KEY was refused. An admin needs to replace it.');
+    if (r.reason === 'busy') throw new InputError('The reader is busy. Try again in a minute.');
+    if (r.reason === 'unreachable') throw new InputError('Couldn’t reach the reader. Try again in a minute.');
+    if (r.reason === 'unreadable' || r.reason === 'declined') throw new InputError('Nothing readable came back. Try a straighter, closer photo of just the table.');
+    throw new InputError(`The reader answered ${r.status ?? 'with an error'}. Try again, or type the rows in.`);
   }
-  if (res.status === 401 || res.status === 403) throw new InputError('The server’s ANTHROPIC_API_KEY was refused. An admin needs to replace it.');
-  if (res.status === 429 || res.status === 529) throw new InputError('The reader is busy. Try again in a minute.');
-  if (!res.ok) throw new InputError(`The reader answered ${res.status}. Try again, or type the rows in.`);
-  const out = (await res.json().catch(() => null)) as { content?: { type: string; name?: string; input?: { kind?: string; rows?: unknown[]; notes?: string } }[] } | null;
-  const call = out?.content?.find((c) => c.type === 'tool_use' && c.name === 'record_rows')?.input;
-  if (!call || !Array.isArray(call.rows)) throw new InputError('Nothing readable came back. Try a straighter, closer photo of just the table.');
+  const call = r.data;
+  if (!Array.isArray(call.rows)) throw new InputError('Nothing readable came back. Try a straighter, closer photo of just the table.');
   const kind = (PHOTO_KINDS as readonly string[]).includes(String(call.kind)) ? (call.kind as (typeof PHOTO_KINDS)[number]) : p.data.kind;
   if (!kind) throw new InputError('Couldn’t tell what kind of document this is. Pick the kind and try again.');
   const cols = kindColumns(kind).map((c: { k: string }) => c.k);
   // Keep only this kind's columns, as plain strings: the screen validates them like any upload.
-  const rows = call.rows.filter((r): r is Record<string, unknown> => !!r && typeof r === 'object' && !Array.isArray(r)).slice(0, 500)
-    .map((r) => Object.fromEntries(cols.map((k: string) => [k, r[k] == null ? '' : String(r[k]).slice(0, 120)])))
-    .filter((r) => Object.values(r).some((x) => x !== ''));
+  const given = Array.isArray(call.columns) ? call.columns.map(String) : [];
+  const rows = call.rows.filter((row): row is unknown[] => Array.isArray(row)).slice(0, 500)
+    .map((row) => Object.fromEntries(cols.map((k: string) => { const i = given.indexOf(k); const cell = i < 0 ? null : row[i]; return [k, cell == null ? '' : String(cell).slice(0, 120)]; })))
+    .filter((row) => Object.values(row).some((x) => x !== ''));
   await db.insert(auditLog).values({ orgId: v.orgId, userId: v.userId, action: 'input.extracted', detail: { kind, rows: rows.length, pdf: isPdf } });
   return { kind, rows, columns: cols, notes: String(call.notes ?? '').slice(0, 400), name: p.data.name };
 }
