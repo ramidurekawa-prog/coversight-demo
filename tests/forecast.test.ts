@@ -130,6 +130,14 @@ describe('Covercast signals', () => {
     expect(by[d5.iso].calibrated).toBe(false);
     expect(by[d0.iso].value).toBe(d0.value + 40);
   });
+  it('says what is moving each day, biggest first, and what is not on file', () => {
+    expect(d0.drivers.usual).toBe(d0.methods.current);
+    expect(d0.drivers.items.map((x: any) => x.key)).toEqual(expect.arrayContaining(['trend', 'event', 'weather', 'reservations']));
+    expect(d0.drivers.items.find((x: any) => x.key === 'weather')).toMatchObject({ pct: null, source: 'none' });
+    const r = covercastRoom(room, { accuracy: false, signals: { closures: [d6.iso] } }) as any;
+    const top = r.covers.days.find((x: any) => x.iso === d6.iso).drivers.items[0];
+    expect(top).toMatchObject({ key: 'closed', pct: -100 });
+  });
   it('an event with no estimate and no history is flagged, not guessed', () => {
     expect(d3.adjustments).toEqual([]);
     const r = covercastRoom(room, { accuracy: false, signals: { events: [{ date: d3.iso, name: 'Concert' }] } }) as any;
