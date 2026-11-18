@@ -92,15 +92,25 @@ describe('This week, on the sample', () => {
     expect(blockedReason(d.candidates.find((c) => c.id === 'salmon'), fresh)).toBeNull();
   });
 
-  it('explains each action in plain words, using only its own computed numbers', () => {
-    for (const c of v.plan.ranked) {
+  it('explains each action quickly in plain words, using only its own computed numbers', () => {
+    for (const id of ['oakland', 'berkeley', 'walnut']) for (const c of view(id).plan.ranked) {
       const said = c.talk.join(' ');
-      expect(c.talk.length).toBeGreaterThanOrEqual(2);
+      expect(c.talk.length).toBe(c.blocked ? 3 : 2);
+      expect(said.length).toBeLessThan(330);
       expect(said).not.toMatch(/elasticity|old engine/i);
       expect(said).toContain(cvMoney(Math.round(c.value)));
       if (c.conservative > 0 && Math.round(c.conservative) < Math.round(c.value)) expect(said).toContain(cvMoney(Math.round(c.conservative)));
-      if (c.blocked) expect(said).toMatch(/One thing first/);
+      if (c.blocked) expect(said).toMatch(/First, bring in current/);
     }
+  });
+
+  it('marks each of the last weeks green or red against the same normal week the page compares with', () => {
+    const g = v.green;
+    expect(g.line).toBeCloseTo(v.decomposition.contribution.then, 6);
+    expect(g.now).toBe(v.decomposition.contribution.change >= 0);
+    expect(g.weeks.length).toBe(v.history.length);
+    expect(g.count).toBe(g.weeks.filter((w) => w.earned >= g.line).length);
+    expect(g.weeks.at(-1).current).toBe(true);
   });
 
   it('chooses the plan the way The plan page does, with the saved hours and set-aside findings', () => {

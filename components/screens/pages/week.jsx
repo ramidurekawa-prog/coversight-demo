@@ -279,22 +279,7 @@ function answerOf(v) {
   if (!dec) return 'Your week in review';
   const ch = dec.contribution.change;
   if (Math.abs(ch) < Math.max(50, Math.abs(dec.contribution.then) * 0.005)) return `A steady week, in line with ${vsPhrase(v.comparator)}`;
-  return ch > 0 ? `A good week: you kept ${usd(ch)} more than ${vsPhrase(v.comparator)}` : `A softer week: you kept ${usd(-ch)} less than ${vsPhrase(v.comparator)}`;
-}
-
-/** Why, in one sentence: what added money and what took it back. */
-function whyOf(dec) {
-  const name = { net: ['higher sales', 'lower sales'], food: ['a lower food cost', 'a higher food cost'], labour: ['a lower labor cost', 'a higher labor cost'] };
-  const parts = dec.lines.filter((l) => l.effect != null && Math.abs(l.effect) >= 1).map((l) => ({ e: l.effect, n: name[l.key][l.effect >= 0 ? 0 : 1] }));
-  const up = parts.filter((p) => p.e > 0).sort((a, b) => b.e - a.e);
-  const down = parts.filter((p) => p.e < 0).sort((a, b) => a.e - b.e);
-  const cap = (x) => x[0].toUpperCase() + x.slice(1);
-  const join = (xs) => xs.map((p) => p.n).join(' and ');
-  const sum = (xs) => xs.reduce((t, p) => t + p.e, 0);
-  if (up.length && down.length) return `${cap(join(up))} added ${usd(sum(up))}; ${join(down)} took back ${usd(-sum(down))}.`;
-  if (up.length) return `${cap(join(up))} added ${usd(sum(up))}.`;
-  if (down.length) return `${cap(join(down))} cost ${usd(-sum(down))}.`;
-  return 'Sales, food and labor were all close to before.';
+  return ch > 0 ? `A green week: you kept ${usd(ch)} more than ${vsPhrase(v.comparator)}` : `A red week: you kept ${usd(-ch)} less than ${vsPhrase(v.comparator)}`;
 }
 
 function Step({ n, id, kicker, title, sub, right, children }) {
@@ -377,43 +362,123 @@ function Breakdown({ dec, vs }) {
 }
 
 /* Step 1: how the week went, and why. */
+/**
+ * The week as one sum anyone can read: what helped, minus what cost you, equals what you kept.
+ * Ramidu (2026-11-18): the bars still had "a lot of parts moving"; this is the one thing to look at.
+ */
+function Sum({ dec, vs }) {
+  const name = { net: ['More sales', 'Lower sales'], food: ['Lower food cost', 'Higher food cost'], labour: ['Lower labor cost', 'Higher labor cost'] };
+  const parts = dec.lines.filter((l) => l.effect != null && Math.abs(l.effect) >= 1).map((l) => ({ e: l.effect, n: name[l.key][l.effect >= 0 ? 0 : 1] }));
+  const up = parts.filter((p) => p.e > 0), down = parts.filter((p) => p.e < 0);
+  const tot = (xs) => xs.reduce((t, p) => t + p.e, 0);
+  const words = (xs) => xs.map((p, i) => (i ? p.n.toLowerCase() : p.n)).join(' and ');
+  const ch = dec.contribution.change;
+  return (
+    <div className={s.sum} role="group" aria-label={`Compared with ${vs}`}>
+      <div className={`${s.sumTile} ${s.sumUp}`}>
+        <span className={s.sumLbl}>What helped</span>
+        <span className={s.sumNum}>{up.length ? usd(tot(up), true) : usd(0)}</span>
+        <span className={s.sumSub}>{up.length ? words(up) : 'Nothing this week'}</span>
+      </div>
+      <span className={s.sumOp} aria-hidden="true"><Icon name="Minus" size={20} /></span>
+      <div className={`${s.sumTile} ${s.sumDown}`}>
+        <span className={s.sumLbl}>What cost you</span>
+        <span className={s.sumNum}>{usd(-tot(down))}</span>
+        <span className={s.sumSub}>{down.length ? words(down) : 'Nothing this week'}</span>
+      </div>
+      <span className={s.sumOp} aria-hidden="true">=</span>
+      <div className={`${s.sumTile} ${s.sumRes} ${ch >= 0 ? s.sumGood : s.sumBad}`}>
+        <span className={s.sumLbl}>{ch >= 0 ? 'You kept more' : 'You kept less'}</span>
+        <span className={s.sumNum}>{usd(ch, true)}</span>
+        <span className={s.sumSub}>than {vs}</span>
+      </div>
+    </div>
+  );
+}
+
 function StepWhy({ v, comparator, setComparator }) {
   const dec = v.decomposition;
   const [weeks, setWeeks] = React.useState(false);
+  const [parts, setParts] = React.useState(false);
   const avail = v.comparators.filter((c) => c.available);
   const missing = v.comparators.filter((c) => !c.available);
   const line = (k) => dec?.lines.find((l) => l.key === k);
   const c = v.contribution;
   const ch = dec?.contribution.change;
   return (
-    <Step n={1} id="week-why" kicker="How the week went" title={dec ? whyOf(dec) : 'No earlier week to compare with yet'}
+    <Step n={1} id="week-why" kicker="How the week went" title={dec ? (ch >= 0 ? `Where the extra ${usd(ch)} came from` : `Where the ${usd(-ch)} went`) : 'No earlier week to compare with yet'}
       sub={dec ? null : 'This fills in once there’s an earlier week of your own data.'}>
       <div className={s.hero}>
         <div className={s.heroFig}>
           <span className={s.heroLbl}>Kept after food & labor</span>
           <span className={s.heroNum}>{c.value == null ? '—' : <Money id="earned-week">{usd(c.value)}</Money>}</span>
           <span className={s.heroCmp}>
-            {ch != null && <span className={s.delta}><Icon name={ch >= 0 ? 'ArrowUpRight' : 'ArrowDownRight'} size={14} />{usd(ch, true)} vs {vsPhrase(v.comparator)}</span>}
             <Claim k={c.claim} />
           </span>
         </div>
-        {avail.length > 1 && <Toggle label="Compare with" options={avail.map((x) => ({ value: x.id, label: VS[x.id] ? VS[x.id].replace(/^your /, '') : x.label }))} value={comparator || v.comparator?.id} onChange={setComparator} />}
       </div>
-      {dec && <Breakdown dec={dec} vs={vsPhrase(v.comparator)} />}
+      {dec && <Sum dec={dec} vs={vsPhrase(v.comparator)} />}
       <div className={s.links}>
+        {dec && <button type="button" className={s.linkBtn} aria-expanded={parts} onClick={() => setParts((x) => !x)}><Icon name="ListOrdered" size={15} />{parts ? 'Hide' : 'See'} each part<Icon name={parts ? 'ChevronUp' : 'ChevronDown'} size={14} /></button>}
         {v.history.length > 1 && <button type="button" className={s.linkBtn} aria-expanded={weeks} onClick={() => setWeeks((x) => !x)}><Icon name="ChartColumn" size={15} />{weeks ? 'Hide' : 'See'} the last {v.history.length} weeks<Icon name={weeks ? 'ChevronUp' : 'ChevronDown'} size={14} /></button>}
         <More>
           “Kept” is net sales minus food cost minus hourly labor. It isn’t profit: rent and other costs aren’t taken off. Sales, food and labor add up exactly to the change. That describes the week; it doesn’t prove what caused it, and none of it is a saving we claim. Food cost is plates sold × recipe cost{c.status === 'estimated' ? '; labor isn’t measured yet, so it’s estimated' : ''}.
           {dec ? ` Sales ${usd(line('net').now)} from ${Math.round(line('covers').now).toLocaleString('en-US')} covers at ${cvMoney(line('check').now, { cents: true })} each. ${v.comparator.desc}.` : ''}
           {missing.length ? ` Not available yet: ${missing.map((x) => `${x.label.toLowerCase()} (${x.reason.replace(/\.$/, '').toLowerCase()})`).join('; ')}.` : ''}
+          {avail.length > 1 && <span className={s.moreToggle}><Toggle label="Compare with" options={avail.map((x) => ({ value: x.id, label: VS[x.id] ? VS[x.id].replace(/^your /, '') : x.label }))} value={comparator || v.comparator?.id} onChange={setComparator} /></span>}
         </More>
       </div>
+      {parts && dec && <Breakdown dec={dec} vs={vsPhrase(v.comparator)} />}
       {weeks && <Weeks v={v} />}
     </Step>
   );
 }
 
-/* Step 2: what to do this week. */
+/**
+ * Keep next week green (Ramidu, 2026-11-18): the line next week has to clear, the record against
+ * it, and what's protecting it. Every number is the page's own: the comparison's normal week,
+ * the last weeks against it, verified run-rate, the plan's potential, and what's being watched.
+ */
+function GreenTarget({ v, plan }) {
+  const g = v.green;
+  if (!g) return null;
+  const items = plan?.committed
+    ? plan.items.filter((i) => i.status !== 'dropped')
+    : v.plan.proposal.filter((p) => !p.blocked).slice(0, PLAN_TOP);
+  const potential = items.reduce((t, i) => t + (i.conservative ?? i.value), 0);
+  const watched = v.attention.length + v.inFlight.length;
+  const go = (id) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  return (
+    <div className={s.green}>
+      <div className={s.greenRecord}>
+        <span className={s.greenLbl}>Next week’s line</span>
+        <span className={s.greenNum}>{usd(g.line)}<span className={s.unit}> kept</span></span>
+        <div className={s.dots} role="img" aria-label={`${g.count} of the last ${g.of} weeks kept at least ${usd(g.line)}`}>
+          {g.weeks.map((w) => <span key={w.iso} title={`Week of ${w.label}: ${usd(w.earned)}`} className={`${s.dot} ${w.green ? s.dotGood : s.dotBad} ${w.current ? s.dotNow : ''}`}>{w.green ? <Icon name="Check" size={12} /> : <Icon name="Minus" size={12} />}</span>)}
+        </div>
+        <span className={s.greenSub}><b>{g.count} of your last {g.of} weeks</b> were green. The last mark is this week.</span>
+      </div>
+      <ul className={s.guards} aria-label="What keeps next week green">
+        <li>
+          <span className={`${s.guardIcon} ${v.banked.week > 0 ? s.guardGood : ''}`}><Icon name="ShieldCheck" size={18} /></span>
+          <span className={s.guardText}><b>{v.banked.week > 0 ? `${usd(v.banked.week)}/wk already locked in` : 'Nothing verified yet'}</b><span>{v.banked.week > 0 ? 'Changes that passed their test and keep paying' : 'Each change starts paying once its test passes'}</span></span>
+        </li>
+        <li>
+          <span className={s.guardIcon}><Icon name="ClipboardCheck" size={18} /></span>
+          <span className={s.guardText}><b>{items.length ? `${usd(potential)}/wk from this week’s plan` : 'No actions picked yet'}</b><span>{items.length ? `${items.length} action${items.length === 1 ? '' : 's'} below · potential until tested` : 'Pick one below'}</span></span>
+        </li>
+        <li>
+          <button type="button" className={s.guardBtn} onClick={() => go('week-attention')}>
+            <span className={s.guardIcon}><Icon name="Eye" size={18} /></span>
+            <span className={s.guardText}><b>{watched ? `${watched} risk${watched === 1 ? '' : 's'} I’m watching` : 'Nothing at risk right now'}</b><span>{v.attention.length ? `${v.attention.length} need you · ${v.inFlight.length} test${v.inFlight.length === 1 ? '' : 's'} running` : `${v.inFlight.length} test${v.inFlight.length === 1 ? '' : 's'} running`}</span></span>
+          </button>
+        </li>
+      </ul>
+    </div>
+  );
+}
+
+/* Step 2: keep next week green, by picking what to do. */
 function StepPlan({ v, rec }) {
   const cv = useCv();
   const [revising, setRevising] = React.useState(false);
@@ -429,9 +494,10 @@ function StepPlan({ v, rec }) {
   const live = committed ? plan.items.filter((i) => i.status !== 'dropped').length : 0;
   return (
     <Step n={2} id="week-plan" kicker="What to do this week"
-      title={committed && !revising ? `Your plan: ${done} of ${live} done` : v.plan.ranked.length ? 'Pick this week’s actions, then commit them' : 'Nothing clears the bar this week'}
+      title={committed && !revising ? `Keeping next week green: ${done} of ${live} done` : v.green ? `Keep next week above ${usd(v.green.line)}` : v.plan.ranked.length ? 'Pick this week’s actions, then commit them' : 'Nothing clears the bar this week'}
       sub={committed && !revising ? `Committed ${stampDay(committed.committedAt)}${plan.committedBy ? ` by ${plan.committedBy}` : ''} · mark each one as it moves` : `${ready} ready · fits ${hrs(v.plan.hours)} of manager time · amounts are potential until tested`}
       right={<button type="button" className={s.linkBtn} onClick={() => cv.go('meeting')}>Take it to the meeting<Icon name="ArrowRight" size={14} /></button>}>
+      <GreenTarget v={v} plan={plan} />
       {!plan ? <span className="cv-small cv-muted">{rec.error ? `Couldn’t load the plan: ${rec.error}` : 'Loading…'}</span>
         : committed && !revising ? <PlanCommitted v={v} rec={rec} plan={plan} onRevise={() => setRevising(true)} />
           : v.plan.ranked.length === 0 ? null
@@ -628,7 +694,7 @@ function CvThisWeek() {
   const n = v.attention.length;
   const guide = [
     { id: 'week-why', label: 'How the week went', state: v.decomposition ? `${usd(v.decomposition.contribution.change, true)} vs ${vsPhrase(v.comparator)}` : 'Waiting on an earlier week', done: false },
-    { id: 'week-plan', label: 'What to do', state: committed ? 'Plan committed' : `${v.plan.proposal.filter((p) => !p.blocked).length} actions to commit`, done: committed },
+    { id: 'week-plan', label: 'Keep next week green', state: committed ? 'Plan committed' : `${v.plan.proposal.filter((p) => !p.blocked).length} actions to commit`, done: committed },
     { id: 'week-attention', label: 'What’s in the way', state: n ? `${n} to clear` : 'Nothing', done: n === 0 },
     { id: 'week-results', label: 'Your results', state: v.banked.week > 0 ? `${usd(v.banked.week)}/wk confirmed` : `${v.inFlight.length} running`, done: false },
   ];

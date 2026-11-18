@@ -317,3 +317,54 @@
 }
 .whyText { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; font-size: 15px; line-height: 1.55; }
 .whyText p { margin: 0; }
+
+/* The week as one sum: what helped − what cost you = what you kept. */
+.sum { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1.15fr); align-items: stretch; gap: 12px; }
+.sumTile { display: flex; flex-direction: column; gap: 4px; padding: 16px 18px; border-radius: 12px; background: var(--surface-sunken); min-width: 0; }
+.sumLbl { font-size: 14px; font-weight: 500; color: var(--fg-2); }
+.sumNum { font-size: 30px; font-weight: 600; line-height: 1.1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--fg-1); }
+.sumSub { font-size: 14px; color: var(--fg-2); }
+.sumUp .sumNum { color: var(--success-700, var(--success-600)); }
+.sumDown .sumNum { color: var(--error-600); }
+.sumOp { align-self: center; display: inline-flex; justify-content: center; font-size: 26px; font-weight: 500; color: var(--fg-3); }
+.sumRes { box-shadow: inset 0 0 0 2px currentColor; }
+.sumGood { color: var(--success-600); background: color-mix(in srgb, var(--success-600) 9%, var(--surface-raised, #fff)); }
+.sumBad { color: var(--error-600); background: color-mix(in srgb, var(--error-600) 8%, var(--surface-raised, #fff)); }
+.sumRes .sumNum { font-size: 34px; color: inherit; }
+.moreToggle { display: flex; margin-top: 12px; }
+@media (max-width: 720px) {
+  .sum { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .sumOp { font-size: 20px; }
+  .sumTile { flex-direction: row; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 12px; padding: 12px 14px; }
+  .sumNum { font-size: 24px; order: 2; }
+  .sumRes .sumNum { font-size: 28px; }
+  .sumSub { order: 3; flex-basis: 100%; }
+}
+
+/* Keep next week green: the line, the record against it, and what's protecting it. */
+.green { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px 28px; padding: 18px 20px; border-radius: 12px; background: var(--surface-sunken); }
+.greenRecord { display: flex; flex-direction: column; gap: 6px; }
+.greenLbl { font-size: 14px; font-weight: 500; color: var(--fg-2); }
+.greenNum { font-size: 32px; font-weight: 600; line-height: 1.1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--fg-1); }
+.greenSub { font-size: 14px; color: var(--fg-2); }
+.greenSub b { color: var(--fg-1); font-weight: 600; }
+.dots { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 6px; }
+.dot { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 6px; color: #fff; }
+.dotGood { background: var(--success-600); }
+.dotBad { background: var(--error-600); }
+.dotNow { outline: 2px solid var(--fg-1); outline-offset: 2px; }
+.guards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.guards li { display: flex; }
+.guardBtn { display: flex; gap: 12px; align-items: flex-start; padding: 0; border: 0; background: none; text-align: left; cursor: pointer; font: inherit; color: inherit; }
+.guardBtn:hover b { text-decoration: underline; }
+.guards li > .guardIcon { margin-right: 12px; }
+.guardIcon { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 9px; background: var(--surface-raised, #fff); color: var(--fg-2); box-shadow: inset 0 0 0 1px var(--border); }
+.guardGood { color: var(--success-600); }
+.guardText { display: flex; flex-direction: column; gap: 1px; }
+.guardText b { font-size: 16px; font-weight: 600; color: var(--fg-1); }
+.guardText span { font-size: 14px; color: var(--fg-2); }
+@media (max-width: 720px) {
+  .green { grid-template-columns: minmax(0, 1fr); padding: 14px 16px; }
+  .dots { gap: 4px; }
+  .dot { width: 18px; height: 18px; border-radius: 5px; }
+}
