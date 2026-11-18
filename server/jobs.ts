@@ -19,6 +19,7 @@ import { pullLinks } from './links';
 import { runAgents } from './agents/service';
 import { runMeetingReminders } from './page/meeting';
 import { runLive } from './live';
+import { runWeekDigest } from './page/week';
 
 export const JOBS = {
   sync: { schedule: 'Daily, 2:20 am Pacific (hourly on Vercel Pro: set the cron to 20 * * * *)', what: 'Pulls new Toast orders and time entries for every connected restaurant (13 weeks the first time) and rebuilds each room’s figures from them', cron: '20 10 * * *' },
@@ -31,6 +32,7 @@ export const JOBS = {
   cleanup: { schedule: 'Daily, 5:00 am Pacific', what: 'Deletes “try the sample” guests older than 30 days and their sample copies', cron: '0 13 * * *' },
   live: { schedule: 'Off until Vercel Pro (then every 5 minutes: add */5 * * * * for /api/cron/live). Today pulls the same data every 5 minutes while it’s open', what: 'Pulls tonight’s Toast covers and 7shifts shifts for every connected room during dinner', cron: null },
   meeting: { schedule: 'Daily, 7:00 am Pacific', what: 'Reminds each room about weekly-meeting actions due tomorrow or overdue, and about the meeting on its day', cron: '0 15 * * *' },
+  week: { schedule: 'Mondays, 7:00 am Pacific', what: 'Sends each room of every real group its week in review (This week), once per week of data', cron: '0 15 * * 1' },
 } as const;
 export type JobName = keyof typeof JOBS;
 
@@ -95,10 +97,10 @@ export async function runJob(db: Db, job: JobName, { orgId, trigger = 'schedule'
   }
   // The sync and linked sheets run only for groups that have them, the crew only for real groups
   // (a sample visitor runs it from System); every other job, for every group.
-  const ids = orgId ? [orgId] : job === 'sync' ? (await db.select({ id: toastConnections.orgId }).from(toastConnections)).map((o) => o.id) : job === 'links' ? [...new Set((await db.select({ id: linkedSources.orgId }).from(linkedSources)).map((o) => o.id))] : job === 'agents' ? (await db.select({ id: orgs.id }).from(orgs).where(eq(orgs.sample, false))).map((o) => o.id) : (await db.select({ id: orgs.id }).from(orgs)).map((o) => o.id);
+  const ids = orgId ? [orgId] : job === 'sync' ? (await db.select({ id: toastConnections.orgId }).from(toastConnections)).map((o) => o.id) : job === 'links' ? [...new Set((await db.select({ id: linkedSources.orgId }).from(linkedSources)).map((o) => o.id))] : (job === 'agents' || job === 'week') ? (await db.select({ id: orgs.id }).from(orgs).where(eq(orgs.sample, false))).map((o) => o.id) : (await db.select({ id: orgs.id }).from(orgs)).map((o) => o.id);
   const results = [];
   for (const id of ids) {
-    results.push(await record(db, job, id, trigger, () => (job === 'sync' ? syncToast(db, id, { now, ...(fetchImpl ? { fetchImpl } : {}) }) : job === 'links' ? pullLinks(db, id, fetchImpl ? { fetchImpl } : {}) : job === 'agents' ? runAgents(db, id, { trigger, now, ...(fetchImpl ? { fetchImpl } : {}) }) : job === 'detection' ? runDetection(db, id) : job === 'proof' ? runProofLoop(db, id, now) : job === 'billing' ? runBilling(db, id, previousPeriod(now)) : runReverify(db, id))));
+    results.push(await record(db, job, id, trigger, () => (job === 'sync' ? syncToast(db, id, { now, ...(fetchImpl ? { fetchImpl } : {}) }) : job === 'links' ? pullLinks(db, id, fetchImpl ? { fetchImpl } : {}) : job === 'agents' ? runAgents(db, id, { trigger, now, ...(fetchImpl ? { fetchImpl } : {}) }) : job === 'detection' ? runDetection(db, id) : job === 'proof' ? runProofLoop(db, id, now) : job === 'billing' ? runBilling(db, id, previousPeriod(now)) : job === 'week' ? runWeekDigest(db, id, now) : runReverify(db, id))));
   }
   await deliverOutbox(db, { now }).catch(() => null);
   // Stripe deliveries that are due (retries with backoff) ride on every job run.
