@@ -280,3 +280,53 @@
 .allClear svg { color: var(--t-good); }
 .viewing { font-weight: 500; color: var(--fg-2); }
 @media (max-width: 520px) { .roomFig { font-size: 30px; } .roomGrid { gap: 10px; } }
+
+/* ---- one location at a time: the switch */
+.locs { display: inline-flex; flex-wrap: wrap; gap: 4px; padding: 4px; border-radius: 12px; background: var(--surface-sunken); box-shadow: inset 0 0 0 1px var(--border); align-self: flex-start; max-width: 100%; }
+.loc { all: unset; box-sizing: border-box; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px; border-radius: 9px; font: 600 16px/1 var(--font-sans); color: var(--fg-2); transition: background var(--dur-base, 160ms), color var(--dur-base, 160ms), box-shadow var(--dur-base, 160ms); }
+.loc:hover { color: var(--fg-1); background: color-mix(in srgb, var(--surface) 60%, transparent); }
+.loc:focus-visible { box-shadow: var(--ring); }
+.loc[aria-pressed="true"] { background: var(--surface); color: var(--fg-1); box-shadow: 0 1px 2px rgba(20, 28, 40, 0.12), 0 0 0 1px var(--border); }
+.locIco { display: inline-grid; place-items: center; color: var(--fg-2); }
+.locIco:global(.cv-up) { color: var(--t-good); }
+.locIco:global(.cv-down) { color: var(--t-crit); }
+.locCount { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: color-mix(in srgb, var(--t-caution) 16%, transparent); color: var(--warning-700, var(--t-caution)); font-size: 13px; font-weight: 700; box-sizing: border-box; }
+
+/* ---- numbered steps */
+.step { display: flex; align-items: flex-start; gap: 14px; margin-top: 10px; }
+.stepNum { flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--fg-1); color: var(--surface); font: 700 16px/1 var(--font-sans); margin-top: 1px; }
+.stepTitle { margin: 0; font: 600 25px/1.2 var(--font-sans); letter-spacing: -0.02em; color: var(--fg-1); }
+.vSpark { display: flex; flex-direction: column; gap: 6px; flex: 1 1 220px; min-width: 180px; max-width: 320px; }
+
+/* ---- what changed: one wide row per change */
+.changes { display: flex; flex-direction: column; gap: 12px; }
+.change { position: relative; overflow: hidden; display: flex; flex-direction: column; gap: 14px; padding: 18px 22px 18px 26px; border-radius: var(--card-r); background: var(--surface); box-shadow: var(--box); }
+.change::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--border-strong); }
+.change[data-kind="bad"]::before { background: var(--t-caution); }
+.change[data-kind="crit"]::before { background: var(--t-crit); }
+.change[data-kind="good"]::before { background: var(--t-good); }
+.changeMain { display: grid; grid-template-columns: 40px minmax(0, 1fr) 240px; gap: 14px 18px; align-items: start; }
+.changeMain > .sigIco { width: 40px; height: 40px; border-radius: 10px; }
+.changeText { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.changeTitleRow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.changeTitleRow .cardTitle { font-size: 19px; }
+.changeSentence { margin: 0; font-size: 16px; line-height: 1.5; color: var(--fg-2); max-width: 62ch; }
+.changeDo { display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap; margin-top: 4px; }
+.doLabel { font-size: 13.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--fg-2); }
+.doGood { display: inline-flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 600; color: var(--fg-1); }
+.doGood svg { color: var(--t-good); }
+.ctaSm { box-shadow: 0 1px 0 rgba(23, 37, 54, 0.08), 0 6px 16px -8px color-mix(in srgb, var(--primary) 70%, transparent); }
+.changeFig { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; padding-left: 18px; border-left: 1px solid var(--border); }
+.changeFig .range { width: 100%; }
+.change .linkBtn { gap: 4px; }
+.change .details { padding-left: 58px; }
+@media (max-width: 760px) {
+  .changeMain { grid-template-columns: 36px minmax(0, 1fr); }
+  .changeMain > .sigIco { width: 36px; height: 36px; }
+  .changeFig { grid-column: 1 / -1; padding-left: 0; border-left: none; padding-top: 12px; border-top: 1px solid var(--border); }
+  .change { padding: 16px 16px 16px 20px; }
+  .change .details { padding-left: 0; }
+  .stepTitle { font-size: 21px; }
+}
+.explore { display: flex; flex-direction: column; gap: 14px; padding-top: 12px; }
+@media (max-width: 520px) { .locs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; } .loc { flex: none; min-height: 36px; padding: 0 12px; font-size: 15px; } .vPart { min-width: 0; } }

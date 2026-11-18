@@ -32,6 +32,22 @@ const SEV_CLASS = { high: s.sevHigh, medium: s.sevMedium, low: s.sevLow, info: s
 const tone = (key, v) => (v == null || Math.abs(v) < 0.05 ? 'cv-faint' : (v > 0) === METRIC[key].up ? 'cv-up' : 'cv-down');
 const shortDate = (iso) => (iso ? new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }) : '');
 const isMoney = (key) => ['money', 'cents'].includes(METRIC[key]?.unit);
+/** A value next to a limit it rounds to: one more decimal, so the value never reads the same as the limit. */
+const fmtNear = (key, v, ref) => {
+  const a = fmtMetric(key, v);
+  const u = METRIC[key]?.unit;
+  if (ref == null || a !== fmtMetric(key, ref) || !['pct', 'pct1', 'cents', 'minutes'].includes(u)) return a;
+  const d = u === 'pct' ? 2 : 3;
+  if (u === 'cents') return '$' + v.toFixed(d);
+  if (u === 'minutes') return v.toFixed(d) + ' min';
+  return v.toFixed(d) + '%';
+};
+/** The normal range, at the same precision as the value beside it. */
+const rangeNear = (key, e, v) => {
+  const tight = v != null && (fmtNear(key, v, e.ucl) !== fmtMetric(key, v) || fmtNear(key, v, e.lcl) !== fmtMetric(key, v));
+  const f = (x) => (tight ? fmtNear(key, x, x) : fmtMetric(key, x));
+  return f(e.lcl) + ' to ' + f(e.ucl);
+};
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 
 /** One thing to do for a change in the wrong direction, and where to do it. */
@@ -137,13 +153,15 @@ function verdictNote(dir, t) {
   return `${what} is within normal week-to-week swings of its usual${t.signals.some((x) => !x.good) ? '. One measure below is still worth a look.' : '.'}`;
 }
 
-function Verdict({ t, notes, onInvestigate, name }) {
+function RoomSummary({ t, name }) {
   const dir = directionOf(t);
   const st = STATE[dir.state];
-  const open = t.signals.filter((x) => !x.good && x.severity !== 'low' && !isExplained(notes[signalKey(x, t.rows)]));
+  const x = t.metrics.earned;
+  const n = t.rows.length;
   const word = { improving: 'is improving', steady: 'is steady', slipping: 'is slipping', unknown: 'is still building its history' }[dir.state];
+  const have = Math.max(0, MIN_BASELINE + 1 - t.w.needWeeks);
   return (
-    <section className={`cv-card ${s.verdict}`} data-state={dir.state} aria-label={`${name}: the answer`}>
+    <section className={`cv-card ${s.verdict}`} data-state={dir.state} aria-labelledby="trends-how">
       <div className={s.vPart}>
         <span className={`${s.vIcon} ${st.cls}`}><Icon name={st.icon} size={26} /></span>
         <span className="cv-col" style={{ gap: 4, minWidth: 0 }}>
@@ -151,15 +169,22 @@ function Verdict({ t, notes, onInvestigate, name }) {
           <p className={s.vNote}>{verdictNote(dir, t)}</p>
         </span>
       </div>
-      <div className={s.vAct}>
-        {open.length ? (
-          <>
-            <span className={`${s.vCount} ${open.some((x) => x.severity === 'high') ? s.crit : s.caution}`}><Icon name="TriangleAlert" size={18} />{plural(open.length, 'thing')} to look at</span>
-            <Button className={s.cta} iconRight="ArrowRight" onClick={() => onInvestigate(open[0])}>{METRIC[open[0].metric].short} first</Button>
-          </>
-        ) : (
-          <span className={`${s.vCount} cv-up`}><Icon name="CircleCheck" size={18} />{t.w.ready ? 'Nothing to act on' : 'Nothing judged yet'}</span>
-        )}
+      {dir.state === 'unknown' ? (
+        <div className={s.vStat}>
+          <span className="cv-xs cv-faint">History</span>
+          <span className={s.big}>{have}<small> / {MIN_BASELINE + 1} weeks</small></span>
+          <Progress have={have} need={MIN_BASELINE + 1} />
+        </div>
+      ) : (
+        <div className={s.vStat}>
+          <span className="cv-xs cv-faint cv-row" style={{ gap: 6 }}>Contribution a week <Claim k={x.claim} /></span>
+          <span className={s.big}>{fmtMetric('earned', dir.recent)}</span>
+          <Delta metric="earned" a={dir.recent} b={dir.base} suffix={`vs usual ${fmtMetric('earned', dir.base)}`} neutral={dir.state === 'steady'} big />
+        </div>
+      )}
+      <div className={s.vSpark}>
+        <span className="cv-xs cv-faint">Last {JUDGE_WEEKS} weeks</span>
+        <Spark vals={x.vals.slice(Math.max(t.w.from, n - JUDGE_WEEKS))} lim={x.lim} height={56} ariaLabel={`Contribution, last ${JUDGE_WEEKS} weeks`} />
       </div>
     </section>
   );
@@ -168,55 +193,31 @@ function Verdict({ t, notes, onInvestigate, name }) {
 /* ------------------------------------------------------------- every room */
 
 /**
- * One card per room: is it getting better or worse, contribution a week, the
- * last 13 weeks, and how many changes are waiting. Tap a card to open that room
- * below. Every figure is the same trendsFor() the room view and the job use.
+ * The location switch: one location on the page at a time. Each button shows
+ * whether that room is improving, steady or slipping and how many changes are
+ * waiting, so the owner can see where to go next without opening each one.
  */
-function RoomCards({ current, onPick }) {
+function LocationSwitch({ current, onPick }) {
   const rooms = CV_GROUP.rooms ?? [];
-  const cards = rooms.map((d) => {
-    const t = trendsFor(d.hist.rows);
-    const dir = directionOf(t);
-    const nb = cleanNotes(engine.saved('trends.notes', d.id));
-    const open = t.signals.filter((sig) => !sig.good && sig.severity !== 'low' && !isExplained(nb[signalKey(sig, t.rows)])).length;
-    const x = t.metrics.earned;
-    const value = dir.state === 'unknown' ? x.latest : dir.recent;
-    return { d, t, dir, open, x, value };
-  });
-  const total = cards.every((k) => k.value != null) ? cards.reduce((a, k) => a + k.value, 0) : null;
-  const n = (t) => t.rows.length;
+  if (rooms.length < 2) return null;
   return (
-    <section aria-labelledby="trends-rooms" className={s.rooms}>
-      <div className={s.roomsHead}>
-        <span className="cv-h4" id="trends-rooms">{rooms.length === 1 ? 'Your room' : `Your ${rooms.length} rooms`}</span>
-        {rooms.length > 1 && total != null && <span className={s.headSub}>{fmtMetric('earned', total)} a week in contribution together</span>}
-      </div>
-      <div className={s.roomGrid}>
-        {cards.map(({ d, t, dir, open, x, value }) => {
-          const st = STATE[dir.state];
-          return (
-            <button key={d.id} type="button" className={s.roomCard} data-state={dir.state} aria-pressed={d.id === current} onClick={() => onPick(d.id)}>
-              <span className={s.roomTop}>
-                <span className={s.roomName}>{d.profile?.short || d.id}{t.w.own ? '' : <span className={s.wk}> · sample</span>}</span>
-                <span className={`${s.roomState} ${st.cls}`}><Icon name={st.icon} size={16} />{st.word}</span>
-              </span>
-              <span className={s.roomFig}>{fmtMetric('earned', value)}<small> a week</small></span>
-              <span className={s.roomLine}>
-                {dir.state !== 'unknown' ? <Delta metric="earned" a={dir.recent} b={dir.base} suffix="vs usual" neutral={dir.state === 'steady'} /> : <span className="cv-xs cv-faint">{plural(t.w.needWeeks, 'more week')} to go</span>}
-                <Claim k={x.claim} />
-              </span>
-              <Spark vals={x.vals.slice(Math.max(t.w.from, n(t) - JUDGE_WEEKS))} lim={x.lim} height={30} ariaLabel={`Contribution, last ${JUDGE_WEEKS} weeks`} />
-              <span className={s.roomFoot}>
-                {!t.w.ready ? <span className="cv-faint">Not judged yet</span>
-                  : open ? <span className={s.caution}><Icon name="TriangleAlert" size={15} />{plural(open, 'thing')} to look at</span>
-                    : <span className={s.allClear}><Icon name="CircleCheck" size={15} />All clear</span>}
-                {d.id === current ? <span className={s.viewing}>Showing below</span> : <span className={s.viewing}>Open <Icon name="ArrowRight" size={14} /></span>}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-    </section>
+    <div className={s.locs} role="group" aria-label="Location">
+      {rooms.map((d) => {
+        const t = trendsFor(d.hist.rows);
+        const dir = directionOf(t);
+        const st = STATE[dir.state];
+        const nb = cleanNotes(engine.saved('trends.notes', d.id));
+        const open = t.w.ready ? t.signals.filter((sig) => !sig.good && !isExplained(nb[signalKey(sig, t.rows)])).length : 0;
+        return (
+          <button key={d.id} type="button" className={s.loc} aria-pressed={d.id === current} onClick={() => onPick(d.id)}
+            aria-label={`${d.profile?.short || d.id}: ${st.word}${open ? `, ${plural(open, 'change')} to look at` : ''}`}>
+            <span className={`${s.locIco} ${st.cls}`}><Icon name={st.icon} size={16} /></span>
+            <span className={s.locName}>{d.profile?.short || d.id}</span>
+            {open > 0 && <span className={s.locCount}>{open}</span>}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -253,77 +254,97 @@ function watchText(sig) {
   return `Next week: back ${sig.dir === 'up' ? 'under' : 'over'} ${f(edge)} means it was a one-off. Another week past it means something has changed.`;
 }
 
-function ChangeCard({ sig, t, note, open, editing, onPick, onToggle, onEdit, onSave, onRemove, onCancel, onCompare }) {
+/** A plain title and sentence for one change: what happened, against what's normal. */
+function plainOf(sig, rows) {
+  const m = METRIC[sig.metric], e = sig.expected, f = (v) => fmtMetric(sig.metric, v);
+  const name = m.short;
+  if (sig.kind === 'shift') {
+    return {
+      title: `${name} has drifted ${sig.dir}`,
+      text: `For ${sig.weeks} weeks in a row it has sat ${sig.dir === 'up' ? 'above' : 'below'} its usual average of ${f(e.mean)}, at about ${f(sig.avg)}. No single week looks odd, but a run this long isn't normal.`,
+    };
+  }
+  const when = sig.weeks === 1 ? `in the week of ${rows[sig.i]?.label}` : `in ${sig.breaches} of ${sig.weeks} weeks to ${sig.ongoing ? 'this week' : rows[sig.to]?.label}`;
+  return {
+    title: `${name} ${sig.dir === 'up' ? 'jumped' : 'dropped'}`,
+    text: `It ${sig.dir === 'up' ? 'reached' : 'fell to'} ${fmtNear(sig.metric, sig.value, sig.dir === 'up' ? e.ucl : e.lcl)} ${when}. A normal week is ${rangeNear(sig.metric, e, sig.value)}.`,
+  };
+}
+
+function ChangeRow({ sig, t, note, primary, open, editing, onToggle, onEdit, onSave, onRemove, onCancel }) {
   const cv = useCv();
   const rows = t.rows;
   const m = METRIC[sig.metric];
+  const x = t.metrics[sig.metric];
   const explained = isExplained(note);
   const kind = sig.good ? 'good' : explained ? 'done' : sig.severity === 'high' ? 'crit' : 'bad';
   const cause = note && CAUSES.find((c) => c.value === note.cause);
   const shown = sig.kind === 'limit' ? sig.value : sig.avg;
   const why = open ? explainSignal(sig, t, { proofs: CV_D.proofs, candidates: CV_D.candidates }) : null;
   const todo = TODO[sig.metric];
-  const when = sig.weeks === 1 ? `Week of ${rows[sig.from]?.label}` : `${sig.weeks} weeks${sig.ongoing ? ', still going' : `, to ${rows[sig.to]?.label}`}`;
+  const plain = plainOf(sig, rows);
+  const n = rows.length;
+  const start = Math.max(t.w.from, Math.min(sig.from - 12, n - 26));
+  const marks = {};
+  for (let k = sig.from; k <= sig.to; k++) if (x.vals[k] != null && !t.holidays[k].length) marks[k] = kind === 'done' ? 'bad' : kind;
+  const fmt = (v, axis) => (axis && m.unit === 'money' ? fmtMetric(m.key, Math.round(v / 100) * 100) : fmtMetric(m.key, v));
   return (
-    <div className={s.card} data-kind={kind} data-on={open || editing}>
-      <button type="button" className={s.cardHead} onClick={onPick} aria-label={`Show ${m.label} on the chart`}>
-        <span className={`${s.sigIco} ${s[kind]}`}><Icon name={explained ? 'CircleCheck' : sig.dir === 'up' ? 'TrendingUp' : 'TrendingDown'} size={15} /></span>
-        <span className="cv-col" style={{ gap: 1, flex: 1, minWidth: 0 }}>
-          <span className={s.cardTitle}>{m.short} {sig.kind === 'shift' ? `shifted ${sig.dir}` : sig.dir === 'up' ? 'high' : 'low'}</span>
-          <span className="cv-xs cv-faint">{when}</span>
-        </span>
-        <span className={`${s.sev} ${SEV_CLASS[sig.severity]}`}>{SEV_LABEL[sig.severity]}</span>
-      </button>
-      <div className={s.cardNum}>
-        <span className={s.cardVal}>{fmtMetric(sig.metric, shown)}</span>
-        <span className="cv-xs cv-faint">{sig.kind === 'shift' ? 'average' : sig.dir === 'up' ? 'highest' : 'lowest'} · usual {fmtMetric(sig.metric, sig.expected.lcl)} to {fmtMetric(sig.metric, sig.expected.ucl)}</span>
-        {isMoney(sig.metric) && <Claim k={t.metrics[sig.metric].claim} />}
+    <div className={s.change} data-kind={kind}>
+      <div className={s.changeMain}>
+        <span className={`${s.sigIco} ${s[kind]}`}><Icon name={explained ? 'CircleCheck' : sig.dir === 'up' ? 'TrendingUp' : 'TrendingDown'} size={18} /></span>
+        <div className={s.changeText}>
+          <span className={s.changeTitleRow}>
+            <span className={s.cardTitle}>{plain.title}</span>
+            <span className={`${s.sev} ${SEV_CLASS[sig.severity]}`}>{sig.good ? 'Good news' : `${SEV_LABEL[sig.severity]} priority`}</span>
+          </span>
+          <p className={s.changeSentence}>{plain.text}</p>
+          <div className={s.changeDo}>
+            {sig.good ? <span className={s.doGood}><Icon name="CircleCheck" size={16} />Nothing to fix. Worth knowing what went right.</span>
+              : cause ? <Pill tone={explained ? 'neutral' : 'warn'} icon={explained ? 'CircleCheck' : 'Hourglass'}>{cause.label}</Pill>
+                : todo && <><span className={s.doLabel}>What to do</span><Button size="sm" variant={primary ? 'primary' : 'secondary'} className={primary ? s.ctaSm : undefined} iconRight="ArrowRight" onClick={() => cv.go(todo.page)}>{todo.label}</Button></>}
+            <span className={s.cardLinks}>
+              <button type="button" className={s.linkBtn} onClick={onToggle} aria-expanded={open}>{open ? 'Hide the weeks' : 'Show the weeks'}<Icon name={open ? 'ChevronUp' : 'ChevronDown'} size={15} /></button>
+              {!editing && <button type="button" className={s.linkBtn} onClick={onEdit}>{note ? 'Edit note' : 'I know why'}</button>}
+            </span>
+          </div>
+          {note?.text && !editing && <span className={s.noteText}>“{note.text}”</span>}
+        </div>
+        <div className={s.changeFig}>
+          <span className={s.cardVal}>{fmtNear(sig.metric, shown, sig.kind === 'limit' ? (sig.dir === 'up' ? sig.expected.ucl : sig.expected.lcl) : null)}</span>
+          <span className="cv-xs cv-faint">normal {rangeNear(sig.metric, sig.expected, sig.kind === 'limit' ? sig.value : null)}</span>
+          <RangeBar value={shown} lim={sig.expected} tone={kind === 'done' ? 'bad' : kind} />
+          {isMoney(sig.metric) && <Claim k={x.claim} />}
+        </div>
       </div>
-      <RangeBar value={shown} lim={sig.expected} tone={sig.good ? 'good' : sig.severity === 'high' ? 'crit' : 'bad'} />
-      <p className={s.cardWatch}><Icon name="Eye" size={15} /><span>{watchText(sig)}</span></p>
-      <div className={s.cardAct}>
-        {sig.good ? <Pill tone="good" icon="TrendingUp">Good news</Pill>
-          : cause ? <Pill tone={explained ? 'neutral' : 'warn'} icon={explained ? 'CircleCheck' : 'Hourglass'}>{cause.label}</Pill>
-            : todo && <Button size="sm" variant="secondary" iconRight="ArrowRight" onClick={() => cv.go(todo.page)}>{todo.label}</Button>}
-        <span className={s.cardLinks}>
-          <button type="button" className={s.linkBtn} onClick={onToggle} aria-expanded={open}>Why?</button>
-          {!editing && <button type="button" className={s.linkBtn} onClick={onEdit}>{note ? 'Edit note' : 'Explain'}</button>}
-        </span>
-      </div>
-      {note?.text && !editing && <span className={s.noteText}>“{note.text}”</span>}
+      {editing && <NoteForm note={note} onSave={onSave} onRemove={onRemove} onCancel={onCancel} />}
       {open && why && (
         <div className={s.details}>
-          <p className={s.cardWhat}>{m.help}</p>
-          <dl className={s.facts}>
-            <dt>Weeks</dt><dd>{rows[sig.from]?.label} to {rows[sig.to]?.label} ({plural(sig.weeks, 'week')})</dd>
-            <dt>Usual</dt><dd>{fmtMetric(sig.metric, sig.expected.lcl)} to {fmtMetric(sig.metric, sig.expected.ucl)}, average {fmtMetric(sig.metric, sig.expected.mean)}</dd>
-            <dt>Size</dt><dd>{sig.z} standard deviations</dd>
-            <dt>Evidence</dt><dd>{sig.kind === 'limit' ? `${plural(sig.breaches, 'week')} outside the range` : `${sig.weeks} weeks in a row on one side (rule: ${RUN})`}, {sig.n} baseline weeks{sig.limited ? ', limited history' : ''}</dd>
-            <dt>Data</dt><dd>{t.w.own ? 'Your Toast data' : 'Sample data'}{t.metrics[sig.metric].claim === 'mod' ? ', food modelled' : ''}</dd>
-          </dl>
-          {why.arithmetic.length > 0 && <div className={s.why}><b>What moved</b><ul>{why.arithmetic.map((x) => <li key={x}>{x}</li>)}</ul></div>}
-          {why.possible.length > 0 && <div className={s.why}><b>Worth checking</b><ul>{why.possible.map((x) => <li key={x}>{x}</li>)}</ul></div>}
-          {why.related.length > 0 && <div className={s.why}><b>Changes on the same lever</b><ul>{why.related.map((p) => <li key={p.id}>{p.title} ({p.outcome}{p.since ? `, since ${p.since}` : ''}), measured on Proof</li>)}</ul></div>}
-          <span className="cv-xs cv-faint">The figures alone can&apos;t prove the cause.</span>
-          <div className={s.acts}>
-            <Button size="sm" variant="ghost" icon="GitCompareArrows" onClick={onCompare}>Compare</Button>
-            {why.finding && <Button size="sm" variant="ghost" icon="ListChecks" onClick={() => cv.go('finding', { id: why.finding.id })}>Finding</Button>}
-          </div>
+          <TrendChart labels={rows.map((rw) => rw.label)} series={[{ key: m.key, label: m.short, color: SERIES_COLOR, vals: x.vals }]} lim={x.lim} start={start} end={n - 1}
+            marks={marks} fmt={fmt} height={200} ariaLabel={`${m.label} by week, with the flagged weeks marked`}
+            tip={{ title: (i) => `Week of ${shortDate(rows[i].iso) || rows[i].label}` }} />
+          <p className={s.cardWatch}><Icon name="Eye" size={15} /><span>{watchText(sig)}</span></p>
+          <p className={s.cardWhat}><b>{m.label}:</b> {m.help}</p>
+          {why.arithmetic.length > 0 && <div className={s.why}><b>What moved</b><ul>{why.arithmetic.map((v) => <li key={v}>{v}</li>)}</ul></div>}
+          {why.possible.length > 0 && <div className={s.why}><b>Worth checking</b><ul>{why.possible.map((v) => <li key={v}>{v}</li>)}</ul></div>}
+          {why.related.length > 0 && <div className={s.why}><b>Changes on the same lever</b><ul>{why.related.map((pr) => <li key={pr.id}>{pr.title} ({pr.outcome}{pr.since ? `, since ${pr.since}` : ''}), measured on Proof</li>)}</ul></div>}
+          <span className="cv-xs cv-faint">How sure: {sig.z} standard deviations from the usual, against {sig.n} past weeks{sig.limited ? ' (limited history)' : ''}. The figures alone can&apos;t prove the cause.</span>
+          {why.finding && <div className={s.acts}><Button size="sm" variant="ghost" icon="ListChecks" onClick={() => cv.go('finding', { id: why.finding.id })}>Open the finding</Button></div>}
         </div>
       )}
-      {editing && <NoteForm note={note} onSave={onSave} onRemove={onRemove} onCancel={onCancel} />}
     </div>
   );
 }
 
-function Changes({ t, notes, setNotes, focus, setFocus, onPick, onCompare }) {
+function Changes({ t, notes, setNotes, name }) {
   const [editing, setEditing] = React.useState(null);
+  const [open, setOpen] = React.useState(null);
   const [showGood, setShowGood] = React.useState(false);
   const keyed = t.signals.map((sig) => ({ sig, key: signalKey(sig, t.rows) }));
   const bad = keyed.filter((x) => !x.sig.good);
   const unexplained = bad.filter((x) => !isExplained(notes[x.key]));
   const good = keyed.filter((x) => x.sig.good);
   const list = [...unexplained, ...bad.filter((x) => isExplained(notes[x.key])), ...(showGood ? good : [])];
+  const firstKey = unexplained[0]?.key;
   const save = (sig, key) => (v) => {
     setNotes((cur) => ({ ...cleanNotes(cur), [key]: { ...v, at: new Date().toISOString() } }), `Trends note: ${METRIC[sig.metric].label}, week of ${t.rows[sig.from]?.label} (${CAUSES.find((c) => c.value === v.cause)?.label})`);
     setEditing(null);
@@ -333,36 +354,45 @@ function Changes({ t, notes, setNotes, focus, setFocus, onPick, onCompare }) {
     setEditing(null);
   };
   const have = Math.max(0, MIN_BASELINE - t.w.needWeeks);
-  return (
-    <section className="cv-card" aria-labelledby="trends-signals">
-      <div className="cv-card-head">
-        <span className="cv-h4" id="trends-signals">What to look at</span>
+  if (!t.w.ready) {
+    return (
+      <div className={`cv-card ${s.empty}`}>
+        <Icon name="Hourglass" size={28} />
+        <span className={s.emptyBig}>{have} of {MIN_BASELINE} weeks in</span>
+        <Progress have={have} need={MIN_BASELINE} />
+        <span className={s.headSub}>Trend Watch learns what a normal week looks like for {name} first, then flags anything out of the ordinary.</span>
       </div>
-      {!t.w.ready ? (
-        <div className={s.empty}>
-          <Icon name="Hourglass" size={28} />
-          <span className={s.emptyBig}>{have} of {MIN_BASELINE} weeks</span>
-          <Progress have={have} need={MIN_BASELINE} />
-          <span className="cv-xs cv-faint">Changes are flagged once there&apos;s enough history.</span>
-        </div>
-      ) : (
-        <div className={s.cards}>
-          {list.map(({ sig, key }) => (
-            <ChangeCard key={key} sig={sig} t={t} note={notes[key]} open={focus === key} editing={editing === key}
-              onPick={() => onPick(sig, key)} onToggle={() => setFocus(focus === key ? null : key)} onCompare={() => onCompare(sig)}
-              onEdit={() => setEditing(key)} onSave={save(sig, key)} onRemove={remove(sig, key)} onCancel={() => setEditing(null)} />
-          ))}
-          {!bad.length && (
-            <div className={s.empty}>
-              <span className="cv-up"><Icon name="CircleCheck" size={28} /></span>
-              <span className={s.emptyBig}>Nothing unusual</span>
-              <span className="cv-xs cv-faint">Every measure is inside its usual range.</span>
-            </div>
-          )}
-          {good.length > 0 && <button type="button" className={s.more} onClick={() => setShowGood((v) => !v)} aria-expanded={showGood}>{showGood ? 'Hide good news' : `Show ${good.length} good news`}</button>}
+    );
+  }
+  return (
+    <div className={s.changes}>
+      {list.map(({ sig, key }) => (
+        <ChangeRow key={key} sig={sig} t={t} note={notes[key]} primary={key === firstKey} open={open === key} editing={editing === key}
+          onToggle={() => setOpen(open === key ? null : key)}
+          onEdit={() => setEditing(key)} onSave={save(sig, key)} onRemove={remove(sig, key)} onCancel={() => setEditing(null)} />
+      ))}
+      {!bad.length && (
+        <div className={`cv-card ${s.empty}`}>
+          <span className="cv-up"><Icon name="CircleCheck" size={28} /></span>
+          <span className={s.emptyBig}>Nothing unusual in {name}</span>
+          <span className={s.headSub}>Every number is inside its normal range. Nothing to do here this week.</span>
         </div>
       )}
-    </section>
+      {good.length > 0 && <button type="button" className={s.more} onClick={() => setShowGood((v) => !v)} aria-expanded={showGood}>{showGood ? 'Hide good news' : `Show ${good.length} good ${good.length === 1 ? 'change' : 'changes'}`}</button>}
+    </div>
+  );
+}
+
+/** A numbered step heading, so the page reads top to bottom. */
+function Step({ n, title, sub, id }) {
+  return (
+    <div className={s.step}>
+      <span className={s.stepNum} aria-hidden="true">{n}</span>
+      <span className="cv-col" style={{ gap: 2, minWidth: 0 }}>
+        <h3 className={s.stepTitle} id={id}>{title}</h3>
+        {sub && <span className={s.headSub}>{sub}</span>}
+      </span>
+    </div>
   );
 }
 
@@ -393,13 +423,7 @@ function LookAhead({ t, notes, onPick }) {
   }
   if (!items.length) return null;
   return (
-    <section className="cv-card" aria-labelledby="trends-ahead">
-      <div className="cv-card-head">
-        <span className="cv-col" style={{ gap: 2 }}>
-          <span className="cv-h4" id="trends-ahead">What to watch next week</span>
-          <span className={s.headSub}>The lines that tell you whether a change is real or a one-off.</span>
-        </span>
-      </div>
+    <section aria-labelledby="trends-ahead">
       <div className={s.ahead}>
         {items.slice(0, 4).map((it) => (
           <button key={it.key} type="button" className={s.aheadItem} data-tone={it.tone} onClick={() => onPick(it.key)}>
@@ -487,6 +511,7 @@ function RoomView({ t, notes, setNotes }) {
   const [sel, setSel] = React.useState(null);
   const [focus, setFocus] = React.useState(null);
   const [table, setTable] = React.useState(false);
+  const [explore, setExplore] = React.useState(false);
   const chartRef = React.useRef(null);
   const m = METRIC[metric] ?? METRIC.net;
   const x = t.metrics[m.key];
@@ -527,12 +552,23 @@ function RoomView({ t, notes, setNotes }) {
   const unitLabel = { money: 'US$ per week', cents: 'US$', count: 'per week', pct: '% of net sales', pct1: '% of net sales', mins: 'minutes per week', minutes: 'minutes' }[m.unit];
   const dataThrough = dataEnd(CV_D.room);
   const rangeItems = ranges.map((r) => ({ v: r.v, label: r.label.replace(/^All (\d+) weeks$/, 'All') }));
+  const roomName = CV_ROOM.short || CV_ROOM.name;
+  const openCount = t.signals.filter((q) => !q.good && !isExplained(notes[signalKey(q, t.rows)])).length;
   return (
     <>
-      <Verdict t={t} notes={notes} name={CV_ROOM.short || CV_ROOM.name} onInvestigate={(sig) => pick(sig, signalKey(sig, t.rows))} />
+      <Step n={1} id="trends-how" title={`How is ${roomName} doing?`} sub="One number tells you if the business is getting better or worse: contribution, what's left of sales after food and labor." />
+      <RoomSummary t={t} name={roomName} />
 
-      <div className={s.main}>
-        <section className="cv-card" aria-labelledby="trends-chart" ref={chartRef}>
+      <Step n={2} id="trends-changed" title={`What changed in ${roomName}`}
+        sub={t.w.ready ? (openCount ? `${plural(openCount, 'change')} moved more than normal, most important first. Each one says what to do.` : 'Nothing moved more than normal.') : 'Not judged yet.'} />
+      <Changes t={t} notes={notes} setNotes={setNotes} name={roomName} />
+
+      <Step n={3} id="trends-ahead" title="What to watch next week" sub="The lines that tell you whether a change was a one-off or is here to stay." />
+      <LookAhead t={t} notes={notes} onPick={(k) => { pickMetric(k); setExplore(true); }} />
+
+      <details className={`cv-card ${s.disclosure}`} open={explore} onToggle={(e) => setExplore(e.currentTarget.open)}>
+        <summary><Icon name="ChevronDown" size={16} className={s.chev} />Explore any number, week by week</summary>
+        <div className={s.explore} ref={chartRef}>
           <div className={s.toolbar}>
             <span className="cv-row" style={{ gap: 8, flexWrap: 'wrap' }}>
               <MetricSelect id="trends-metric" value={m.key} onChange={pickMetric} metrics={metrics} flagged={flaggedMetrics} />
@@ -563,11 +599,8 @@ function RoomView({ t, notes, setNotes }) {
           {selected == null && <p className={s.howTo}>{x.lim ? 'Grey band: this room’s usual range. Colored dots: weeks flagged as unusual.' : 'The usual range appears once there are enough weeks.'} Tap a week for every number.</p>}
           {table && <DataTable t={t} metric={m.key} start={start} end={end} cmp={cmp} />}
           {selected != null && <WeekPanel t={t} i={selected} metric={m.key} setMetric={pickMetric} notes={notes} metrics={metrics} onClose={() => setSel(null)} />}
-        </section>
-        <Changes t={t} notes={notes} setNotes={setNotes} focus={focus} setFocus={setFocus} onPick={pick} onCompare={compare} />
-      </div>
-
-      <LookAhead t={t} notes={notes} onPick={(k) => { pickMetric(k); toChart(); }} />
+        </div>
+      </details>
 
       <details className={`cv-card ${s.disclosure}`}>
         <summary><Icon name="ChevronDown" size={16} className={s.chev} />About this data</summary>
@@ -613,9 +646,9 @@ function CvTrends() {
     <div className={`cv-page wide ${s.page}`}>
       <PageHead over={`Trend Watch · ${own ? 'your Toast data' : 'sample data'} through ${shortDate(last?.iso)}`}
         q="Catch a slide before it costs you"
-        sub="Every room, every week, against its own usual. Only real changes get flagged."
+        sub="Trend Watch learns what a normal week looks like for each room, flags anything that moves more than normal, and tells you what to check."
         right={<Button variant="secondary" size="sm" icon="Download" onClick={exportCsv}>CSV</Button>} />
-      <RoomCards current={eng.room} onPick={(id) => engine.setRoom(id)} />
+      <LocationSwitch current={eng.room} onPick={(id) => engine.setRoom(id)} />
       <RoomView key={eng.room} t={t} notes={notes} setNotes={setNotes} />
     </div>
   );
