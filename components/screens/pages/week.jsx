@@ -134,7 +134,7 @@ function PlanRow({ item, children, lead, onData }) {
   const [why, setWhy] = React.useState(false);
   const hasWhy = !!(item.talk?.length || item.why || item.safety);
   return (
-    <div className={`${s.planRow} ${item.blocked ? s.planBlocked : ''}`}>
+    <div id={`plan-${item.id}`} className={`${s.planRow} ${item.blocked ? s.planBlocked : ''}`}>
       {lead}
       <div className={s.grow}>
         <span className={s.planTitle}>{item.title}</span>
@@ -187,6 +187,19 @@ function PlanDraft({ v, rec, defaults, onCancel }) {
     return [c.id, { on: d ? true : !defaults && !c.blocked && i < PLAN_TOP && pool.includes(c), owner: d?.owner ?? owner0, due: d?.due ?? due0 }];
   })));
   const set = (id, patch) => setRows((r) => ({ ...r, [id]: { ...r[id], ...patch } }));
+  // A fix tapped in the scorecard: add it to the plan, show it and point at it.
+  React.useEffect(() => {
+    const on = (e) => {
+      const c = [...pool, ...extra].find((x) => x.id === e.detail);
+      if (!c) return;
+      e.preventDefault();
+      if (!c.blocked) set(c.id, { on: true });
+      if (!pool.slice(0, PLAN_TOP).includes(c)) setShowMore(true);
+      requestAnimationFrame(() => { const el = document.getElementById(`plan-${c.id}`); if (el) flashRow(el); });
+    };
+    window.addEventListener('week:fix', on);
+    return () => window.removeEventListener('week:fix', on);
+  });
   const visible = [...pool.slice(0, PLAN_TOP), ...(showMore ? [...pool.slice(PLAN_TOP), ...extra] : [])];
   const picked = Object.entries(rows).filter(([, r]) => r.on).map(([id, r]) => ({ id, owner: r.owner, due: r.due }));
   const total = picked.reduce((t, p) => { const c = [...pool, ...extra].find((x) => x.id === p.id); return t + (c ? c.conservative ?? c.value : 0); }, 0);
@@ -317,81 +330,46 @@ function Guide({ items }) {
   );
 }
 
-/**
- * What changed, as a short list anyone can read: each line says in words what moved,
- * with a bar that grows right when it added money and left when it cost money,
- * then the total. Replaces the waterfall (Ramidu, 2026-11-18: "I don't understand the graph").
- */
-function Breakdown({ dec, vs }) {
-  const line = (k) => dec.lines.find((l) => l.key === k);
-  const net = line('net'), covers = line('covers'), check = line('check'), food = line('food'), labor = line('labour');
-  const n = (x) => Math.abs(Math.round(x)).toLocaleString('en-US');
-  const salesWhy = Math.round(covers.change) !== 0
-    ? `${n(covers.change)} ${covers.change > 0 ? 'more' : 'fewer'} guests${Math.abs(check.change) >= 0.05 ? `, each spending ${cvMoney(Math.abs(check.change), { cents: true })} ${check.change > 0 ? 'more' : 'less'}` : ''}`
-    : `the same number of guests, each spending ${cvMoney(Math.abs(check.change), { cents: true })} ${check.change >= 0 ? 'more' : 'less'}`;
-  const rows = [
-    { key: 'net', label: net.change >= 0 ? 'You sold more' : 'You sold less', sub: salesWhy, effect: net.effect },
-    { key: 'food', label: food.change > 0 ? 'Food cost more' : 'Food cost less', sub: `${usd(food.now)} on ingredients this week`, effect: food.effect },
-    { key: 'labour', label: labor.change > 0 ? 'Labor cost more' : 'Labor cost less', sub: `${usd(labor.now)} in hourly wages this week`, effect: labor.effect },
-  ];
-  const max = Math.max(...rows.map((r) => Math.abs(r.effect)), 1);
-  const total = dec.contribution.change;
-  return (
-    <div className={s.bd} role="table" aria-label={`What changed compared with ${vs}`}>
-      <div className={s.bdHead} role="row">
-        <span role="columnheader">Compared with {vs}</span>
-        <span role="columnheader" className={s.bdAxis} aria-hidden="true"><span>costs you</span><span>adds to you</span></span>
-        <span role="columnheader" className={s.bdAmt}>Effect</span>
-      </div>
-      {rows.map((r) => (
-        <div key={r.key} className={s.bdRow} role="row">
-          <span role="cell" className={s.bdText}><b>{r.label}</b><span>{r.sub}</span></span>
-          <span role="cell" className={s.bdTrack} aria-hidden="true">
-            <span className={`${s.bdBar} ${r.effect >= 0 ? s.bdUp : s.bdDown}`} style={{ width: `${(Math.abs(r.effect) / max) * 50}%` }} />
-          </span>
-          <span role="cell" className={`${s.bdAmt} ${r.effect >= 0 ? s.bdAmtUp : s.bdAmtDown}`}>{usd(r.effect, true)}</span>
-        </div>
-      ))}
-      <div className={`${s.bdRow} ${s.bdTotal}`} role="row">
-        <span role="cell" className={s.bdText}><b>{total >= 0 ? 'So you kept more' : 'So you kept less'}</b><span>{usd(dec.contribution.then)} before, {usd(dec.contribution.now)} this week</span></span>
-        <span role="cell" aria-hidden="true" />
-        <span role="cell" className={s.bdAmt}>{usd(total, true)}</span>
-      </div>
-    </div>
-  );
+function flashRow(el) {
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el.classList.add(s.flash);
+  setTimeout(() => el.classList.remove(s.flash), 1600);
 }
 
-/* Step 1: how the week went, and why. */
 /**
- * The week as one sum anyone can read: what helped, minus what cost you, equals what you kept.
- * Ramidu (2026-11-18): the bars still had "a lot of parts moving"; this is the one thing to look at.
+ * The scorecard (Ramidu, 2026-11-18: "sell the outcome, easy to understand, easy to operate"):
+ * sales, food and labor, each green or red against the normal week, each with the one action
+ * that wins the most back. The button takes you to that action in step 2.
  */
-function Sum({ dec, vs }) {
-  const name = { net: ['More sales', 'Lower sales'], food: ['Lower food cost', 'Higher food cost'], labour: ['Lower labor cost', 'Higher labor cost'] };
-  const parts = dec.lines.filter((l) => l.effect != null && Math.abs(l.effect) >= 1).map((l) => ({ e: l.effect, n: name[l.key][l.effect >= 0 ? 0 : 1] }));
-  const up = parts.filter((p) => p.e > 0), down = parts.filter((p) => p.e < 0);
-  const tot = (xs) => xs.reduce((t, p) => t + p.e, 0);
-  const words = (xs) => xs.map((p, i) => (i ? p.n.toLowerCase() : p.n)).join(' and ');
-  const ch = dec.contribution.change;
+function Scorecard({ score, vs }) {
+  const cv = useCv();
+  const open = (fix) => {
+    // The plan picks it up (ticks it and shows it); otherwise scroll to it, or open its page.
+    const ev = new CustomEvent('week:fix', { detail: fix.id, cancelable: true });
+    if (window.dispatchEvent(ev)) {
+      const el = document.getElementById(`plan-${fix.id}`);
+      if (el) flashRow(el); else cv.go(fix.go);
+    }
+  };
   return (
-    <div className={s.sum} role="group" aria-label={`Compared with ${vs}`}>
-      <div className={`${s.sumTile} ${s.sumUp}`}>
-        <span className={s.sumLbl}>What helped</span>
-        <span className={s.sumNum}>{up.length ? usd(tot(up), true) : usd(0)}</span>
-        <span className={s.sumSub}>{up.length ? words(up) : 'Nothing this week'}</span>
-      </div>
-      <span className={s.sumOp} aria-hidden="true"><Icon name="Minus" size={20} /></span>
-      <div className={`${s.sumTile} ${s.sumDown}`}>
-        <span className={s.sumLbl}>What cost you</span>
-        <span className={s.sumNum}>{usd(-tot(down))}</span>
-        <span className={s.sumSub}>{down.length ? words(down) : 'Nothing this week'}</span>
-      </div>
-      <span className={s.sumOp} aria-hidden="true">=</span>
-      <div className={`${s.sumTile} ${s.sumRes} ${ch >= 0 ? s.sumGood : s.sumBad}`}>
-        <span className={s.sumLbl}>{ch >= 0 ? 'You kept more' : 'You kept less'}</span>
-        <span className={s.sumNum}>{usd(ch, true)}</span>
-        <span className={s.sumSub}>than {vs}</span>
-      </div>
+    <div className={s.score}>
+      {score.map((f) => (
+        <div key={f.key} className={`${s.scoreTile} ${f.good ? s.scoreGood : s.scoreBad}`}>
+          <span className={s.scoreHead}>
+            <span className={s.scoreName}>{f.name}</span>
+            <span className={s.scoreState}><Icon name={f.good ? 'CircleCheck' : 'TriangleAlert'} size={15} />{f.good ? 'Working for you' : 'Costing you'}</span>
+          </span>
+          <span className={s.scoreNum}>{usd(f.effect, true)}</span>
+          <span className={s.scoreSub}>{f.sub} than {vs}</span>
+          {f.fix ? (
+            <button type="button" className={s.scoreFix} onClick={() => open(f.fix)}>
+              <span className={s.scoreFixLbl}>{f.good ? 'Grow it' : f.fix.prevent ? 'Avoid it' : 'Win it back'}: <b>{usd(f.fix.worth)}/wk</b></span>
+              <span className={s.scoreFixTitle}>{f.fix.title}</span>
+              <Icon name="ArrowRight" size={15} />
+            </button>
+          ) : <span className={s.scoreNone}>No action needed this week</span>}
+        </div>
+      ))}
     </div>
   );
 }
@@ -399,36 +377,38 @@ function Sum({ dec, vs }) {
 function StepWhy({ v, comparator, setComparator }) {
   const dec = v.decomposition;
   const [weeks, setWeeks] = React.useState(false);
-  const [parts, setParts] = React.useState(false);
   const avail = v.comparators.filter((c) => c.available);
   const missing = v.comparators.filter((c) => !c.available);
   const line = (k) => dec?.lines.find((l) => l.key === k);
   const c = v.contribution;
   const ch = dec?.contribution.change;
+  const red = (v.score || []).filter((f) => !f.good);
+  const back = red.reduce((t, f) => t + (f.fix?.worth || 0), 0);
+  const names = red.map((f) => f.name.toLowerCase()).join(' and ');
+  const title = !dec ? 'No earlier week to compare with yet'
+    : red.length && back >= 1 ? `Win back ${usd(back)} a week on ${names}`
+      : red.length ? `${names.charAt(0).toUpperCase()}${names.slice(1)} cost you this week`
+        : 'Sales, food and labor all worked for you';
   return (
-    <Step n={1} id="week-why" kicker="How the week went" title={dec ? (ch >= 0 ? `Where the extra ${usd(ch)} came from` : `Where the ${usd(-ch)} went`) : 'No earlier week to compare with yet'}
-      sub={dec ? null : 'This fills in once there’s an earlier week of your own data.'}>
-      <div className={s.hero}>
-        <div className={s.heroFig}>
-          <span className={s.heroLbl}>Kept after food & labor</span>
-          <span className={s.heroNum}>{c.value == null ? '—' : <Money id="earned-week">{usd(c.value)}</Money>}</span>
-          <span className={s.heroCmp}>
-            <Claim k={c.claim} />
-          </span>
+    <Step n={1} id="week-why" kicker="How the week went" title={title}
+      sub={dec ? `Your three numbers against ${vsPhrase(v.comparator)}. Tap a fix to add it to your plan; amounts are potential until tested.` : 'This fills in once there’s an earlier week of your own data.'}>
+      {v.score && <Scorecard score={v.score} vs={vsPhrase(v.comparator)} />}
+      {dec && (
+        <div className={`${s.result} ${ch >= 0 ? s.resultGood : s.resultBad}`}>
+          <span>Together you kept <b><Money id="earned-week">{usd(c.value)}</Money></b> after food and labor</span>
+          <span className={s.resultNum}>{usd(ch, true)} vs {vsPhrase(v.comparator)}</span>
+          <Claim k={c.claim} />
         </div>
-      </div>
-      {dec && <Sum dec={dec} vs={vsPhrase(v.comparator)} />}
+      )}
       <div className={s.links}>
-        {dec && <button type="button" className={s.linkBtn} aria-expanded={parts} onClick={() => setParts((x) => !x)}><Icon name="ListOrdered" size={15} />{parts ? 'Hide' : 'See'} each part<Icon name={parts ? 'ChevronUp' : 'ChevronDown'} size={14} /></button>}
         {v.history.length > 1 && <button type="button" className={s.linkBtn} aria-expanded={weeks} onClick={() => setWeeks((x) => !x)}><Icon name="ChartColumn" size={15} />{weeks ? 'Hide' : 'See'} the last {v.history.length} weeks<Icon name={weeks ? 'ChevronUp' : 'ChevronDown'} size={14} /></button>}
         <More>
-          “Kept” is net sales minus food cost minus hourly labor. It isn’t profit: rent and other costs aren’t taken off. Sales, food and labor add up exactly to the change. That describes the week; it doesn’t prove what caused it, and none of it is a saving we claim. Food cost is plates sold × recipe cost{c.status === 'estimated' ? '; labor isn’t measured yet, so it’s estimated' : ''}.
+          “Kept” is net sales minus food cost minus hourly labor. It isn’t profit: rent and other costs aren’t taken off. Sales, food and labor add up exactly to the change. That describes the week; it doesn’t prove what caused it, and none of it is a saving we claim. Each fix is the plan’s best ready action for that number, shown at the amount we’d plan on until it’s tested. Food cost is plates sold × recipe cost{c.status === 'estimated' ? '; labor isn’t measured yet, so it’s estimated' : ''}.
           {dec ? ` Sales ${usd(line('net').now)} from ${Math.round(line('covers').now).toLocaleString('en-US')} covers at ${cvMoney(line('check').now, { cents: true })} each. ${v.comparator.desc}.` : ''}
           {missing.length ? ` Not available yet: ${missing.map((x) => `${x.label.toLowerCase()} (${x.reason.replace(/\.$/, '').toLowerCase()})`).join('; ')}.` : ''}
           {avail.length > 1 && <span className={s.moreToggle}><Toggle label="Compare with" options={avail.map((x) => ({ value: x.id, label: VS[x.id] ? VS[x.id].replace(/^your /, '') : x.label }))} value={comparator || v.comparator?.id} onChange={setComparator} /></span>}
         </More>
       </div>
-      {parts && dec && <Breakdown dec={dec} vs={vsPhrase(v.comparator)} />}
       {weeks && <Weeks v={v} />}
     </Step>
   );

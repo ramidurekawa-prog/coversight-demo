@@ -241,3 +241,22 @@ describe('the digest and the review record', () => {
     expect(Object.keys(kept)).not.toContain('2026-01-01');
   });
 });
+
+describe('the scorecard', () => {
+  it('scores sales, food and labor against the same normal week, each with the best ready fix from the plan', () => {
+    for (const id of ['oakland', 'berkeley', 'walnut']) {
+      const v = view(id);
+      expect(v.score.map((f) => f.key)).toEqual(['net', 'food', 'labour']);
+      const total = v.score.reduce((t, f) => t + f.effect, 0);
+      expect(total).toBeCloseTo(v.decomposition.contribution.change, 6);
+      for (const f of v.score) {
+        expect(f.good).toBe(f.effect >= 0);
+        if (!f.fix) continue;
+        const item = v.plan.ranked.find((i) => i.id === f.fix.id);
+        expect(item).toBeTruthy();
+        expect(item.blocked).toBeFalsy();
+        expect(f.fix.worth).toBe(item.conservative ?? item.value);
+      }
+    }
+  });
+});
