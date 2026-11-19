@@ -86,8 +86,6 @@ export const ACTION_KEYS = {
   'week.review': { scope: 'room', schema: z.record(z.string().regex(/^\d{4}-\d{2}-\d{2}$/), z.object({ at: isoDate, note: z.string().trim().max(1000).optional() })).refine((r) => Object.keys(r).length <= 26, 'keeps at most 26 weeks') },
   /** Kitchen: Line Trials, one change on the line at a time, measured on matched nights. Recording one never changes a kitchen screen. */
   'kitchen.trials': { scope: 'room', schema: kitchenSchemas.trials },
-  /** Kitchen: ticket times logged by hand for nights the kitchen screen didn't send, keyed by night. */
-  'kitchen.log': { scope: 'room', schema: kitchenSchemas.log },
 } as const;
 
 export type ActionKey = keyof typeof ACTION_KEYS;

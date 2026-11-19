@@ -162,7 +162,7 @@ function TrialCard({ p, trials, setTrials }) {
       <h3 className={s.trialTitle}>{p.move.title}</h3>
       <p className={s.body}>{p.move.how}</p>
       <div className={s.aims}><Icon name="Target" size={16} /><span>{p.move.aims}</span></div>
-      {p.feed?.state === 'stale' && <p className={s.small}>The kitchen screen stopped sending times on {p.feed.last}. Log the trial nights by hand below so we can measure it.</p>}
+      {p.feed?.state === 'stale' && <p className={s.small}>The kitchen screen stopped sending times on {p.feed.last}. The trial is measured once it’s sending again.</p>}
       <div className={s.row}>
         <Button icon="Play" onClick={start} disabled={busy}>Try it this weekend</Button>
         <span className={s.small}>Measured on {plural(TRIAL_NIGHTS, 'matching night')}. No dollar claimed.</span>
@@ -273,8 +273,7 @@ function SeeWhy({ p }) {
             <li>{src} Unmarked numbers come from the restaurant’s own data.</li>
             <li>Goal: {p.target} minutes from fire to the pass. Busy hours are Friday and Saturday, 5 to 10 pm.</li>
             <li>A slow kitchen only costs money when guests can’t get a table, so we don’t put a dollar on it. Faster turns are counted once, on Tables.</li>
-            {p.feed?.state === 'stale' && <li>The kitchen screen last sent times on {p.feed.last}. Log nights by hand below until it’s back.</li>}
-            {p.logged > 0 && <li>{plural(p.logged, 'night')} logged by hand are in the trend and the trials, marked hand-entered.</li>}
+            {p.feed?.state === 'stale' && <li>The kitchen screen last sent times on {p.feed.last}. These are the last good weeks.</li>}
           </ul>
         </div>
       )}
@@ -282,68 +281,39 @@ function SeeWhy({ p }) {
   );
 }
 
-/* ---------------------------------------------------------------- hand entry */
+/* ---------------------------------------------------------------- locked: no kitchen screen */
 
-function LogNight({ p, logs, setLogs }) {
+const UNLOCKS = [
+  ['Clock', 'Which hours food runs late', 'Every hour, green or red, against your goal.'],
+  ['Route', 'Which station holds tickets up', 'The Line Map shows where late tickets wait.'],
+  ['Gauge', 'How busy the line can get', 'The Rush Point: orders an hour before food runs late.'],
+  ['FlaskConical', 'Whether a change worked', 'Line Trials measure each change on matching nights.'],
+];
+
+/** The page stays locked until a kitchen screen sends ticket times: nobody is asked to time tickets by hand. */
+function Locked({ feed }) {
   const cv = useCv();
-  const [open, setOpen] = React.useState(false);
-  const [date, setDate] = React.useState(todayIso());
-  const [f, setF] = React.useState({});
-  const [slow, setSlow] = React.useState('');
-  const [err, setErr] = React.useState(null);
-  const save = () => {
-    const hours = {};
-    for (const h of BUSY_HOURS) {
-      const raw = f[h];
-      if (raw === undefined || raw === '') continue;
-      const v = Number(raw);
-      if (!Number.isFinite(v) || v < 1 || v > 120) { setErr(`${hourLabel(h)}: enter minutes between 1 and 120.`); return; }
-      hours[h] = Math.round(v * 10) / 10;
-    }
-    if (!Object.keys(hours).length) { setErr('Enter the minutes for at least one hour.'); return; }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date > todayIso()) { setErr('Pick tonight or an earlier night.'); return; }
-    setErr(null);
-    setLogs((all) => ({ ...(all || {}), [date]: { hours, ...(slow ? { slow } : {}), at: new Date().toISOString() } }), `Kitchen times logged for ${date}`);
-    setF({}); setSlow(''); setOpen(false);
-    cv.toast('Saved. It counts as hand-entered.');
-  };
   return (
-    <section className={s.card}>
-      <div className={s.sectionHead}>
-        <h3 className={s.h3}>Log a night by hand</h3>
-        <span className={s.sub}>For nights the kitchen screen didn’t send times</span>
-        <span className={s.headEnd}><Button variant="secondary" size="sm" icon={open ? 'X' : 'PencilLine'} onClick={() => setOpen((o) => !o)}>{open ? 'Close' : 'Log a night'}</Button></span>
-      </div>
-      {open && (
-        <div className={s.form}>
-          <label className={s.field}><span>Night</span><input type="date" value={date} max={todayIso()} onChange={(e) => setDate(e.target.value)} /></label>
-          <div className={s.hoursIn}>
-            {BUSY_HOURS.map((h) => (
-              <label key={h} className={s.field}><span>{hourLabel(h)}</span><input type="number" inputMode="decimal" min="1" max="120" step="0.5" placeholder="min" aria-label={`Average minutes for food at ${hourLabel(h)}`} value={f[h] ?? ''} onChange={(e) => setF((x) => ({ ...x, [h]: e.target.value }))} /></label>
-            ))}
-          </div>
-          <label className={s.field}><span>Slowest station</span>
-            <select value={slow} onChange={(e) => setSlow(e.target.value)}>
-              <option value="">Not sure</option>
-              {p.stations.map((x) => <option key={x.name} value={x.name}>{x.name}</option>)}
-            </select>
-          </label>
-          {err && <p className={s.err} role="alert">{err}</p>}
-          <div className={s.row}><Button variant="secondary" icon="Check" onClick={save}>Save the night</Button><span className={s.small}>Average minutes from fire to the pass, per hour.</span></div>
-        </div>
-      )}
-      {p.logs.length > 0 && (
-        <ul className={s.logList}>
-          {p.logs.map((l) => (
-            <li key={l.iso}>
-              <span className={s.trialName}>{fmtDay(l.iso)}</span>
-              <span className={s.small}>{Object.entries(l.hours).map(([h, m]) => `${hourLabel(+h)} ${m} min`).join(' · ')}{l.slow ? ` · slowest: ${l.slow}` : ''}{l.used ? '' : ' · the kitchen screen covers this night'}</span>
-              <Button variant="ghost" size="sm" onClick={() => setLogs((all) => { const next = { ...(all || {}) }; delete next[l.iso]; return next; }, `Kitchen log removed for ${l.iso}`)}>Remove</Button>
-            </li>
+    <div className={`cv-page wide ${s.page}`}>
+      <header className={s.head}>
+        <span className={s.overHead}>Kitchen speed · {CV_ROOM.name}</span>
+        <h2 className={s.title}>Connect your kitchen screen to see how fast food gets out</h2>
+        <p className={s.body}>Ticket times come from a kitchen display (KDS). Your POS alone doesn’t record when food is fired and finished, so this page stays empty until one is connected. Nobody has to time tickets by hand.</p>
+      </header>
+      <section className={`${s.card} ${s.lockCard}`}>
+        <span className={s.over}><Icon name="Lock" size={15} />What it unlocks</span>
+        <ul className={s.unlocks}>
+          {UNLOCKS.map(([icon, title, sub]) => (
+            <li key={title}><span className={s.unlockIco}><Icon name={icon} size={20} /></span><span><b>{title}</b><span className={s.small}>{sub}</span></span></li>
           ))}
         </ul>
-      )}
-    </section>
+        <div className={s.row}>
+          <Button icon="Plug" onClick={() => cv.go('connect')}>Connect your kitchen screen</Button>
+          <span className={s.small}>Toast KDS: add the Kitchen Timings export. Other kitchen screens switch on when connected.</span>
+        </div>
+        {feed?.note && <p className={s.small}>{feed.note}</p>}
+      </section>
+    </div>
   );
 }
 
@@ -351,14 +321,14 @@ function LogNight({ p, logs, setLogs }) {
 
 function CvKitchen() {
   const [trials, setTrials] = useSaved('kitchen.trials', []);
-  const [logs, setLogs] = useSaved('kitchen.log', {});
   const feed = CV_D.feeds.find((f) => f.name === 'Kitchen display') || null;
-  const p = React.useMemo(() => kitchenPage(CV_D.room, { logs, trials, proofs: CV_D.proofs, feed, roomId: CV_D.id }),
+  const p = React.useMemo(() => kitchenPage(CV_D.room, { trials, proofs: CV_D.proofs, feed, roomId: CV_D.id }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [CV_D.id, logs, trials]);
+    [CV_D.id, trials, feed?.state]);
   const [view, setView] = React.useState('when');
-  const [dow, setDow] = React.useState(p.worstDay);
-  React.useEffect(() => { setDow(p.worstDay); }, [p.worstDay]);
+  const [dow, setDow] = React.useState(p.worstDay || 'Sat');
+  React.useEffect(() => { if (p.worstDay) setDow(p.worstDay); }, [p.worstDay]);
+  if (p.locked) return <Locked feed={p.feed} />;
 
   return (
     <div className={`cv-page wide ${s.page}`}>
@@ -413,8 +383,7 @@ function CvKitchen() {
 
       <Trials p={p} />
       <SeeWhy p={p} />
-      <LogNight p={p} logs={logs} setLogs={setLogs} />
-      {p.source === 'sample' && <p className={s.foot}><Icon name="FlaskConical" size={15} />Kitchen times on this screen are sample data until your kitchen screen or a logged night replaces them.</p>}
+      {p.source === 'sample' && <p className={s.foot}><Icon name="FlaskConical" size={15} />Kitchen times on this screen are sample data until your own kitchen screen is connected.</p>}
     </div>
   );
 }

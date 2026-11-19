@@ -66,7 +66,7 @@ describe('Kitchen speed on the sample', () => {
         expect(cells.find((c) => c.dow === 'Fri' && c.hour === h).min, `${id} Fri ${h}`).toBeCloseTo(d.room.tickets.fri[i], 1);
         expect(cells.find((c) => c.dow === 'Sat' && c.hour === h).min, `${id} Sat ${h}`).toBeCloseTo(d.room.tickets.sat[i], 1);
       });
-      const p = kitchenPage(d.room, { roomId: id });
+      const p = kitchenPage(d.room, { roomId: id, feed: { state: 'healthy' } });
       expect(p.days.Sat.filter((h) => BUSY_HOURS.includes(h.hour)).map((h) => h.min)).toEqual(d.room.tickets.sat);
     }
   });
@@ -118,23 +118,24 @@ describe('Line Trials', () => {
   });
 });
 
-describe('Hand entry', () => {
-  it('nights logged after the feed’s last night join the table, marked hand-entered', () => {
+describe('No kitchen screen, no page', () => {
+  it('locks when the kitchen display is missing or off, and never asks for hand-timed tickets', () => {
     const d = deriveRoom(SEED, 'oakland');
-    const base = kitchenData(d.room);
-    const logs = { '2030-01-05': { hours: { 19: 15, 20: 16 }, slow: 'Grill', at: '' }, '2026-01-03': { hours: { 19: 30 }, at: '' } };
-    const K = kitchenData(d.room, { logs });
-    expect(K.logged).toBe(1);
-    expect(K.nights.at(-1)).toMatchObject({ iso: '2030-01-05', dow: 'Sat', hand: true });
-    expect(K.nights).toHaveLength(base.nights.length + 1);
-    // Logged nights have no order counts, so the hour averages and the Rush Point don't move.
-    expect(cellsOf(K)).toEqual(cellsOf(base));
+    expect(kitchenPage(d.room, { feed: null })).toEqual({ locked: true, feed: null });
+    expect(kitchenPage(d.room, { feed: { state: 'off', last: 'Not connected' } }).locked).toBe(true);
+    expect(kitchenPage(d.room, { feed: { state: 'stale', last: 'Oct 21' } }).locked).toBe(false);
   });
 
-  it('the server keeps a log and a trial in bounds', () => {
-    expect(kitchenSchemas.log.safeParse({ '2026-11-14': { hours: { 19: 18.5 }, slow: 'Grill', at: 'x' } }).success).toBe(true);
-    expect(kitchenSchemas.log.safeParse({ '2026-11-14': { hours: {}, at: 'x' } }).success).toBe(false);
-    expect(kitchenSchemas.log.safeParse({ '2026-11-14': { hours: { 19: 500 }, at: 'x' } }).success).toBe(false);
+  it('a Toast room whose upload has no kitchen timings is locked, not shown the sample', () => {
+    const { unknown: _u, ...noKitchen } = readToastExports(Object.entries(toastFixture()).filter(([n]) => n !== 'KitchenTimings.csv').map(([name, text]) => ({ name, text })));
+    const ds = applyInputs(SEED, { oakland: { toast: { rows: [noKitchen] } } });
+    const d = deriveRoom(ds, 'oakland');
+    const feed = d.feeds.find((f) => f.name === 'Kitchen display');
+    expect(feed.state).toBe('off');
+    expect(kitchenPage(d.room, { feed }).locked).toBe(true);
+  });
+
+  it('the server keeps a trial in bounds', () => {
     const trial = { id: 'kitchen:oakland:grill:frisat:19-20', title: 'T', station: 'Grill', days: ['Fri', 'Sat'], from: 19, to: 20, start: '2026-11-20', status: 'running', at: 'x' };
     expect(kitchenSchemas.trials.safeParse([trial]).success).toBe(true);
     expect(kitchenSchemas.trials.safeParse([{ ...trial, from: 21 }]).success).toBe(false);
@@ -157,7 +158,8 @@ describe('Kitchen speed from a Toast export', () => {
   it('the page reads the Toast room: late-ticket shares by station, the spread, and the card’s figure', () => {
     const ds = applyInputs(SEED, { oakland: { toast: { rows: [summary] } } });
     const d = deriveRoom(ds, 'oakland');
-    const p = kitchenPage(d.room, { roomId: 'oakland' });
+    const p = kitchenPage(d.room, { roomId: 'oakland', feed: d.feeds.find((f) => f.name === 'Kitchen display') });
+    expect(p.locked).toBe(false);
     expect(p.source).toBe('toast');
     expect(p.stationMeaning).toBe('late');
     expect(p.stations.reduce((a, s) => a + s.share, 0)).toBeGreaterThanOrEqual(98);

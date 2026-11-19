@@ -140,16 +140,12 @@
 .hotCell { background: color-mix(in srgb, var(--error-600) 16%, transparent); color: var(--error-700); }
 .notes { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 14.5px; line-height: 1.45; color: var(--fg-2); }
 
-/* ---- hand entry -------------------------------------------------------------- */
-.form { display: flex; flex-direction: column; gap: 12px; }
-.hoursIn { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
-.field { display: flex; flex-direction: column; gap: 4px; font-size: 14px; font-weight: 600; color: var(--fg-2); }
-.field input, .field select { min-height: 42px; padding: 0 10px; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--surface); color: var(--fg-1); font: 600 16px var(--font-sans); max-width: 240px; }
-.hoursIn .field input { max-width: none; width: 100%; }
-.field input:focus-visible, .field select:focus-visible { outline: none; box-shadow: var(--ring); }
-.err { margin: 0; color: var(--error-600); font-size: 14.5px; font-weight: 600; }
-.logList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-.logList li { display: grid; grid-template-columns: 120px 1fr auto; align-items: center; gap: 10px; padding: 6px 0; border-top: 1px solid var(--border); }
+/* ---- locked ------------------------------------------------------------------ */
+.lockCard { max-width: 760px; gap: 16px; }
+.unlocks { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.unlocks li { display: flex; align-items: flex-start; gap: 12px; padding: 14px; border-radius: 12px; background: var(--surface-sunken); }
+.unlocks li > span:last-child { display: flex; flex-direction: column; gap: 2px; font-size: 16px; }
+.unlockIco { display: grid; place-items: center; width: 38px; height: 38px; flex: none; border-radius: 10px; background: color-mix(in srgb, var(--success-600) 12%, transparent); color: var(--success-700); }
 .foot { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 14px; color: var(--fg-2); }
 
 @media (max-width: 900px) {
@@ -158,8 +154,8 @@
   .map { grid-template-columns: 1fr; }
   .map > .arrow { transform: rotate(90deg); justify-self: center; }
   .node { width: auto; flex-direction: row; justify-content: center; }
-  .trialRow, .logList li { grid-template-columns: 1fr; gap: 4px; }
-  .hoursIn { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .trialRow { grid-template-columns: 1fr; gap: 4px; }
+  .unlocks { grid-template-columns: 1fr; }
   .title { font-size: 26px; }
   .fig { font-size: 36px; }
 }

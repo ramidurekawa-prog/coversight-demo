@@ -20,15 +20,6 @@ const trial = z.object({
   at: z.string().max(40),
 }).refine((t) => t.to >= t.from, 'the trial’s hours end before they start');
 
-/** Ticket times a chef logged by hand for one night: average minutes by hour, the slowest station, a note. */
-const night = z.object({
-  hours: z.record(z.string().regex(/^([01]?\d|2[0-3])$/), z.number().min(1).max(120)).refine((h) => Object.keys(h).length >= 1 && Object.keys(h).length <= 24, 'log at least one hour'),
-  slow: z.string().trim().max(60).optional(),
-  note: z.string().trim().max(300).optional(),
-  at: z.string().max(40),
-});
-
 export const kitchenSchemas = {
   trials: z.array(trial).max(30),
-  log: z.record(iso, night).refine((r) => Object.keys(r).length <= 60, 'keeps at most 60 nights'),
 };
