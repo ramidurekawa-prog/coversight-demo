@@ -3,7 +3,7 @@
 import * as React from 'react';
 
 import { Button, Icon } from '../../kit';
-import { CV_CLAIM, CV_D, CV_DS, CV_ROOM, Claim, cvMoney, useCv } from '../core';
+import { CV_CLAIM, CV_D, CV_DS, CV_ROOM, cvMoney, useCv } from '../core';
 import { deriveRoom } from '../../../lib/data/model';
 import { useEngine } from '../../engine';
 import { LEVERS, STATUS, STATUS_ORDER, leverSummary } from '../../../lib/data/page/summary';
@@ -25,14 +25,14 @@ const TONE = { bad: 'var(--error-600)', watch: 'var(--warning-500)', good: 'var(
 
 /** A claim as its icon only, for a dollar inside a sentence; the name is in the tooltip and for screen readers. */
 function ClaimDot({ k, light }) {
-  if (!k || k === 'none') return null;
+  if (!k || k === 'none' || k === 'obs') return null;
   const c = CV_CLAIM[k];
   return <span className={`${s.claimDot} ${light ? s.claimLight : ''}`} title={`${c.label}: ${c.tip}`} aria-label={c.label} role="img"><Icon name={c.icon} size={13} /></span>;
 }
 
 function StatusPill({ status }) {
   const st = STATUS[status];
-  return <span className={`${s.pill} ${s[`pill_${status}`]}`}><Icon name={st.icon} size={13} />{st.label}</span>;
+  return <span className={`${s.pill} ${s[`pill_${status}`]}`}>{st.label}</span>;
 }
 
 /** A small 12-week line: where this number has been. The last point is this week. */
@@ -90,18 +90,13 @@ function Hero({ view }) {
       <div className={s.heroLeft}>
         <HealthRing levers={view.levers} good={c.good} />
         <div className={s.heroText}>
-          <span className={s.heroOver}><Icon name="Gauge" size={14} />Lever Check · {CV_ROOM.name}{view.period ? ` · week of ${view.period}` : ''}</span>
+          <span className={s.heroOver}>Lever Check · {CV_ROOM.name}{view.period ? ` · week of ${view.period}` : ''}</span>
           <h2 className={s.heroH1}>{view.headline}</h2>
-          <div className={s.heroCounts}>
-            {['bad', 'watch', 'good', 'nodata'].filter((k) => c[k]).map((k) => (
-              <span key={k} className={`${s.hc} ${s[`hc_${k}`]}`}><Icon name={STATUS[k].icon} size={14} /><b>{c[k]}</b> {STATUS[k].label.toLowerCase()}</span>
-            ))}
-          </div>
         </div>
       </div>
       {!view.waiting && (
         <div className={s.heroRight}>
-          <span className={s.heroProofLabel}><Icon name="BadgeCheck" size={14} />What Coversight has saved {CV_ROOM.short}</span>
+          <span className={s.heroProofLabel}>What Coversight has saved {CV_ROOM.short}</span>
           <div className={s.heroStats}>
             {stats.map((t) => (
               <div key={t.k} className={s.heroStat}>
@@ -132,8 +127,8 @@ function StartHere({ view, go }) {
         <span className={s.startTitle}>{bad ? (l.bad?.text ?? l.name) : t.title}</span>
         <span className={s.startSub}>
           {bad
-            ? <>{l.big.value} {l.big.label} <ClaimDot k={l.big.claim} />{l.fix && <> · Fixing it could add <b>{winText(l.fix)}</b> <Claim k={l.fix.claim} /></>}</>
-            : <>About <b>{cvMoney(Math.round(t.value))} a week</b> if it works <Claim k={t.claim} /></>}
+            ? <>{l.big.value} {l.big.label} <ClaimDot k={l.big.claim} />{l.fix && <> · Fixing it could add <b>{winText(l.fix)}</b> <ClaimDot k={l.fix.claim} /></>}</>
+            : <>About <b>{cvMoney(Math.round(t.value))} a week</b> if it works <ClaimDot k={t.claim} /></>}
         </span>
       </div>
       <div className={s.startSide}>
@@ -170,10 +165,10 @@ function Tile({ l, selected, onPick }) {
         <span className={s.tileBig}>{l.big.value}</span>
         <span className={s.tileLabel}>{l.big.label} <ClaimDot k={l.big.claim} /></span>
       </span>
-      {line && <span className={s.tileLine}><Icon name={ok ? 'CircleCheck' : 'CircleAlert'} size={14} className={ok ? s.icoGood : s.icoBad} /><span>{line.text}</span></span>}
+      {line && <span className={`${s.tileLine} ${ok ? '' : s.tileLineBad}`}><span>{line.text}</span></span>}
       <span className={s.tileTags}>
-        {l.fix ? <span className={`${s.tag} ${s.tag_win}`}><Icon name="Sparkles" size={12} />Could add {winText(l.fix)}</span>
-          : on ? <span className={`${s.tag} ${s[`tag_${l.handled.kind}`]}`}><Icon name={on[0]} size={12} />{ON_IT_LONG[l.handled.kind]}</span> : null}
+        {l.fix ? <span className={`${s.tag} ${s.tag_win}`}>Could add {winText(l.fix)}</span>
+          : on ? <span className={`${s.tag} ${s[`tag_${l.handled.kind}`]}`}>{ON_IT_LONG[l.handled.kind]}</span> : null}
       </span>
     </button>
   );
@@ -202,7 +197,7 @@ function Detail({ l, go, onClose }) {
             <li><Icon name="CircleCheck" size={15} className={s.icoGood} /><span><b>Going well:</b> {l.good ? <>{l.good.text} <ClaimDot k={l.good.claim} /></> : 'Nothing to celebrate yet'}</span></li>
             <li><Icon name={l.bad ? 'CircleAlert' : 'Minus'} size={15} className={l.bad ? s.icoBad : s.icoMuted} /><span><b>Not going well:</b> {l.bad ? <>{l.bad.text} <ClaimDot k={l.bad.claim} /></> : 'Nothing wrong found'}</span></li>
             {l.handled && <li><Icon name={on[0]} size={15} className={s.icoInk} /><span><b>{ON_IT_LONG[l.handled.kind]}:</b> {l.handled.text} <span className={s.faint}>· {l.handled.sub}</span></span></li>}
-            {l.fix && <li><Icon name="Sparkles" size={15} className={s.icoInk} /><span><b>Easy win:</b> {l.fix.title}, {l.fix.range ? winText(l.fix) : `about ${cvMoney(Math.round(l.fix.value))}/wk`} <Claim k={l.fix.claim} /></span></li>}
+            {l.fix && <li><Icon name="Sparkles" size={15} className={s.icoInk} /><span><b>Easy win:</b> {l.fix.title}, {l.fix.range ? winText(l.fix) : `about ${cvMoney(Math.round(l.fix.value))}/wk`} <ClaimDot k={l.fix.claim} /></span></li>}
           </ul>
           <div className={s.detailSide}>
             {l.trend && <span className={s.ctxTrend}><Spark trend={l.trend} label={l.name} w={160} h={40} /><span className={s.faint}>the last 12 weeks</span></span>}
@@ -212,6 +207,7 @@ function Detail({ l, go, onClose }) {
               </dl>
             )}
             {l.note && <p className={s.note}>{l.note}</p>}
+            {l.dataNote && <p className={s.note}>{l.dataNote}</p>}
             <button type="button" className={s.link} onClick={() => go(l.go)}>Open {l.name} <Icon name="ArrowRight" size={13} /></button>
           </div>
         </div>
@@ -276,7 +272,7 @@ function CvSummary() {
         {picked && <Detail l={picked} go={cv.go} onClose={() => setOpen(null)} />}
       </section>
       <Week view={view} />
-      <p className={s.hint}>We don&apos;t add these dollars together, because some of them overlap.</p>
+      <p className={s.hint}>Numbers come straight from your own sales, staff and invoices. A small mark means it&apos;s an estimate (hover it to see why). We don&apos;t add the dollars together, because some overlap.</p>
     </div>
   );
 }

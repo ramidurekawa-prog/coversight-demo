@@ -172,3 +172,6 @@
 .tileAbout { font-size: 12.5px; line-height: 1.25; color: var(--fg-3); font-weight: 500; }
 .tileNum { margin-top: 2px; }
 .detailHead .faint { font-size: 14px; }
+
+/* calm pass: fewer symbols */
+.tileLineBad { color: var(--fg-1); font-weight: 600; }
