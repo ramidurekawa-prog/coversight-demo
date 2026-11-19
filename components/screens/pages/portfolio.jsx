@@ -2,13 +2,13 @@
 
 import * as React from 'react';
 
-import { Button, Icon } from '../../kit';
+import { Icon } from '../../kit';
 import { useCv, cvMoney, CV_GROUP, CV_NOW, Claim, Pill, PageHead } from '../core';
-import { engine, useEngine } from '../../engine';
-import { COMPARISONS, dayLabel, HANDLED_KEY, nextHandled, PERIODS, portfolioView, SNOOZE_DAYS } from '../../../lib/data/page/portfolio';
+import { useEngine } from '../../engine';
+import { COMPARISONS, dayLabel, HANDLED_KEY, PERIODS, portfolioView } from '../../../lib/data/page/portfolio';
 import { MarginLines, RoomBars, roomColor, Spark } from './portfolio-charts';
 import { Mark, ScoreTabs, SortTh } from './portfolio.tabs';
-import { roomBadges, roomMark, roomsHeadline, sortRows } from '../../../lib/data/page/scoreboard';
+import { locationReport, roomBadges, roomMark, roomsHeadline, sortRows } from '../../../lib/data/page/scoreboard';
 import s from './portfolio.module.css';
 
 const PREFS = 'cv-portfolio-view';
@@ -67,13 +67,30 @@ function groupChange(series, weeks) {
   return { marginPts: (m(cur) - m(base)) * 100, weeks: base.length };
 }
 
+/** One side of a location's report card: facts, each with its detail behind a tap. */
+function LocList({ title, tone, icon, list, empty }) {
+  return (
+    <div className={`${s.locList} ${s['l' + tone]}`}>
+      <span className={s.locListHead}><Icon name={icon} size={15} />{title}<span className={s.count}>{list.length}</span></span>
+      {list.length ? (
+        <ul>
+          {list.map((x) => (
+            <li key={x.k} className={x.tone ? s['i' + x.tone] : undefined}>
+              <Icon name={x.icon} size={14} />
+              {x.sub ? <details><summary>{x.text}</summary><span className="cv-xs cv-muted">{x.sub}</span></details> : <span>{x.text}</span>}
+            </li>
+          ))}
+        </ul>
+      ) : <span className="cv-small cv-muted">{empty}</span>}
+    </div>
+  );
+}
+
 /* ================================================================ Portfolio */
 function CvPortfolio() {
   const cv = useCv();
   const eng = useEngine();
   const [prefs, setPref] = usePrefs();
-  const [open1, setOpen1] = React.useState(null);
-  const [showAll, setShowAll] = React.useState(false);
   const [sort, setSort] = React.useState({ key: 'rank', dir: 'asc' });
   const real = eng.mode === 'server' && !!eng.org && !eng.org.sample;
   /* One clock for the render: the sample group lives on its own date. */
@@ -83,9 +100,7 @@ function CvPortfolio() {
   const { rooms, ranked, totals: t, open } = v;
   const order = rooms.map((r) => r.id);
   const n = rooms.length, one = n === 1;
-  const live = [...v.open, ...v.handled].map((x) => x.id);
   const tiles = prefs.show === 'attention' ? ranked.filter((r) => r.priority.tier !== 'steady') : ranked;
-  const todo = showAll ? open : open.slice(0, 4);
   const con = t.contribution, sv = t.savings;
   const gc = groupChange(t.series, v.weeks);
   const top = ranked[0];
@@ -94,12 +109,6 @@ function CvPortfolio() {
   const SORT = { rank: (r) => r.rank, name: (r) => r.name, revenue: (r) => r.money.revenue.value, contribution: (r) => r.money.contribution.value, margin, food: (r) => r.money.foodPct, labour: (r) => r.money.labourPct, saved: (r) => r.savings.runRate };
   const rows = sortRows(tiles, SORT[sort.key], sort.dir);
 
-  const save = (x, action) => {
-    const next = nextHandled(eng.actions[x.roomId]?.[HANDLED_KEY], x.roomId, x.id, action, live.filter((id) => id.startsWith(`${x.roomId}:`)), new Date(now).toISOString());
-    const what = action === 'ack' ? 'acknowledged' : action === 'snooze' ? `snoozed for ${SNOOZE_DAYS} days` : 'put back on the list';
-    engine.act(HANDLED_KEY, next, { room: x.roomId, summary: `${x.room}: ${x.title} ${what}` });
-    cv.toast(action === 'ack' ? 'Acknowledged. It comes back if anything changes.' : action === 'snooze' ? `Snoozed for ${SNOOZE_DAYS} days.` : 'Back on the list.');
-  };
   const go = (roomId, page, params) => { cv.pickRoom(roomId); cv.go(page, params); };
   /* A room opens on its own days: the Scoreboard's other tab. */
   const openRoom = (id) => go(id, 'daily');
@@ -120,29 +129,84 @@ function CvPortfolio() {
         </span>
       </div>
 
-      {/* ---- The answer: who needs you, and the one thing to do */}
-      {top && top.priority.tier !== 'steady' ? (
-        <section className={`${s.hero} ${s[top.priority.tier]}`} aria-labelledby="pf-most">
-          <span className={`cv-q-ico ${TIER[top.priority.tier].tone} ${s.heroIco}`}><Icon name={TIER[top.priority.tier].icon} size={22} /></span>
-          <div className={s.heroText}>
-            <span className={s.heroOver}>Needs you most</span>
-            <h3 id="pf-most" className={s.heroName}>{top.name}</h3>
-            <span className={s.heroWhy}>{top.mainIssue || top.priority.parts[0]?.why}</span>
+      {/* ---- Every restaurant */}
+      <section className="cv-col" style={{ gap: 10 }} aria-labelledby="pf-rooms">
+        <div className={s.sectionHead}>
+          <h3 id="pf-rooms" className="cv-h4">{one ? 'Your restaurant' : 'Location by location'}</h3>
+          <Seg label="View" value={prefs.table ? 'table' : 'tiles'} options={[['tiles', 'By location'], ['table', 'Table']]} onChange={(x) => setPref('table', x === 'table')} />
+        </div>
+        {!prefs.table ? (
+          <div className={s.locs}>
+            {tiles.map((r) => {
+              const T = TIER[r.priority.tier], m = r.money;
+              const rep = locationReport(r, open.filter((x) => x.roomId === r.id), { badges: badges[r.id] || [] });
+              return (
+                <article key={r.id} className={`${s.loc} ${s[r.priority.tier]}`} aria-labelledby={`loc-${r.id}`}>
+                  <button type="button" className={s.locHead} onClick={() => openRoom(r.id)} aria-label={`${r.name}: open its days`}>
+                    <span className={s.locName}>
+                      {!one && <span className={s.rankBadge} aria-label={`Ranked ${r.rank} of ${n}`}>{r.rank}</span>}
+                      <i style={{ background: roomColor(order.indexOf(r.id)) }} />
+                      <span id={`loc-${r.id}`}>{r.short}</span>
+                      <Pill tone={T.tone} icon={T.icon}>{T.label}</Pill>
+                    </span>
+                    <span className={s.locFig}>
+                      <span className={s.big2}>{m.contribution.value == null ? '—' : cvMoney(Math.round(m.contribution.value))}</span>
+                      <Delta c={m.change} />
+                      <span className={s.tileSub}>{m.contribution.value == null ? (r.state === 'sample' ? 'Sample numbers' : r.state === 'offline' ? `No data for ${r.dataAge} days` : 'Incomplete data') : <>kept after food & labor · {pct(m.revenue.value ? m.contribution.value / m.revenue.value : null)} margin</>}</span>
+                    </span>
+                    <span className={s.locSpark}><Spark values={m.series.map((p) => p?.contribution ?? null)} color={roomColor(order.indexOf(r.id))} label={`${r.short} contribution, last 12 weeks`} /></span>
+                    <span className={s.locGo}>Its days<Icon name="ArrowRight" size={14} /></span>
+                  </button>
+                  <div className={s.locCols}>
+                    <LocList title="Going well" tone="good" icon="CircleCheck" list={rep.good} empty="Nothing stands out yet." />
+                    <LocList title="Not going well" tone="bad" icon="TriangleAlert" list={rep.bad} empty="Nothing is going wrong." />
+                  </div>
+                </article>
+              );
+            })}
           </div>
-          {top.next && <Button iconRight="ArrowRight" onClick={() => go(top.id, top.next.go, top.next.params)}>{top.next.label}</Button>}
-          <details className={s.why}>
-            <summary>Why first?</summary>
-            <ul>
-              {top.priority.parts.map((p) => <li key={p.k}><span>{p.why}</span><b className="cv-num">+{p.points}</b></li>)}
-            </ul>
-          </details>
-        </section>
-      ) : (
-        <section className={`${s.hero} ${s.steady}`}>
-          <span className={`cv-q-ico good ${s.heroIco}`}><Icon name="ShieldCheck" size={22} /></span>
-          <div className={s.heroText}><span className={s.heroOver}>Needs you most</span><h3 className={s.heroName}>Nobody. Every room is steady.</h3></div>
-        </section>
-      )}
+        ) : (
+          <div className="cv-card flush">
+            <div className="cv-tablewrap" tabIndex={0} role="group" aria-label="Restaurants table">
+              <table className="cv-table">
+                <caption className={s.sr}>Restaurants ranked by priority, {PERIODS[prefs.period].label.toLowerCase()}</caption>
+                <thead><tr>
+                  <SortTh k="rank" label="#" sort={sort} setSort={setSort} first="asc" />
+                  <SortTh k="name" label="Restaurant" sort={sort} setSort={setSort} first="asc" />
+                  <th scope="col">Standing</th>
+                  <SortTh k="revenue" label="Revenue" sort={sort} setSort={setSort} right />
+                  <SortTh k="contribution" label="Contribution" sort={sort} setSort={setSort} right />
+                  <SortTh k="margin" label="Margin" sort={sort} setSort={setSort} right />
+                  <SortTh k="food" label="Food" sort={sort} setSort={setSort} right first="asc" />
+                  <SortTh k="labour" label="Labor" sort={sort} setSort={setSort} right first="asc" />
+                  <SortTh k="saved" label="Verified /wk" sort={sort} setSort={setSort} right />
+                  <th scope="col">Data</th><th scope="col">Main issue</th>
+                </tr></thead>
+                <tbody>
+                  {rows.map((r) => (
+                    <tr key={r.id} className={s.rowBtn} onClick={() => openRoom(r.id)}>
+                      <td className="cv-num">{r.rank}</td>
+                      <td><button type="button" className={s.linkish} onClick={(e) => { e.stopPropagation(); openRoom(r.id); }}>{r.name}</button></td>
+                      <td><Mark mark={roomMark(r)} kind="room" /></td>
+                      <td className="r cv-num">{r.money.revenue.value == null ? '—' : cvMoney(Math.round(r.money.revenue.value))}</td>
+                      <td className="r"><span className="cv-num">{r.money.contribution.value == null ? '—' : cvMoney(Math.round(r.money.contribution.value))}</span> <Status m={r.money.contribution} /></td>
+                      <td className="r cv-num">{pct(margin(r))}</td>
+                      <td className="r cv-num">{pct(r.money.foodPct)}</td>
+                      <td className="r cv-num">{pct(r.money.labourPct)}</td>
+                      <td className="r cv-num">{cvMoney(Math.round(r.savings.runRate))}</td>
+                      <td className="cv-xs">{r.state === 'sample-group' ? 'Sample' : r.dataThrough ? dayLabel(r.dataThrough) : 'None'}</td>
+                      <td className="cv-small">{r.mainIssue || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                {!one && (
+                  <tfoot><tr className={s.total}><td /><th scope="row" colSpan={2}>Group · {t.counted} of {n}</th><td className="r cv-num">{t.revenue == null ? '—' : cvMoney(Math.round(t.revenue))}</td><td className="r cv-num">{con.value == null ? '—' : cvMoney(Math.round(con.value))}</td><td className="r cv-num">{pct(con.value != null && t.revenue ? con.value / t.revenue : null)}</td><td className="r cv-num">{pct(t.foodPct)}</td><td className="r cv-num">{pct(t.labourPct)}</td><td className="r cv-num">{cvMoney(Math.round(sv.runRate))}</td><td colSpan={2} /></tr></tfoot>
+                )}
+              </table>
+            </div>
+          </div>
+        )}
+      </section>
 
       {/* ---- Big numbers */}
       <div className={s.kpis}>
@@ -194,124 +258,6 @@ function CvPortfolio() {
           </figure>
         </div>
       )}
-
-      {/* ---- What to do */}
-      <section className="cv-col" style={{ gap: 10 }} aria-labelledby="pf-todo">
-        <div className={s.sectionHead}><span className={s.titleRow}><h3 id="pf-todo" className="cv-h4">What to do</h3>{open.length > 0 && <span className={s.count}>{open.length}</span>}</span></div>
-        {open.length ? (
-          <div className={s.todo}>
-            {todo.map((x) => (
-              <div key={x.id} className={`${s.todoRow} ${s['t' + x.tone]}`}>
-                <span className={`cv-q-ico ${x.tone === 'info' ? 'accent' : x.tone}`}><Icon name={x.icon} size={16} /></span>
-                <button type="button" className={s.todoText} onClick={() => setOpen1(open1 === x.id ? null : x.id)} aria-expanded={open1 === x.id}>
-                  <span className={s.todoRoom}>{x.room}</span>
-                  <span className={s.todoTitle}>{x.title}</span>
-                  {open1 === x.id && <span className={s.todoBody}>{x.body}</span>}
-                </button>
-                <div className={s.todoActs}>
-                  <Button variant="ghost" size="sm" icon="Check" onClick={() => save(x, 'ack')} aria-label={`Acknowledge: ${x.title}`} title="Acknowledge" />
-                  <Button variant="ghost" size="sm" icon="BellOff" onClick={() => save(x, 'snooze')} aria-label={`Snooze ${SNOOZE_DAYS} days: ${x.title}`} title={`Snooze ${SNOOZE_DAYS} days`} />
-                  <Button size="sm" variant="secondary" iconRight="ArrowRight" onClick={() => go(x.roomId, x.go, x.params)}>{x.cta}</Button>
-                </div>
-              </div>
-            ))}
-            {open.length > 4 && <Button variant="ghost" size="sm" icon={showAll ? 'ChevronUp' : 'ChevronDown'} onClick={() => setShowAll((a) => !a)} style={{ alignSelf: 'flex-start' }}>{showAll ? 'Fewer' : `All ${open.length}`}</Button>}
-          </div>
-        ) : (
-          <div className="cv-empty"><span className="ico"><Icon name="ShieldCheck" size={22} /></span><span style={{ fontWeight: 600 }}>Nothing to do</span></div>
-        )}
-        {v.handled.length > 0 && (
-          <details className={s.fold}>
-            <summary><Icon name="CircleCheck" size={15} />Done or snoozed · {v.handled.length}</summary>
-            {v.handled.map((x) => (
-              <div key={x.id} className={s.foldRow}>
-                <span><b>{x.room}</b> · {x.title} <span className="cv-faint">· {x.handled.state === 'snoozed' ? `until ${new Date(x.handled.until).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : 'acknowledged'}</span></span>
-                <Button variant="ghost" size="sm" icon="Undo2" onClick={() => save(x, 'clear')}>Put back</Button>
-              </div>
-            ))}
-          </details>
-        )}
-      </section>
-
-      {/* ---- Every restaurant */}
-      <section className="cv-col" style={{ gap: 10 }} aria-labelledby="pf-rooms">
-        <div className={s.sectionHead}>
-          <h3 id="pf-rooms" className="cv-h4">{one ? 'Your restaurant' : 'Every restaurant'}</h3>
-          <Seg label="View" value={prefs.table ? 'table' : 'tiles'} options={[['tiles', 'Tiles'], ['table', 'Table']]} onChange={(x) => setPref('table', x === 'table')} />
-        </div>
-        {!prefs.table ? (
-          <div className={s.tiles}>
-            {tiles.map((r) => {
-              const T = TIER[r.priority.tier], m = r.money;
-              return (
-                <article key={r.id} className={`${s.tile} ${s[r.priority.tier]}`}>
-                  <button type="button" className={s.tileMain} onClick={() => openRoom(r.id)} aria-label={`Open ${r.name} day by day`}>
-                    <span className={s.tileHead}>
-                      <span className={s.tileName}>{!one && <span className={s.rankBadge} aria-label={`Ranked ${r.rank} of ${n}`}>{r.rank}</span>}<i style={{ background: roomColor(order.indexOf(r.id)) }} />{r.short}</span>
-                      <Pill tone={T.tone} icon={T.icon}>{T.label}</Pill>
-                    </span>
-                    {badges[r.id] && <span className={s.badges}>{badges[r.id].map((b) => <span key={b.k} className={s.badge}><Icon name={b.icon} size={13} />{b.label}</span>)}</span>}
-                    <span className={s.tileFig}>
-                      <span className={s.big2}>{m.contribution.value == null ? '—' : cvMoney(Math.round(m.contribution.value))}</span>
-                      <Delta c={m.change} />
-                    </span>
-                    <span className={s.tileSub}>{m.contribution.value == null ? (r.state === 'sample' ? 'Sample numbers' : r.state === 'offline' ? `No data for ${r.dataAge} days` : 'Incomplete data') : <>contribution · {pct(m.revenue.value ? m.contribution.value / m.revenue.value : null)} margin</>}</span>
-                    <Spark values={m.series.map((p) => p?.contribution ?? null)} color={roomColor(order.indexOf(r.id))} label={`${r.short} contribution, last 12 weeks`} />
-                    <span className={s.tileStats}>
-                      <span><Icon name="BadgeCheck" size={13} />{cvMoney(Math.round(r.savings.runRate))}/wk</span>
-                      <span><Icon name="Timer" size={13} />{r.tests} test{r.tests === 1 ? '' : 's'}</span>
-                      {r.critical > 0 && <span className={s.bad}><Icon name="Siren" size={13} />{r.critical}</span>}
-                    </span>
-                  </button>
-                  {r.next && (
-                    <Button size="sm" variant="secondary" iconRight="ArrowRight" onClick={() => go(r.id, r.next.go, r.next.params)} className={s.tileAct}>{r.next.label}</Button>
-                  )}
-                </article>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="cv-card flush">
-            <div className="cv-tablewrap" tabIndex={0} role="group" aria-label="Restaurants table">
-              <table className="cv-table">
-                <caption className={s.sr}>Restaurants ranked by priority, {PERIODS[prefs.period].label.toLowerCase()}</caption>
-                <thead><tr>
-                  <SortTh k="rank" label="#" sort={sort} setSort={setSort} first="asc" />
-                  <SortTh k="name" label="Restaurant" sort={sort} setSort={setSort} first="asc" />
-                  <th scope="col">Standing</th>
-                  <SortTh k="revenue" label="Revenue" sort={sort} setSort={setSort} right />
-                  <SortTh k="contribution" label="Contribution" sort={sort} setSort={setSort} right />
-                  <SortTh k="margin" label="Margin" sort={sort} setSort={setSort} right />
-                  <SortTh k="food" label="Food" sort={sort} setSort={setSort} right first="asc" />
-                  <SortTh k="labour" label="Labor" sort={sort} setSort={setSort} right first="asc" />
-                  <SortTh k="saved" label="Verified /wk" sort={sort} setSort={setSort} right />
-                  <th scope="col">Data</th><th scope="col">Main issue</th>
-                </tr></thead>
-                <tbody>
-                  {rows.map((r) => (
-                    <tr key={r.id} className={s.rowBtn} onClick={() => openRoom(r.id)}>
-                      <td className="cv-num">{r.rank}</td>
-                      <td><button type="button" className={s.linkish} onClick={(e) => { e.stopPropagation(); openRoom(r.id); }}>{r.name}</button></td>
-                      <td><Mark mark={roomMark(r)} kind="room" /></td>
-                      <td className="r cv-num">{r.money.revenue.value == null ? '—' : cvMoney(Math.round(r.money.revenue.value))}</td>
-                      <td className="r"><span className="cv-num">{r.money.contribution.value == null ? '—' : cvMoney(Math.round(r.money.contribution.value))}</span> <Status m={r.money.contribution} /></td>
-                      <td className="r cv-num">{pct(margin(r))}</td>
-                      <td className="r cv-num">{pct(r.money.foodPct)}</td>
-                      <td className="r cv-num">{pct(r.money.labourPct)}</td>
-                      <td className="r cv-num">{cvMoney(Math.round(r.savings.runRate))}</td>
-                      <td className="cv-xs">{r.state === 'sample-group' ? 'Sample' : r.dataThrough ? dayLabel(r.dataThrough) : 'None'}</td>
-                      <td className="cv-small">{r.mainIssue || '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-                {!one && (
-                  <tfoot><tr className={s.total}><td /><th scope="row" colSpan={2}>Group · {t.counted} of {n}</th><td className="r cv-num">{t.revenue == null ? '—' : cvMoney(Math.round(t.revenue))}</td><td className="r cv-num">{con.value == null ? '—' : cvMoney(Math.round(con.value))}</td><td className="r cv-num">{pct(con.value != null && t.revenue ? con.value / t.revenue : null)}</td><td className="r cv-num">{pct(t.foodPct)}</td><td className="r cv-num">{pct(t.labourPct)}</td><td className="r cv-num">{cvMoney(Math.round(sv.runRate))}</td><td colSpan={2} /></tr></tfoot>
-                )}
-              </table>
-            </div>
-          </div>
-        )}
-      </section>
 
       <details className={s.fold}>
         <summary><Icon name="Info" size={15} />How these numbers work</summary>

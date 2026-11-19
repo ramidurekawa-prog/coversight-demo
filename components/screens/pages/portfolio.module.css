@@ -227,3 +227,42 @@
 .dayCell.mnone { background: var(--surface-sunken); color: var(--fg-3); }
 .dayCell:hover { border-color: var(--border-strong); }
 .dayCell.on { border-color: var(--fg-1); }
+
+/* ---- Location by location: one report card per restaurant */
+.locs { display: flex; flex-direction: column; gap: 14px; }
+.loc { border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); overflow: hidden; }
+.loc.urgent { border-left: 5px solid var(--signal-bad); }
+.loc.watch { border-left: 5px solid var(--signal-warn); }
+.loc.steady { border-left: 5px solid var(--signal-good); }
+.locHead { all: unset; box-sizing: border-box; width: 100%; display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.3fr) minmax(120px, 1fr) auto; align-items: center; gap: 12px 20px; padding: 18px 22px; cursor: pointer; border-bottom: 1px solid var(--border); }
+.locHead:hover { background: var(--surface-sunken); }
+.locHead:focus-visible { box-shadow: var(--ring); }
+.locName { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; font: 800 var(--text-h3, 1.3rem)/1.2 var(--font-sans); color: var(--fg-1); min-width: 0; }
+.locFig { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; min-width: 0; }
+.locFig .tileSub { flex-basis: 100%; }
+.locSpark { min-width: 0; }
+.locGo { display: inline-flex; align-items: center; gap: 4px; font-size: var(--text-sm); font-weight: 700; color: var(--fg-2); white-space: nowrap; }
+.locHead:hover .locGo { color: var(--fg-1); }
+.locCols { display: grid; grid-template-columns: 1fr 1fr; }
+.locList { display: flex; flex-direction: column; gap: 10px; padding: 16px 22px 18px; min-width: 0; }
+.locList + .locList { border-left: 1px solid var(--border); }
+.locListHead { display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-sm); font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; }
+.lgood .locListHead { color: var(--signal-good); }
+.lbad .locListHead { color: var(--signal-bad); }
+.locList ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.locList li { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 8px; align-items: start; font-size: var(--text-base); color: var(--fg-1); }
+.locList li > svg { margin-top: 3px; }
+.lgood li > svg { color: var(--signal-good); }
+.lbad li.ibad > svg { color: var(--signal-bad); }
+.lbad li.iwarn > svg { color: var(--signal-warn); }
+.locList summary { cursor: pointer; list-style: none; }
+.locList summary::-webkit-details-marker { display: none; }
+.locList summary::after { content: ' ›'; color: var(--fg-3); }
+.locList details[open] summary::after { content: ' ⌄'; }
+.locList details span { display: block; margin-top: 4px; max-width: 60ch; }
+@media (max-width: 860px) {
+  .locHead { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .locSpark { grid-column: 1 / -1; }
+  .locCols { grid-template-columns: 1fr; }
+  .locList + .locList { border-left: 0; border-top: 1px solid var(--border); }
+}

@@ -9,7 +9,7 @@ import { densify } from '../../../lib/data/dense';
 import { COMPARISONS, DEFAULT_DAYPARTS, addDays, calendar, change, compareDay, daysCsv, explainDay, fromSample, heatGrid, lastYear, months, rangeTotals, ratio, weekdayBaseline } from '../../../lib/data/page/daily';
 import { DayChart } from './daily-chart';
 import { Checks, DayItems, DayNote, DayParts, Delta, Fold, Hours, MoneyBreakdown } from './daily-day';
-import { readDailyFiles, useDailyData } from './daily-store';
+import { useDailyData } from './daily-store';
 import { Mark, ScoreTabs, SortTh } from './portfolio.tabs';
 import { MARKS, dayBoard, dayHeadline, sortRows, tally } from '../../../lib/data/page/scoreboard';
 import pf from './portfolio.module.css';
@@ -92,7 +92,7 @@ function nextStep({ day, base, why, dev, own, notes, iso, cmpLabel }) {
   if (why.flat) return { text: `A normal ${day.dow}. Nothing here needs action.`, icon: 'CircleCheck', good: true };
   const down = why.dNet < 0;
   const coversLed = Math.abs(why.coversEffect ?? 0) >= Math.abs(why.checkEffect ?? 0);
-  if (down && coversLed) return notes[iso] ? { text: `Fewer guests than ${cmpLabel}. The note says: “${notes[iso].text}”`, act: 'hours', btn: 'See when it was quiet', icon: 'Users' } : { text: `Fewer guests than ${cmpLabel}. If something was different, add a note so this day isn’t treated as normal.`, act: 'note', btn: 'Add a note', icon: 'StickyNote' };
+  if (down && coversLed) return notes[iso] ? { text: `Fewer guests than ${cmpLabel}. The note says: “${notes[iso].text}”`, act: 'hours', btn: 'See when it was quiet', icon: 'Users' } : { text: `Fewer guests than ${cmpLabel}. The busiest hours show where it was quieter.`, act: 'hours', btn: 'See when it was quiet', icon: 'Users' };
   if (down) return { text: `Guests spent less each (${$c(day.check)} vs ${$c(base.check)}). Look at what sold.`, act: own ? 'sold' : 'money', btn: own ? 'See what sold' : 'See the money', icon: 'Receipt' };
   return notes[iso] ? { text: `A strong ${day.dow}, ${signed$(why.dNet)} on ${cmpLabel}. Noted: “${notes[iso].text}”`, icon: 'TrendingUp', good: true } : { text: `A strong ${day.dow}, ${signed$(why.dNet)} on ${cmpLabel}. Note what was different so you can repeat it.`, act: 'note', btn: 'Add a note', icon: 'TrendingUp', good: true };
 }
@@ -106,58 +106,6 @@ function Bridge({ why }) {
       <span className="cv-xs cv-faint">More/fewer guests</span><span className={s.bridgeTrack}><span className={s.bridgeFill} style={bar(why.coversEffect)} /></span><span className="cv-num cv-xs" style={{ textAlign: 'right' }}>{signed$(why.coversEffect)}</span>
       <span className="cv-xs cv-faint">Spend per guest</span><span className={s.bridgeTrack}><span className={s.bridgeFill} style={bar(why.checkEffect)} /></span><span className="cv-num cv-xs" style={{ textAlign: 'right' }}>{signed$(why.checkEffect)}</span>
     </div>
-  );
-}
-
-/* ------------------------------------------------------------ load exports */
-function LoadExports({ data, onDone, onCancel }) {
-  const [over, setOver] = React.useState(false);
-  const [read, setRead] = React.useState(null);
-  const [busy, setBusy] = React.useState(null);
-  const [err, setErr] = React.useState(null);
-  const ref = React.useRef(null);
-  const onFiles = async (list) => {
-    if (!list?.length) return;
-    setBusy('read'); setErr(null); setRead(null);
-    try { setRead(await readDailyFiles(list)); } catch (e) { setErr(e.message); } finally { setBusy(null); }
-  };
-  const save = async () => {
-    setBusy('save'); setErr(null);
-    try { onDone(await data.upload(read.days, (done, total) => setBusy(`save ${done}/${total}`))); } catch (e) { setErr(e.message); setBusy(null); }
-  };
-  const partial = read?.ok ? read.days.filter((d) => !d.complete).length : 0;
-  return (
-    <section className="cv-card" aria-labelledby="daily-load">
-      <div className="cv-card-head">
-        <span className="cv-h4" id="daily-load">Load your Toast exports</span>
-        <button className="iconbtn" onClick={onCancel} aria-label="Close"><Icon name="X" size={18} /></button>
-      </div>
-      {!read?.ok && (
-        <div role="button" tabIndex={0} aria-label="Drop Toast export files here, or press Enter to choose them" className={`${s.drop} ${over ? s.over : ''}`}
-          onClick={() => ref.current?.click()} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); ref.current?.click(); } }}
-          onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)}
-          onDrop={(e) => { e.preventDefault(); setOver(false); onFiles(e.dataTransfer.files); }}>
-          <Icon name="Upload" size={22} />
-          <span className="cv-h4">{busy === 'read' ? 'Reading…' : 'Drop the files here, or click to choose'}</span>
-          <span className="cv-xs cv-faint">OrderDetails.csv, plus ItemSelectionDetails, TimeEntries and PaymentDetails if you have them (CSV, .xlsx or a zip)</span>
-          <input ref={ref} type="file" multiple accept=".csv,.tsv,.txt,.xlsx,.zip" onChange={(e) => onFiles(e.target.files)} style={{ display: 'none' }} aria-hidden="true" tabIndex={-1} />
-        </div>
-      )}
-      <Fold label="Where to find these in Toast">
-        <span className="cv-small cv-muted">In Toast Web, Reports → Data exports, download the files for the days you want, or the whole zip. Coversight reads them in this browser and keeps one summary and the checks for each business day. Days your Toast sync already holds are never replaced.</span>
-      </Fold>
-      {read && !read.ok && <Callout tone="warn" icon="TriangleAlert">{read.error}</Callout>}
-      {read?.ok && (
-        <div className="cv-col" style={{ gap: 10 }}>
-          <Callout icon="CircleCheck"><span><b>{read.days.length} days</b>, {dayName(read.first)} to {dayName(read.last)}.{!read.kinds.includes('time') ? ' No labor without TimeEntries.' : ''}{!read.kinds.includes('items') ? ' No dishes without ItemSelectionDetails.' : ''}{partial ? ` ${partial} still trading: shown as partial.` : ''}{read.unknown.length ? ` Not read: ${read.unknown.join(', ')}.` : ''}</span></Callout>
-          <div className="cv-row" style={{ gap: 8 }}>
-            <Button icon="Check" disabled={!!busy} onClick={save}>{busy?.startsWith('save') ? `Saving… ${busy.slice(5)}` : `Save ${read.days.length} days`}</Button>
-            <Button variant="secondary" disabled={!!busy} onClick={() => setRead(null)}>Choose other files</Button>
-          </div>
-        </div>
-      )}
-      {err && <Callout tone="warn" icon="TriangleAlert">Not saved: {err}. Nothing was lost; try again.</Callout>}
-    </section>
   );
 }
 
@@ -323,8 +271,6 @@ function CvDaily() {
   const [hour, setHour] = React.useState(null);
   const [checksOpen, setChecksOpen] = React.useState(false);
   const [detail, setDetail] = React.useState(null);
-  const [loading, setLoading] = React.useState(false);
-  const [msg, setMsg] = React.useState(null);
   const [daySort, setDaySort] = React.useState({ key: 'iso', dir: 'desc' });
   const top = React.useRef(null);
 
@@ -333,7 +279,7 @@ function CvDaily() {
     const h = window.location.hash.slice(1);
     if (ISO.test(h)) setSel(h);
   }, []);
-  React.useEffect(() => { setMonth(null); setHour(null); setMsg(null); }, [eng.room, view?.own]);
+  React.useEffect(() => { setMonth(null); setHour(null); }, [eng.room, view?.own]);
   const days = React.useMemo(() => view?.days ?? [], [view]);
   const byIso = React.useMemo(() => new Map(days.map((d) => [d.iso, d])), [days]);
   const latest = days.at(-1)?.iso ?? null;
@@ -354,7 +300,7 @@ function CvDaily() {
     return () => { live = false; };
   }, [iso, own, loadDay, lastHeld]);
 
-  const head = (q = 'What happened on this day?') => <><ScoreTabs tab="daily" /><PageHead over={`Day by day · ${CV_ROOM.name}`} q={q} right={<Button variant="secondary" icon="Upload" onClick={() => setLoading(true)}>Load Toast exports</Button>} /></>;
+  const head = (q = 'What happened on this day?') => <><ScoreTabs tab="daily" /><PageHead over={`Day by day · ${CV_ROOM.name}`} q={q} /></>;
 
   if (!view) {
     if (data.status === 'loading' || data.status === 'error') {
@@ -368,18 +314,11 @@ function CvDaily() {
     return (
       <div className="cv-page wide">
         {head()}
-        {loading ? <LoadExports data={data} onCancel={() => setLoading(false)} onDone={(r) => { setLoading(false); setMsg(r); }} /> : (
-          <div className="cv-empty">
-            <span className="ico"><Icon name="CalendarDays" size={22} /></span>
-            <span className="cv-h4">No days for {CV_ROOM.name} yet</span>
-            <span className="cv-small cv-muted" style={{ maxWidth: '52ch' }}>Connect Toast and the nightly sync fills this page, 13 weeks back the first time. Or load the exports you already have. Coversight never fills in days it wasn’t given.</span>
-            <div className="cv-row" style={{ justifyContent: 'center' }}>
-              <Button icon="Plug" onClick={() => cv.go('connect')}>Connect Toast</Button>
-              <Button variant="secondary" icon="Upload" onClick={() => setLoading(true)}>Load Toast exports</Button>
-            </div>
-          </div>
-        )}
-        {msg?.error && <Callout tone="warn" icon="TriangleAlert">Not done: {msg.error}</Callout>}
+        <div className="cv-empty">
+          <span className="ico"><Icon name="CalendarDays" size={22} /></span>
+          <span className="cv-h4">No days for {CV_ROOM.name} yet</span>
+          <span className="cv-small cv-muted" style={{ maxWidth: '52ch' }}>Its days show here once its Toast data is in, 13 weeks back the first time. Coversight never fills in days it wasn’t given.</span>
+        </div>
       </div>
     );
   }
@@ -423,14 +362,6 @@ function CvDaily() {
   const boardRows = sortRows(board, DSORT[daySort.key], daySort.dir);
 
   const chart = (m) => { setMetric(m); setTimeout(() => document.getElementById('daily-history')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 30); };
-  const doStep = (act) => {
-    const scroll = (id) => setTimeout(() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 60);
-    if (act === 'note') { document.getElementById('daily-note')?.focus(); scroll('daily-note'); }
-    if (act === 'hours') scroll('daily-hours');
-    if (act === 'checks') { setChecksOpen(true); scroll('daily-checks'); }
-    if (act === 'sold') scroll('daily-sold');
-    if (act === 'money') scroll('daily-money');
-  };
 
   // History range.
   const clampFrom = (v) => (v < days[0].iso ? days[0].iso : v);
@@ -472,14 +403,9 @@ function CvDaily() {
         </span>
         {own && <Fold className={s.foldPlain} label="Details">
           <span className="cv-small">{days.length.toLocaleString('en-US')} days held, {dayName(days[0].iso)} to {dayName(latest)}{prov?.synced ? ` · ${prov.synced} from the sync` : ''}{prov?.uploaded ? ` · ${prov.uploaded} from loaded exports` : ''}. Business day 4 am to 4 am, {tzLabel}.</span>
-          {prov?.uploaded > 0 && <div><Button size="sm" variant="ghost" icon="Trash2" onClick={async () => { if (window.confirm(`Remove the ${prov.uploaded} days loaded from exports? Synced days stay.`)) { try { await data.removeUploads(); setMsg({ removed: true }); } catch (e) { setMsg({ error: e.message }); } } }}>Remove loaded days</Button></div>}
         </Fold>}
       </div>
 
-      {msg && <Callout tone={msg.error ? 'warn' : ''} icon={msg.error ? 'TriangleAlert' : 'CircleCheck'}>
-        {msg.error ? `Not done: ${msg.error}` : msg.removed ? 'Removed the days loaded from exports.' : `Saved ${msg.saved} day${msg.saved === 1 ? '' : 's'}.${msg.keptSynced ? ` Kept ${msg.keptSynced} from the Toast sync.` : ''}${msg.stored === false ? ' This browser couldn’t keep them, so they’re here until you reload.' : ''}`}
-      </Callout>}
-      {loading && <LoadExports data={data} onCancel={() => setLoading(false)} onDone={(r) => { setLoading(false); setMsg(r); }} />}
 
       <section className={`cv-card ${s.dateBar}`} aria-label="Choose a day">
         <div className="cv-row nowrap" style={{ gap: 2 }}>
@@ -583,9 +509,8 @@ function CvDaily() {
           </Fold>
         </div>
         <div className={s.todoAct} style={step.good ? { background: 'color-mix(in srgb, var(--money-up) 10%, var(--surface-sunken))' } : undefined}>
-          <span className="cv-over" style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}><Icon name={step.icon} size={14} />What to do</span>
+          <span className="cv-over" style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}><Icon name={step.icon} size={14} />What it means</span>
           <span className="cv-small" style={{ fontWeight: 500, lineHeight: 1.45, color: 'var(--fg-1)' }}>{step.text}</span>
-          {step.act && <div><Button size="sm" icon="ArrowRight" onClick={() => doStep(step.act)}>{step.btn}</Button></div>}
         </div>
       </section>
 
@@ -594,10 +519,10 @@ function CvDaily() {
 
       <div className="cv-grid g2">
         <div id="daily-money"><MoneyBreakdown day={day} base={base} has={has} own={own} /></div>
-        <DayParts day={day} base={base} parts={parts} setParts={(p) => setParts(p, `Day parts: ${p.map((x) => x.name).join(', ')}`)} canEdit={eng.mode !== 'pending'} />
+        <DayParts day={day} base={base} parts={parts} setParts={(p) => setParts(p, `Day parts: ${p.map((x) => x.name).join(', ')}`)} canEdit={false} />
       </div>
       {own && <div id="daily-sold"><DayItems detail={detail} /></div>}
-      <DayNote iso={iso} note={notes[iso]} canNote={eng.mode !== 'pending'} onNote={(d, text) => data.saveNote(d, text, eng.viewer?.name ?? '')} />
+      <DayNote iso={iso} note={notes[iso]} canNote={false} onNote={(d, text) => data.saveNote(d, text, eng.viewer?.name ?? '')} />
 
       <div className={s.sectionHead} id="daily-history"><span className="cv-h3">Over time</span><span className="cv-small cv-muted">Tap any day to open it above.</span></div>
 

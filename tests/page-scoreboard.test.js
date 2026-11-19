@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { dayBoard, dayHeadline, dayMark, roomBadges, roomMark, roomsHeadline, sortRows, tally } from '../lib/data/page/scoreboard.js';
+import { dayBoard, dayHeadline, dayMark, locationReport, roomBadges, roomMark, roomsHeadline, sortRows, tally } from '../lib/data/page/scoreboard.js';
 import { addDays, dowOf } from '../lib/data/page/daily.js';
 import { CV_NAV, CV_PAGES } from '../lib/pages.js';
 
@@ -59,12 +59,25 @@ describe('Scoreboard marks', () => {
 
   test('headlines lead with the outcome', () => {
     const rooms = [{ short: 'Walnut Creek', priority: { tier: 'urgent' } }, { short: 'Oakland', priority: { tier: 'steady' } }];
-    expect(roomsHeadline(rooms, { kept: 50030.4 })).toBe('$50,030 kept after food & labor this week. Walnut Creek needs you first.');
-    expect(roomsHeadline(rooms)).toBe('1 of 2 restaurants in the green this week. Walnut Creek needs you first.');
+    expect(roomsHeadline(rooms, { kept: 50030.4 })).toBe('$50,030 kept after food & labor this week. Walnut Creek has the most going wrong.');
+    expect(roomsHeadline(rooms)).toBe('1 of 2 restaurants in the green this week. Walnut Creek has the most going wrong.');
     expect(roomsHeadline(rooms.map((x) => ({ ...x, priority: { tier: 'steady' } })))).toBe('All 2 restaurants are in the green this week.');
     expect(dayHeadline({ iso: '2026-10-25' }, 0.023)).toBe('Sunday came in 2% above usual.');
     expect(dayHeadline({ iso: '2026-10-25' }, -0.08)).toBe('Sunday came in 8% below usual.');
     expect(dayHeadline({ iso: '2026-10-25' }, null)).toBe('Sunday: nothing to compare it with yet.');
+  });
+
+  test('a location report lists good and bad facts from computed figures, with no actions', () => {
+    const room = {
+      counted: true, state: 'sample-group', tests: 2,
+      money: { contribution: { value: 18940 }, revenue: { value: 41620 }, change: { revenuePct: 0.031, marginPts: -1.4 } },
+      savings: { runRate: 97, toDate: 1200, suspended: 0, reversed: [{ id: 'x', title: 'Switch romaine' }] },
+    };
+    const items = [{ id: 'o:feed:7shifts', kind: 'feed', tone: 'warn', icon: 'Clock', title: '7shifts feed is stale', body: 'Last update 18 hours ago.', cta: 'Reconnect', go: 'sources' }];
+    const rep = locationReport(room, items, { badges: [{ k: 'margin', icon: 'Trophy', label: 'Best margin' }] });
+    expect(rep.good.map((x) => x.text)).toEqual(['Sales up 3.1% on its normal', 'Best margin in the group', '$97/wk in verified savings', '2 changes being measured']);
+    expect(rep.bad.map((x) => x.text)).toEqual(['Margin down 1.4 pts to 45.5%', 'Reversed: Switch romaine', '7shifts feed is stale']);
+    expect(JSON.stringify(rep)).not.toMatch(/Reconnect|"go"|cta/);
   });
 
   test('one sidebar entry: Scoreboard, with Day by day as its second tab', () => {
