@@ -170,6 +170,7 @@ import {
   Settings,
   TrendingDown,
   User,
+  CircleAlert,
 } from 'lucide-react';
 
 const ICONS = {
@@ -338,6 +339,7 @@ const ICONS = {
   Settings,
   TrendingDown,
   User,
+  CircleAlert,
 };
 
 /** Every icon name the screens use. A unit test keeps this list complete. */

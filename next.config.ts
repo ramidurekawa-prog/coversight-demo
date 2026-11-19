@@ -11,6 +11,10 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   // Vercel's preview toolbar (the floating round button on preview links)
   // isn't part of the product; this header keeps it off every page.
+  // The Coverage map became Lever Check (2026-11-18); old links still land.
+  async redirects() {
+    return [{ source: '/coverage/', destination: '/summary/', permanent: true }, { source: '/coverage', destination: '/summary/', permanent: true }];
+  },
   async headers() {
     return [{ source: '/:path*', headers: [{ key: 'x-vercel-skip-toolbar', value: '1' }] }];
   },

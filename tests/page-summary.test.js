@@ -1,0 +1,77 @@
+import { describe, expect, test } from 'vitest';
+
+import { deriveRoom } from '../lib/data/model.js';
+import { LEVERS, STATUS, leverSummary, vitalsOf } from '../lib/data/page/summary.js';
+import { comparators, defaultComparator } from '../lib/data/page/week.js';
+import { SEED } from '../lib/data/seed.js';
+
+const ROOMS = Object.keys(SEED.rooms);
+const opts = { matchedWeeks: SEED.matchedWeeks };
+
+describe('Lever Check, computed', () => {
+  test('every room reads every lever, and the counts add up to the levers', () => {
+    for (const id of ROOMS) {
+      const v = leverSummary(deriveRoom(SEED, id), opts);
+      expect(v.levers.map((l) => l.id)).toEqual(LEVERS.map((l) => l.id));
+      for (const l of v.levers) expect(Object.keys(STATUS), `${id} ${l.id}`).toContain(l.status);
+      expect(Object.values(v.count).reduce((a, b) => a + b, 0)).toBe(LEVERS.length);
+      expect(v.headline).toContain(`${v.count.good} of ${LEVERS.length}`);
+      for (const l of v.levers.filter((x) => x.status !== 'nodata')) {
+        expect(l.big.value, `${id} ${l.id}`).toBeTruthy();
+        expect(l.big.claim, `${id} ${l.id} carries a claim`).toBeTruthy();
+      }
+    }
+  });
+
+  test('the week matches the This week page: same comparator, same sums', () => {
+    const d = deriveRoom(SEED, 'oakland');
+    const v = vitalsOf(d, opts);
+    const base = defaultComparator(comparators(d.hist.rows, opts));
+    expect(v.comparator).toBe(base.label);
+    expect(v.sales.now).toBe(Math.round(d.week.net));
+    expect(v.sales.change).toBeCloseTo(d.hist.rows.at(-1).net - base.row.net);
+    expect(v.kept.now).toBe(v.sales.now - d.hist.rows.at(-1).food - d.hist.rows.at(-1).labour);
+  });
+
+  test('figures come from the model, not typed in', () => {
+    const d = deriveRoom(SEED, 'oakland');
+    const v = leverSummary(d, opts);
+    const by = Object.fromEntries(v.levers.map((l) => [l.id, l]));
+    expect(by.purchasing.big.value).toBe(`$${Math.round(d.inv.priceLeg).toLocaleString('en-US')}`);
+    expect(by.controls.status).toBe('bad'); // one server over her post-send void limit
+    expect(by.labour.good.text).toMatch(/^\$97\/wk banked/); // the Thursday prep packet
+    expect(v.banked).toBe(d.banked.week);
+  });
+
+  test('the first thing to do is The plan’s best ready move, never a blocked one', () => {
+    const d = deriveRoom(SEED, 'oakland');
+    const v = leverSummary(d, opts);
+    expect(v.top.kind).toBe('move');
+    expect(v.top.title).not.toMatch(/salmon from/); // waits on recipe costs
+    expect(d.candidates.find((c) => c.title === v.top.title)).toBeTruthy();
+  });
+
+  test('a real group counts only its own verified windows, never the sample’s packets', () => {
+    const d = deriveRoom(SEED, 'oakland');
+    expect(leverSummary(d, { ...opts, windows: [] }).banked).toBe(0);
+    const w = [{ roomId: 'oakland', lever: 'labour', status: 'verified', bookedCents: 4200 }, { roomId: 'berkeley', lever: 'labour', status: 'verified', bookedCents: 9900 }];
+    expect(leverSummary(d, { ...opts, windows: w }).banked).toBe(42);
+  });
+
+  test('a missing feed is "no data yet", never zero', () => {
+    const d = deriveRoom(SEED, 'oakland');
+    const off = { ...d, feeds: d.feeds.map((f) => (f.name === 'Invoices' ? { ...f, state: 'off' } : f)) };
+    const p = leverSummary(off, opts).levers.find((l) => l.id === 'purchasing');
+    expect(p.status).toBe('nodata');
+    expect(p.big).toBeNull();
+    expect(p.missing).toEqual(['Invoices']);
+  });
+
+  test('a new room waiting on its first sales shows no numbers', () => {
+    const d = deriveRoom(SEED, 'oakland');
+    const waiting = { ...d, room: { ...d.room, profile: { ...d.room.profile, awaitingData: true } } };
+    const v = leverSummary(waiting, opts);
+    expect(v.vitals).toBeNull();
+    expect(v.levers.every((l) => l.status === 'nodata')).toBe(true);
+  });
+});
