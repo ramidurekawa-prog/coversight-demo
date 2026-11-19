@@ -19,6 +19,7 @@ page, and that page is what these agents redesign.
 | Tables | Guests & sales | `throughput` | `lever-throughput` |
 | Delivery | Guests & sales | `channels` | `lever-channels` |
 | Staff | Your team & the shift | `labour` | `lever-labour` |
+| (new) Staff, the people | Your team & the shift | `staff` (to be added under Labor) | `lever-staff` |
 | Kitchen speed | Your team & the shift | `kitchen` | `lever-kitchen` |
 | Giveaways | Your team & the shift | `controls` | `lever-controls` |
 | Menu prices | Food & drink costs | `menu` | `lever-menu` |
