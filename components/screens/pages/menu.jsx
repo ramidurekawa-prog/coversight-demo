@@ -100,7 +100,10 @@ function CvMenu() {
               {price !== item.price && <Interval lo={Math.round(sim.lo)} pt={Math.round(sim.delta)} hi={Math.round(sim.hi)} min={Math.min(0, Math.round(sim.lo)) - 20} max={Math.round(sim.hi) + 30} billedLabel="if it verifies" />}
               {wide && <Callout tone="warn" icon="TriangleAlert">The price response is loosely measured for this dish. Expect a wide result, and a longer test.</Callout>}
               {price / item.price - 1 > 0.08 && <Callout tone="warn" icon="Fence">That's more than your 8% fence on price moves. We'd ask you to confirm it twice.</Callout>}
-              {price !== item.price && price / item.price - 1 <= 0.08 && sim.delta > 0 && <Button icon="Check" onClick={() => cv.approve(`price:${item.key}:${price}`)}>Review this change</Button>}
+              {price !== item.price && price / item.price - 1 <= 0.08 && sim.delta > 0 && <>
+                <Button icon="Check" onClick={() => cv.approve(`price:${item.key}:${price}`)}>Review this change</Button>
+                <span className="cv-xs cv-faint">Tested at {CV_ROOM.short} first for 28 days. Your other rooms only change once it proves out.</span>
+              </>}
             </>
           )}
         </section>

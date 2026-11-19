@@ -7,6 +7,7 @@ import { tonightPlan } from '../week';
 import { weeklySeries } from '../../../lib/data/readers';
 import { useCv, cvMoney, CV_D, CV_ROOM, CV_LOCS, CV_PROOF, Claim, Money, Pill, Outcome, Callout, PageHead, cvApproval, cvScale, SampleNote } from '../core';
 import { DenseLabour } from '../dense-sections';
+import { ScheduleGrade } from '../touches';
 
 /* ================================================================ Labour */
 function LabourChart({ d }) {
@@ -65,6 +66,7 @@ function CvLabourSample() {
             <span className="cv-h4">{d.label}: scheduled vs needed</span>
             <Tabs value={day} onChange={setDay} tabs={[{ value: "tue", label: "Tuesday" }, { value: "sat", label: "Saturday" }]} />
           </div>
+          <ScheduleGrade day={d} />
           <LabourChart d={d} />
           <div className="cv-legend">
             <span><i style={{ background: "var(--surface-sunken)", border: "1px solid var(--border-strong)" }} />Scheduled</span>

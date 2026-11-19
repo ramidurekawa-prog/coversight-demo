@@ -4,6 +4,7 @@ import { useCv, cvMoney, CV_GROUP, CV_NOW, Claim, Pill, Callout, PageHead } from
 import { useEngine } from '../../engine';
 import { tmpl } from '../../../lib/data/model';
 import { DensePortfolio } from '../dense-sections';
+import { RoomReason } from '../touches';
 
 const M_fillLower = (t, tokens) => { const x = tmpl(t, tokens); return x.charAt(0).toLowerCase() + x.slice(1); };
 
@@ -44,7 +45,7 @@ function CvPortfolio() {
             <tbody>
               {CV_ROOMS.map((r) => (
                 <tr key={r.id} className="cv-tr" onClick={() => { cv.pickRoom(r.id); cv.go("week"); }}>
-                  <td style={{ fontWeight: 600 }}>{r.d.profile.name}</td>
+                  <td style={{ fontWeight: 600 }}>{r.d.profile.name}{!real && <RoomReason d={r.d} />}</td>
                   <td className="r">{cvMoney(r.banked)}</td>
                   <td className="r">{cvMoney(Math.round(r.earned))}</td>
                   <td>{r.alarms ? <Pill tone="warn" icon="Siren">{r.alarms} {real ? "reversed" : "alarm"}</Pill> : <Pill tone="good" icon="ShieldCheck">Quiet</Pill>}</td>
