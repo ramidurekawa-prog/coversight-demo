@@ -83,6 +83,30 @@ every lever page, ask:
   of what they changed come back to this page, and the next useful thing is
   waiting. Each visit should leave one clear action done.
 
+**Use marketing and psychology, honestly.** Ramidu (2026-11-19): "things like
+those marketing tactics and psychological stuff need to be implemented into the
+platform". Build these into every lever page, always on real numbers:
+
+- *Frame the gain and the loss.* Show what is kept ("$410 a week back in your
+  pocket") and what doing nothing costs ("$1,640 by month's end"), both
+  computed.
+- *Progress and streaks.* Progress bars toward the lever's goal, weeks in the
+  green, and "3 of 4 fixes done" so finishing feels close.
+- *Celebrate wins.* A verified result gets a clear green moment and a running
+  total of what Coversight has found and kept, so the value is never invisible.
+- *Social proof and benchmarks.* "Better than 7 of your last 10 weeks", one
+  location against the others, a person against their peers. Never invent an
+  industry benchmark; if one is cited, name its source.
+- *Anchoring and defaults.* Lead with the recommended choice preselected, show
+  the size of the prize before the effort, and make the next step one tap.
+- *Small commitments.* Ask for one easy action first; each finished action
+  leads straight to the next useful one.
+- *Ownership.* Their name, their restaurant, their numbers, "your plan".
+
+Never use a dark pattern: no fake urgency or countdowns, no invented scarcity,
+no hidden costs, no guilt-trip wording, nothing that makes a number look better
+than it is. Trust is what keeps them coming back.
+
 **Little to read, little to scroll.** About two minutes to understand and act.
 Real emphasis where it matters, and nowhere else. Polish like a strong SaaS
 product page. The answer and the action fit above the fold on a 1440 x 900
@@ -90,9 +114,12 @@ desktop and are the first thing on a phone.
 
 **Today's style.** Manrope; headline and key numbers about 36 px, body about 17;
 the Persimmon & Ink palette from `app/theme.css` and the kit in
-`app/page-style.css`. Persimmon is for action and selected states only, green
-for verified good, red for a real problem, amber for caution or late data, navy
-for structure. Exactly one filled persimmon button per page. Colour a change
+`app/page-style.css`. Persimmon is for action and selected states only. Green
+is for **anything positive or potentially positive** (Ramidu, 2026-11-19): a
+win, an on-track lever, a verified saving, and also money that is still only
+potential. Potential money stays labelled "potential" with its claim icon, so
+the word and icon, not the colour, tell it from verified. Red is for a real
+problem, amber for caution or late data, navy for structure. Exactly one filled persimmon button per page. Colour a change
 only when it matters. Use existing `cv-*` classes and `components/kit.jsx`
 before adding styles; page-only styles go in `<pageId>.module.css`. If the page
 has its own module, add it to `OWN_STYLE` in `components/screen.jsx` through
