@@ -5,6 +5,8 @@ import React from 'react';
 import { Button, Icon } from '../../kit';
 import { CV_D, CV_ROOM, useCv } from '../core';
 import { engine, useEngine, useSaved } from '../../engine';
+import { deriveRoom } from '../../../lib/data/model.js';
+import { SEED } from '../../../lib/data/seed.js';
 import { kitchenPage, BUSY_HOURS, DAY_NAME, DOWS, OPEN_HOURS, TRIAL_NIGHTS, hourLabel } from '../../../lib/data/page/kitchen.js';
 import s from './kitchen.module.css';
 
@@ -112,7 +114,7 @@ function HourMeter({ p }) {
   );
 }
 
-function TrialCard({ p, trials, setTrials }) {
+function TrialCard({ p, trials, setTrials, preview = false }) {
   const cv = useCv();
   const eng = useEngine();
   const [busy, setBusy] = React.useState(false);
@@ -164,7 +166,7 @@ function TrialCard({ p, trials, setTrials }) {
       <div className={s.aims}><Icon name="Target" size={16} /><span>{p.move.aims}</span></div>
       {p.feed?.state === 'stale' && <p className={s.small}>The kitchen screen stopped sending times on {p.feed.last}. The trial is measured once it’s sending again.</p>}
       <div className={s.row}>
-        <Button icon="Play" onClick={start} disabled={busy}>Try it this weekend</Button>
+        {preview ? <Button variant="secondary" icon="Lock" disabled>Try it this weekend</Button> : <Button icon="Play" onClick={start} disabled={busy}>Try it this weekend</Button>}
         <span className={s.small}>Measured on {plural(TRIAL_NIGHTS, 'matching night')}. No dollar claimed.</span>
       </div>
     </section>
@@ -291,7 +293,7 @@ const UNLOCKS = [
 ];
 
 /** The page stays locked until a kitchen screen sends ticket times: nobody is asked to time tickets by hand. */
-function Locked({ feed }) {
+function Locked({ feed, onPreview }) {
   const cv = useCv();
   return (
     <div className={`cv-page wide ${s.page}`}>
@@ -309,8 +311,9 @@ function Locked({ feed }) {
         </ul>
         <div className={s.row}>
           <Button icon="Plug" onClick={() => cv.go('connect')}>Connect your kitchen screen</Button>
-          <span className={s.small}>Toast KDS: add the Kitchen Timings export. Other kitchen screens switch on when connected.</span>
+          <Button variant="secondary" icon="Eye" onClick={onPreview}>See it connected</Button>
         </div>
+        <span className={s.small}>Toast KDS: add the Kitchen Timings export. Other kitchen screens switch on when connected.</span>
         {feed?.note && <p className={s.small}>{feed.note}</p>}
       </section>
     </div>
@@ -319,21 +322,45 @@ function Locked({ feed }) {
 
 /* ---------------------------------------------------------------- the page */
 
+/** What the page looks like once a kitchen screen is connected: the sample kitchen's data, labelled, with nothing that acts. */
+function samplePage(roomId) {
+  const id = SEED.rooms[roomId] ? roomId : Object.keys(SEED.rooms)[0];
+  const d = deriveRoom(SEED, id);
+  const f = d.feeds.find((x) => x.name === 'Kitchen display');
+  return kitchenPage(d.room, { proofs: d.proofs, roomId: id, feed: f && f.state !== 'off' ? f : { state: 'healthy' } });
+}
+
 function CvKitchen() {
   const [trials, setTrials] = useSaved('kitchen.trials', []);
   const feed = CV_D.feeds.find((f) => f.name === 'Kitchen display') || null;
-  const p = React.useMemo(() => kitchenPage(CV_D.room, { trials, proofs: CV_D.proofs, feed, roomId: CV_D.id }),
+  const live = React.useMemo(() => kitchenPage(CV_D.room, { trials, proofs: CV_D.proofs, feed, roomId: CV_D.id }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [CV_D.id, trials, feed?.state]);
+  const [preview, setPreview] = React.useState(false);
+  React.useEffect(() => { setPreview(false); }, [CV_D.id]);
+  if (live.locked && !preview) return <Locked feed={live.feed} onPreview={() => setPreview(true)} />;
+  const p = live.locked ? samplePage(CV_D.id) : live;
+  return <KitchenView p={p} trials={trials} setTrials={setTrials} preview={live.locked} onClose={() => setPreview(false)} />;
+}
+
+function KitchenView({ p, trials, setTrials, preview = false, onClose }) {
+  const cv = useCv();
   const [view, setView] = React.useState('when');
   const [dow, setDow] = React.useState(p.worstDay || 'Sat');
   React.useEffect(() => { if (p.worstDay) setDow(p.worstDay); }, [p.worstDay]);
-  if (p.locked) return <Locked feed={p.feed} />;
 
   return (
     <div className={`cv-page wide ${s.page}`}>
+      {preview && (
+        <div className={s.previewBar} role="status">
+          <Icon name="Eye" size={18} />
+          <span className={s.previewText}><b>Preview with sample kitchen data.</b> This is what you’ll see once your kitchen screen is connected.</span>
+          <Button size="sm" icon="Plug" onClick={() => cv.go('connect')}>Connect your kitchen screen</Button>
+          <Button size="sm" variant="ghost" icon="X" onClick={onClose}>Close preview</Button>
+        </div>
+      )}
       <header className={s.head}>
-        <span className={s.overHead}>Kitchen speed · {CV_ROOM.name}</span>
+        <span className={s.overHead}>Kitchen speed · {preview ? 'Sample kitchen' : CV_ROOM.name}</span>
         <h2 className={s.title}>{p.headline}</h2>
         <div className={s.headline}>
           {p.peak != null && (
@@ -352,7 +379,7 @@ function CvKitchen() {
       </header>
 
       <div className={s.hero}>
-        <TrialCard p={p} trials={trials} setTrials={setTrials} />
+        <TrialCard p={p} trials={trials} setTrials={setTrials} preview={preview} />
         <section className={`${s.card} ${s.picture}`}>
           <div className={s.picHead}>
             <div className={s.seg} role="group" aria-label="Show">
@@ -383,7 +410,7 @@ function CvKitchen() {
 
       <Trials p={p} />
       <SeeWhy p={p} />
-      {p.source === 'sample' && <p className={s.foot}><Icon name="FlaskConical" size={15} />Kitchen times on this screen are sample data until your own kitchen screen is connected.</p>}
+      {p.source === 'sample' && !preview && <p className={s.foot}><Icon name="FlaskConical" size={15} />Kitchen times on this screen are sample data until your own kitchen screen is connected.</p>}
     </div>
   );
 }
