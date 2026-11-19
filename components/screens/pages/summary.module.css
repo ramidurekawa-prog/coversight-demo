@@ -37,7 +37,7 @@
 .heroProofLabel { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #7DE3B0; }
 .heroStats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
 .heroStat { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.heroBig { font-size: 32px; font-weight: 700; line-height: 1; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; color: #FFFFFF; white-space: nowrap; }
+.heroBig { font-size: 32px; font-weight: 700; line-height: 1; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; color: #6FD3B0; white-space: nowrap; }
 .heroBig small { font-size: 16px; font-weight: 600; color: #C9D2DD; margin-left: 2px; letter-spacing: 0; }
 .heroLabel { font-size: 13.5px; line-height: 1.3; color: #C9D2DD; }
 .heroFoot { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: #9FB0C4; }
@@ -55,11 +55,11 @@
 .start_move .startLabel { color: var(--primary-active); }
 .startTitle { font-size: 24px; font-weight: 700; line-height: 1.2; letter-spacing: -0.02em; color: var(--fg-1); }
 .startSub { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 5px; font-size: 15px; color: var(--fg-2); }
-.startSub b { color: var(--fg-1); font-variant-numeric: tabular-nums; }
+.startSub b { color: var(--success-700); font-variant-numeric: tabular-nums; }
 .startSide { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
 .startSide :global(.btn) { min-height: 48px; padding: 0 22px; font-size: 16.5px; font-weight: 700; border-radius: 12px; box-shadow: 0 10px 22px -12px rgba(242, 94, 40, 0.75); }
 .nextWin { display: inline-flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 5px; border: 0; background: transparent; padding: 3px 6px; margin: 0 -6px; border-radius: 8px; font: inherit; font-size: 13.5px; color: var(--fg-2); cursor: pointer; text-align: right; }
-.nextWin b { color: var(--fg-1); }
+.nextWin b { color: var(--success-700); }
 .nextWin:hover { background: var(--surface-sunken); color: var(--fg-1); }
 .nextWin:focus-visible { outline: none; box-shadow: var(--ring); }
 
@@ -95,7 +95,7 @@
 .tag_testing { background: color-mix(in srgb, var(--accent) 9%, transparent); color: var(--accent); }
 .tag_verified { background: color-mix(in srgb, var(--success-600) 13%, transparent); color: var(--success-700); }
 .tag_held { background: var(--warning-50); color: var(--warning-700); }
-.tag_win { background: var(--cv-selected-bg); color: var(--primary-active); }
+.tag_win { background: rgba(35, 132, 106, 0.1); color: var(--success-700); }
 .tag_rank { background: color-mix(in srgb, var(--success-600) 10%, transparent); color: var(--success-700); }
 .spark { flex: none; color: var(--accent); }
 .tile_bad .spark { color: var(--error-600); }
@@ -186,3 +186,6 @@
 .dot_good { background: var(--success-600); }
 .dot_nodata { background: var(--border-strong); }
 @media (min-width: 1101px) { .grid3 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+/* anything good or that could be good is green (Ramidu, 2026-11-19) */
+.win { color: var(--success-700); font-weight: 700; }

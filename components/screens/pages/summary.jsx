@@ -197,7 +197,7 @@ function Detail({ l, go, onClose }) {
             <li><Icon name="CircleCheck" size={15} className={s.icoGood} /><span><b>Going well:</b> {l.good ? <>{l.good.text} <ClaimDot k={l.good.claim} /></> : 'Nothing to celebrate yet'}</span></li>
             <li><Icon name={l.bad ? 'CircleAlert' : 'Minus'} size={15} className={l.bad ? s.icoBad : s.icoMuted} /><span><b>Not going well:</b> {l.bad ? <>{l.bad.text} <ClaimDot k={l.bad.claim} /></> : 'Nothing wrong found'}</span></li>
             {l.handled && <li><Icon name={on[0]} size={15} className={s.icoInk} /><span><b>{ON_IT_LONG[l.handled.kind]}:</b> {l.handled.text} <span className={s.faint}>· {l.handled.sub}</span></span></li>}
-            {l.fix && <li><Icon name="Sparkles" size={15} className={s.icoInk} /><span><b>Easy win:</b> {l.fix.title}, {l.fix.range ? winText(l.fix) : `about ${cvMoney(Math.round(l.fix.value))}/wk`} <ClaimDot k={l.fix.claim} /></span></li>}
+            {l.fix && <li><Icon name="Sparkles" size={15} className={s.icoGood} /><span><b>Easy win:</b> {l.fix.title}, <span className={s.win}>{l.fix.range ? winText(l.fix) : `about ${cvMoney(Math.round(l.fix.value))}/wk`}</span> <ClaimDot k={l.fix.claim} /></span></li>}
           </ul>
           <div className={s.detailSide}>
             {l.trend && <span className={s.ctxTrend}><Spark trend={l.trend} label={l.name} w={160} h={40} /><span className={s.faint}>the last 12 weeks</span></span>}
