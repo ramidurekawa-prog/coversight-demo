@@ -32,10 +32,7 @@ in one small change, or, if the coordinator agrees, include only those lines in
 this page's PR. `tests/routes.test.js` and `tests/lever-agents.test.js` then
 require this file and the page.
 
-Naming: Lever Check currently calls the Labor card "Staff". Once this page
-exists, two things named Staff will confuse people. Propose that the Labor card
-and page go back to "Labor" (what you pay the team) and this page owns "Staff"
-(the people). Raise it with the coordinator, since Lever Check is PR 78's.
+Naming: the coordinator has asked PR 78 to rename Lever Check's Labor card from "Staff" back to "Labor", so this page alone owns "Staff". Check it landed.
 
 ## The outcome to sell
 

@@ -18,7 +18,7 @@ page, and that page is what these agents redesign.
 | Sales & guests | Guests & sales | `week` (has its own thread) | none |
 | Tables | Guests & sales | `throughput` | `lever-throughput` |
 | Delivery | Guests & sales | `channels` | `lever-channels` |
-| Staff | Your team & the shift | `labour` | `lever-labour` |
+| Labor (was "Staff" before PR 78's rename) | Your team & the shift | `labour` | `lever-labour` |
 | (new) Staff, the people | Your team & the shift | `staff` (to be added under Labor) | `lever-staff` |
 | Kitchen speed | Your team & the shift | `kitchen` | `lever-kitchen` |
 | Giveaways | Your team & the shift | `controls` | `lever-controls` |

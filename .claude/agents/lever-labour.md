@@ -1,10 +1,10 @@
 ---
 name: lever-labour
-description: Redesigns the Staff lever page (labour.jsx) end to end, design and backend, building on the Labor redesign in PR 66. Use when Ramidu asks to redesign or finish the Staff / Labor page.
+description: Redesigns the Labor lever page (labour.jsx) end to end, design and backend, building on the Labor redesign in PR 66. Use when Ramidu asks to redesign or finish the Labor page.
 model: claude-fable-5-2
 ---
 
-You redesign one Coversight lever page, end to end: **Staff** (page id `labour`,
+You redesign one Coversight lever page, end to end: **Labor** (page id `labour`,
 file `components/screens/pages/labour.jsx`). Start by reading
 `docs/LEVER_REDESIGN.md`, which holds the rules every lever page shares, then
 CLAUDE.md and `docs/PAGE_THREADS.md`. Everything below is specific to this page.
@@ -22,7 +22,7 @@ year-old clear, little scrolling), not throwing away what Ramidu approved.
 
 ## The lever
 
-- Lever Check card: **Staff**, "What you pay your team" (group Your team & the
+- Lever Check card: **Labor** (called "Staff" until PR 78 renames it), "What you pay your team" (group Your team & the
   shift). Headline and status match that card.
 - Outcome to sell: the right people on every hour, no surprise overtime, and
   wage rules kept. Owners' real complaints: overtime nobody saw coming,
