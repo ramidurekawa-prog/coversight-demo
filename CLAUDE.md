@@ -113,7 +113,14 @@ here ships to customers.
   check, which also becomes a fact and can become its move. Sous talks to
   people who do not want to read: a fact's `say` is one or two short spoken
   sentences and `todo` the one thing to do (an answer shows those first, the
-  full record behind "Show me why"); write both for any new fact or check. The nightly `sous` job notifies
+  full record behind "Show me why"); write both for any new fact or check. Sous learns
+  by memory, never by retraining (`lib/ai/learn.js`): the room's notebook
+  (`sous.notes`, people's own words, read as "You told me" records and shown
+  on the moves they bear on; a "never email" note turns an email move into a
+  screen), what works here (`sousLearned()` from proofs, the `sous.learn` log
+  of moves acted on and what was set aside; `rankMoves()` puts proven kinds
+  first and never reorders anything urgent) and the person (`sous.me`: what
+  they ask about orders the questions offered). The nightly `sous` job notifies
   what it noticed and pre-writes briefs. `tests/sous.test.js` and
   `tests/sous.test.ts` cover it; `tests/helpers/fake-claude.ts` stands in for
   the API.

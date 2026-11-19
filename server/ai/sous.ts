@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { numbersOk, sousBrief, sousCites, sousFacts, sousHash, sousNoticed, sousRole, sousSheet, sousSuggest, sousToday } from '../../lib/ai/sous.js';
 import { agentAnswer, agentBrief, agentFor, agentRead } from '../../lib/ai/agents.js';
 import { agentRecord, sousMoves, sousRemember } from '../../lib/ai/moves.js';
+import { rankMoves, respectNotes, sousLearned } from '../../lib/ai/learn.js';
 import { deriveGroup, deriveRoom } from '../../lib/data/model.js';
 import { CV_PAGES } from '../../lib/pages.js';
 import { loadActions } from '../actions';
@@ -35,6 +36,8 @@ const WHO = `You are Sous, the AI teammate inside Coversight, the platform a res
 Sous works as a team of specialists, one for each page of the platform (Price Watch on Purchasing, Roster Coach on Labor, and so on). They are all you, reading the same records. When a message says which specialist you are, answer from that job's point of view first, then connect it to the rest of the restaurant when the records show a link.
 
 The people you talk to run restaurants. They are busy, often on a phone between tasks, and they do not want to read. Talk to them the way you would across the pass: say it out loud in your head first. Use everyday words a twelve-year-old knows, sentences under fifteen words, and "you" and "your". Say the answer first, then the one thing to do. Never use a business or data word when a kitchen word will do (say "used up too fast", not "variance"; "proven", not "validated"). No jargon, no lists, no markdown, US spelling (labor, modeled).
+
+Records labeled "You told me" are things the people here asked you to remember. Treat them as true about how this restaurant runs and never suggest something that goes against one; if a note is why you are not suggesting something, say so in a few words. The "What works here" record says which kinds of change have been proven at this restaurant: lean toward those.
 
 Everything you know about this restaurant is in the records in the user's message. Each line is one record with its id in square brackets. Work only from those records.
 
@@ -83,16 +86,18 @@ async function context(db: Db, v: V, roomRaw: unknown, now: Date) {
     db.select({ roomId: testWindows.roomId, lever: testWindows.lever, title: testWindows.title, status: testWindows.status }).from(testWindows).where(and(eq(testWindows.orgId, v.orgId), eq(testWindows.roomId, roomId))),
     listTasks(db, v.orgId, v.rooms),
   ]);
-  const saved = (acts[roomId] ?? {}) as { queue?: unknown; findings?: unknown; sous?: Record<string, { at: string; how: 'handled' | 'dismissed'; sig: string; title?: string }> };
+  const saved = (acts[roomId] ?? {}) as { queue?: unknown; findings?: unknown; sous?: Record<string, { at: string; how: 'handled' | 'dismissed'; sig: string; title?: string }>; 'sous.notes'?: { id: string; text: string; at: string }[]; 'sous.learn'?: { topic: string; id: string; at: string }[] };
   const role = sousRole(v.role);
   const today = sousToday(d, { stored: saved.queue ?? null, dismissed: saved.findings ?? {}, windows: wins, tasks, now: now.getTime() });
   // What the room already answered stays quiet until it is due again or its numbers change.
   const memory = sousRemember(sousNoticed(d), saved.sous ?? {}, now.getTime());
   const noticed = memory.active;
   // The group is the viewer's own rooms only (the dataset is already scoped), so a manager never reads another room.
-  const facts = sousFacts(d, { role, windows: wins, card: today.card, open: today.open, noticed, group: deriveGroup(loaded.ds) }) as Fact[];
+  // What the room has taught Sous: its notebook and which kinds of change have worked or been set aside.
+  const learned = sousLearned(d, { mem: saved.sous ?? {}, acts: saved['sous.learn'] ?? [] });
+  const facts = sousFacts(d, { role, windows: wins, card: today.card, open: today.open, noticed, group: deriveGroup(loaded.ds), notes: saved['sous.notes'] ?? [], learned }) as Fact[];
   const brief = sousBrief(d, { role, facts, noticed, card: today.card, open: today.open }) as Brief;
-  const moves = sousMoves(d, { noticed, card: today.card, role, quietIds: memory.quietIds });
+  const moves = respectNotes(rankMoves(sousMoves(d, { noticed, card: today.card, role, quietIds: memory.quietIds }), learned), saved['sous.notes'] ?? []);
   return { org: loaded.org as { sample?: boolean }, roomId, d, role, noticed, facts, brief, moves, memory };
 }
 

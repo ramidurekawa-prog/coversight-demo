@@ -386,3 +386,27 @@ button.cv-ticket-h:focus-visible { outline: none; box-shadow: var(--ring); borde
 .cv-check-b .fine { font-size: 13.5px; color: var(--fg-3); }
 .cv-pass-ask { min-width: 0; }
 @media (max-width: 640px) { .cv-pass-top { gap: 8px; } .cv-pass-ask { padding-left: 12px; gap: 2px; } .cv-pass-top .cv-sous-mark { width: 38px; height: 38px; } }
+
+/* What Sous has learned: the notebook, and the lines on a card that say why it is where it is. */
+.cv-ticket-learned { display: flex; gap: 7px; margin: 0; font: 600 13.5px/1.45 var(--font-sans); color: var(--fg-2); }
+.cv-ticket-learned svg { flex: none; margin-top: 2px; color: var(--fg-3); }
+.cv-ticket-learned.worked svg { color: var(--success-600); }
+.cv-ticket-learned.note svg { color: var(--primary); }
+.cv-ticket.answer .a .noted { display: flex; gap: 8px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--surface-sunken); font: 600 16px/1.45 var(--font-sans); }
+.cv-ticket.answer .a .noted svg { flex: none; margin-top: 3px; color: var(--primary); }
+.cv-sous-notes { border: 1px solid var(--border); border-radius: 16px; background: var(--surface); }
+.cv-sous-notes-h { display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px 18px; border: 0; background: none; cursor: pointer; text-align: left; color: var(--fg-1); }
+.cv-sous-notes-h .ic { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; background: color-mix(in srgb, var(--primary) 14%, transparent); color: color-mix(in srgb, var(--primary) 70%, var(--fg-1)); flex: none; }
+.cv-sous-notes-h .t { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.cv-sous-notes-h .t b { font: 800 16px/1.3 var(--font-sans); }
+.cv-sous-notes-h .t i { font: 500 13.5px/1.4 var(--font-sans); font-style: normal; color: var(--fg-3); }
+.cv-sous-notes-b { display: flex; flex-direction: column; gap: 12px; padding: 0 18px 18px; }
+.cv-sous-notes-b form { display: flex; gap: 8px; }
+.cv-sous-notes-b input { flex: 1; min-width: 0; height: 46px; padding: 0 14px; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--surface); font: 500 16px/1 var(--font-sans); color: var(--fg-1); }
+.cv-sous-notes-b input:focus { outline: none; border-color: var(--primary); box-shadow: var(--ring); }
+.cv-sous-notes-b ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.cv-sous-notes-b li { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--border); font: 600 15.5px/1.4 var(--font-sans); color: var(--fg-1); }
+.cv-sous-notes-b li span { flex: 1; min-width: 0; }
+.cv-sous-notes-learned { display: flex; gap: 7px; margin: 0; font: 600 14.5px/1.45 var(--font-sans); color: var(--fg-1); }
+.cv-sous-notes-learned svg { flex: none; margin-top: 3px; color: var(--success-600); }
+.cv-sous-notes-b .fine { margin: 0; font: 500 13px/1.4 var(--font-sans); color: var(--fg-3); }
