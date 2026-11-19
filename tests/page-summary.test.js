@@ -74,6 +74,8 @@ describe('Lever Check, computed', () => {
     expect(k.status).toBe('nodata');
     expect(k.big).toBeNull();
     expect(k.fix).toBeNull();
+    const none = { ...d, feeds: d.feeds.filter((f) => f.name !== 'Kitchen display') };
+    expect(leverSummary(none, opts).levers.find((l) => l.id === 'kitchen').status).toBe('nodata');
   });
 
   test('a new room waiting on its first sales shows no numbers', () => {
