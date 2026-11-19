@@ -6,7 +6,7 @@ import { Button, Icon } from '../../kit';
 import { CV_CLAIM, CV_D, CV_DS, CV_ROOM, cvMoney, useCv } from '../core';
 import { deriveRoom } from '../../../lib/data/model';
 import { useEngine } from '../../engine';
-import { LEVERS, STATUS, STATUS_ORDER, leverSummary } from '../../../lib/data/page/summary';
+import { GROUPS, LEVERS, NOT_TRACKED, STATUS, STATUS_ORDER, leverSummary } from '../../../lib/data/page/summary';
 import s from './summary.module.css';
 
 /* ================================================================ Lever Check
@@ -256,20 +256,34 @@ function CvSummary() {
   const [open, setOpen] = React.useState(null);
   const order = (l) => STATUS_ORDER.indexOf(l.status) * 100 + LEVERS.findIndex((x) => x.id === l.id);
   const sorted = [...view.levers].sort((a, b) => order(a) - order(b));
-  const picked = sorted.find((l) => l.id === open);
   return (
     <div className={`cv-page ${s.page}`}>
       <Hero view={view} />
       <StartHere view={view} go={cv.go} />
       <section aria-label="Every lever, worst first">
         <div className={s.gridHead}>
-          <span className={s.gridTitle}>Your {view.levers.length} money levers</span>
-          <span className={s.faint}>Most urgent first. Tap one to see more.</span>
+          <span className={s.gridTitle}>Every part of your restaurant</span>
+          <span className={s.faint}>Tap any card to see more.</span>
         </div>
-        <div className={s.grid}>
-          {sorted.map((l) => <Tile key={l.id} l={l} selected={open === l.id} onPick={() => setOpen(open === l.id ? null : l.id)} />)}
-        </div>
-        {picked && <Detail l={picked} go={cv.go} onClose={() => setOpen(null)} />}
+        {GROUPS.map((g) => {
+          const mine = sorted.filter((l) => l.group === g.id);
+          const shown = mine.find((l) => l.id === open);
+          const worst = mine.reduce((w, l) => (STATUS_ORDER.indexOf(l.status) < STATUS_ORDER.indexOf(w) ? l.status : w), 'nodata');
+          return (
+            <div key={g.id} className={s.group}>
+              <div className={s.groupHead}>
+                <span className={`${s.groupDot} ${s[`dot_${worst}`]}`} aria-hidden />
+                <span className={s.groupName}>{g.name}</span>
+                <span className={s.faint}>{g.about}</span>
+              </div>
+              <div className={`${s.grid} ${s[`grid${mine.length}`] || ''}`}>
+                {mine.map((l) => <Tile key={l.id} l={l} selected={open === l.id} onPick={() => setOpen(open === l.id ? null : l.id)} />)}
+              </div>
+              {shown && <Detail l={shown} go={cv.go} onClose={() => setOpen(null)} />}
+            </div>
+          );
+        })}
+        <p className={s.hint}>Not tracked yet: {NOT_TRACKED.join(' and ')}.</p>
       </section>
       <Week view={view} />
       <p className={s.hint}>Numbers come straight from your own sales, staff and invoices. A small mark means it&apos;s an estimate (hover it to see why). We don&apos;t add the dollars together, because some overlap.</p>

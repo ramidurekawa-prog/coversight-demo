@@ -175,3 +175,14 @@
 
 /* calm pass: fewer symbols */
 .tileLineBad { color: var(--fg-1); font-weight: 600; }
+
+/* hub: three groups, every part of the restaurant */
+.group { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+.groupHead { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.groupName { font-size: 16px; font-weight: 700; color: var(--fg-1); }
+.groupDot { width: 10px; height: 10px; border-radius: 50%; align-self: center; flex: none; }
+.dot_bad { background: var(--error-600); }
+.dot_watch { background: var(--warning-500); }
+.dot_good { background: var(--success-600); }
+.dot_nodata { background: var(--border-strong); }
+@media (min-width: 1101px) { .grid3 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }

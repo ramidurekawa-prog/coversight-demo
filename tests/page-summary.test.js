@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import { deriveRoom } from '../lib/data/model.js';
-import { LEVERS, STATUS, leverSummary, vitalsOf } from '../lib/data/page/summary.js';
+import { GROUPS, LEVERS, STATUS, leverSummary, vitalsOf } from '../lib/data/page/summary.js';
 import { comparators, defaultComparator } from '../lib/data/page/week.js';
 import { SEED } from '../lib/data/seed.js';
 
@@ -95,5 +95,15 @@ describe('Lever Check, computed', () => {
     expect(real.outcome.toDate).toBe(0);
     expect(real.outcome.payback).toBeNull();
     expect(real.levers.every((l) => !l.handled)).toBe(true);
+  });
+
+  test('the hub: every part of the restaurant sits in a group, and bar use is not counted twice', () => {
+    expect(LEVERS.every((l) => GROUPS.some((g) => g.id === l.group))).toBe(true);
+    const d = deriveRoom(SEED, 'oakland');
+    const by = Object.fromEntries(leverSummary(d, opts).levers.map((l) => [l.id, l]));
+    expect(by.inventory.big.value).toBe(`$${Math.round(d.usage.kitchenWeek)}/wk`);
+    expect(by.bar.big.value).toBe(`$${Math.round(d.usage.barWeek)}/wk`);
+    expect(by.sales.big.value).toBe(`$${Math.round(d.week.net).toLocaleString('en-US')}`);
+    expect(by.sales.good.text).toMatch(/^\d+ more guests/);
   });
 });
