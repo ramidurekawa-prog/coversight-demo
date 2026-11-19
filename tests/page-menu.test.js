@@ -152,3 +152,73 @@ describe('Price Lab', () => {
     expect(text).toMatch(/bad case keeps \$\d+/);
   });
 });
+
+describe('change tracking', () => {
+  it('groups approved price changes into menu versions with rollout steps, and the reprint waits for live changes', async () => {
+    const { menuChanges, teamNote } = await import('../lib/data/page/menu.js');
+    const d = deriveRoom(SEED, 'oakland');
+    const tasks = [
+      { id: 't1', roomId: 'oakland', approvalId: 'price:ribeye:45', status: 'done', createdAt: '2026-11-19T18:00:00Z' },
+      { id: 't2', roomId: 'oakland', approvalId: 'price:red:15', status: 'open', createdAt: '2026-11-19T18:05:00Z' },
+      { id: 't3', roomId: 'oakland', approvalId: 'price:carbonara:22.5', status: 'cancelled', createdAt: '2026-11-19T18:06:00Z' },
+      { id: 't4', roomId: 'berkeley', approvalId: 'price:ribeye:43', status: 'open', createdAt: '2026-11-19T18:06:00Z' },
+    ];
+    const c = menuChanges(d, { tasks, rollout: { 'price:ribeye:45': { staff: '2026-11-19T19:00:00Z' } } });
+    expect(c.rows.map((r) => r.dish)).toEqual(['ribeye', 'red']);
+    expect(c.versions).toHaveLength(1);
+    expect(c.versions[0].n).toBe(2);
+    expect(c.apps).toBe(true);
+    expect(c.steps.map((s) => s.k)).toEqual(['toast', 'apps', 'print', 'staff', 'check']);
+    const rib = c.rows.find((r) => r.dish === 'ribeye');
+    expect(rib.live).toBe(true);
+    expect(rib.ticks.staff).toBeTruthy();
+    expect(c.printQueue.map((r) => r.dish)).toEqual(['ribeye']);
+    expect(teamNote(c.rows.filter((r) => r.live))).toBeNull();
+    expect(teamNote(c.rows)).toMatch(/House Red \(glass\) is now \$15 \(was \$14\)/);
+  });
+
+  it('the rollout key refuses anything but a price change and known steps', async () => {
+    const { ACTION_KEYS } = await import('../server/actions.ts');
+    const sch = ACTION_KEYS['menu.rollout'].schema;
+    expect(sch.safeParse({ 'price:ribeye:45': { toast: '2026-11-19T18:00:00Z' } }).success).toBe(true);
+    expect(sch.safeParse({ 'drop table': { toast: 'x' } }).success).toBe(false);
+    expect(sch.safeParse({ 'price:ribeye:45': { bogus: 'x' } }).success).toBe(false);
+  });
+});
+
+describe('specials and deals', () => {
+  it('a free plate costs its food, not its menu price, and a bundle uses the learned reaction', async () => {
+    const { dealEconomics, dealResults, keptPerGuest, visitLadder } = await import('../lib/data/page/menu-deals.js');
+    const d = deriveRoom(SEED, 'oakland');
+    const lab = learn(d);
+    const tacos = d.menu.menu.find((m) => m.key === 'tacos') || d.menu.menu.find((m) => /taco/i.test(m.name));
+    const b = dealEconomics(d, lab, { kind: 'bundle', dish: tacos.key, buy: 3, takeUp: 0.25 });
+    expect(b.freeCost).toBe(tacos.cost);
+    expect(b.guestValue).toBe(tacos.price);
+    const r = predict(lab, { ...tacos, units: tacos.units * 0.25 }, tacos.price * 0.75);
+    expect(b.kept).toBeCloseTo(r.kept);
+    expect(b.title).toBe(`Buy 3 ${tacos.name.toLowerCase()}, get 1 free`);
+
+    const fries = d.menu.menu.find((m) => m.key === 'fries');
+    const t = dealEconomics(d, lab, { kind: 'threshold', free: 'fries', threshold: 75, checks: 40 });
+    expect(t.perWeek.foodCost).toBeCloseTo(40 * fries.cost);
+    expect(t.spendUp).toBeCloseTo((40 * fries.cost) / (1 - d.week.food / d.week.net));
+
+    const c = dealEconomics(d, lab, { kind: 'comeback', free: 'affogato', days: 30 });
+    expect(c.visit).toBeCloseTo(keptPerGuest(d));
+    expect(c.newShare).toBeCloseTo(c.freeCost / c.visit);
+    const res = dealResults(d, { kind: 'comeback', free: 'affogato', counts: [{ week: '2026-10-19', redeemed: 14, given: 120 }] });
+    expect(res.returnRate).toBeCloseTo(14 / 120);
+    expect(res.kept).toBeCloseTo(14 * c.visit - 14 * c.freeCost);
+    expect(visitLadder(null)).toBeNull();
+    expect(visitLadder({ visits: [400, 120, 60] })[0].onward).toBeCloseTo(0.3);
+  });
+
+  it('the deals key bounds what a deal can hold', async () => {
+    const { ACTION_KEYS } = await import('../server/actions.ts');
+    const sch = ACTION_KEYS['menu.deals'].schema;
+    expect(sch.safeParse([{ id: 'deal-1', kind: 'bundle', status: 'live', dish: 'tacos', buy: 3, at: '2026-11-19T18:00:00Z' }]).success).toBe(true);
+    expect(sch.safeParse([{ id: 'deal-1', kind: 'coupon', status: 'live', at: 'x' }]).success).toBe(false);
+    expect(sch.safeParse([{ id: 'deal-1', kind: 'bundle', status: 'live', buy: 99, at: 'x' }]).success).toBe(false);
+  });
+});

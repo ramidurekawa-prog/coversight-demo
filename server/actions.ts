@@ -85,6 +85,16 @@ export const ACTION_KEYS = {
   'week.review': { scope: 'room', schema: z.record(z.string().regex(/^\d{4}-\d{2}-\d{2}$/), z.object({ at: isoDate, note: z.string().trim().max(1000).optional() })).refine((r) => Object.keys(r).length <= 26, 'keeps at most 26 weeks') },
   /** Menu prices: the Balanced menu's limit, the least share of a dish's orders a price move may keep. */
   'menu.lab': { scope: 'room', schema: z.object({ keepOrders: z.number().min(0.5).max(1) }) },
+  /** Menu prices: each approved price change's rollout steps, ticked with the time (toast, apps, print, staff, check). */
+  /** Menu prices: specials and deals (draft, live, ended) with the weekly redemption counts entered by hand. */
+  'menu.deals': { scope: 'room', schema: z.array(z.object({
+    id: id, kind: z.enum(['bundle', 'threshold', 'comeback']), status: z.enum(['draft', 'live', 'ended']),
+    dish: z.string().max(80).optional(), buy: z.number().int().min(1).max(12).optional(), free: z.string().max(80).optional(),
+    threshold: z.number().min(1).max(2000).optional(), checks: z.number().min(0).max(100_000).optional(), takeUp: z.number().min(0).max(1).optional(),
+    cards: z.number().min(0).max(100_000).optional(), days: z.number().int().min(1).max(365).optional(), at: isoDate, liveAt: isoDate.optional(),
+    counts: z.array(z.object({ week: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), redeemed: z.number().int().min(0).max(100_000), given: z.number().int().min(0).max(100_000).optional() })).max(104).optional(),
+  })).max(40) },
+  'menu.rollout': { scope: 'room', schema: z.record(z.string().regex(/^price:[\w-]+:[\d.]+$/).max(120), z.partialRecord(z.enum(['toast', 'apps', 'print', 'staff', 'check']), isoDate)).refine((r) => Object.keys(r).length <= 300, 'too many changes') },
 } as const;
 
 export type ActionKey = keyof typeof ACTION_KEYS;

@@ -173,6 +173,9 @@ import {
   Sparkles,
   Trophy,
   Gem,
+  Printer,
+  Gift,
+  Repeat,
 } from 'lucide-react';
 
 const ICONS = {
@@ -344,6 +347,9 @@ const ICONS = {
   Sparkles,
   Trophy,
   Gem,
+  Printer,
+  Gift,
+  Repeat,
 };
 
 /** Every icon name the screens use. A unit test keeps this list complete. */

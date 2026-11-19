@@ -13,8 +13,9 @@ import { Button, Icon } from '../../kit';
 import { engine, useEngine, useSaved } from '../../engine';
 import { useCv, cvMoney, CV_D, CV_DS, CV_ROOM, CV_MENU, Claim, cvScale } from '../core';
 import { DenseMenu } from '../dense-sections';
-import { CORNERS, WAIT_WEEKS, menuView, plateCostRows } from '../../../lib/data/page/menu';
+import { CORNERS, WAIT_WEEKS, menuChanges, menuView, plateCostRows, teamNote } from '../../../lib/data/page/menu';
 import { explain, predict, reactionWord } from '../../../lib/data/page/menu-lab';
+import { DEAL_KINDS, dealEconomics, dealResults, keptPerGuest, visitLadder } from '../../../lib/data/page/menu-deals';
 import { analyze, checkRows } from '../../../lib/data/page/inputs';
 import { jfetch } from './inputs-data';
 import s from './menu.module.css';
@@ -374,6 +375,9 @@ function CvMenu() {
         </section>
       </div>
 
+      <Changes eng={eng} />
+      <Deals v={v} />
+
       {/* Fix it here: costs the changes rest on */}
       {fixes.length > 0 && (
         <section className={s.fixCard} aria-label="Fix plate costs">
@@ -441,6 +445,225 @@ function DishTable({ v, sel, onSel }) {
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+/* ================================================================ changes made: rollout, versions, reprint */
+const STEP_ICON = { toast: 'Check', apps: 'Bike', print: 'Printer', staff: 'Users', check: 'Receipt' };
+function Changes({ eng }) {
+  const cv = useCv();
+  const [rollout, setRollout] = useSaved('menu.rollout', {});
+  const [copied, setCopied] = React.useState(false);
+  const c = menuChanges(CV_D, { tasks: eng.tasks || [], rollout: rollout || {}, windows: eng.windows || [] });
+  if (!c.rows.length) return null;
+  const tick = (rows, k) => {
+    const at = new Date().toISOString();
+    const next = { ...(rollout || {}) };
+    rows.forEach((r) => { next[r.id] = { ...(next[r.id] || {}), [k]: at }; if (k === 'toast' && r.taskId) engine.taskAction(r.taskId, 'done'); });
+    setRollout(next, `${c.steps.find((x) => x.k === k)?.label}: ${rows.map((r) => r.name).join(', ')}`);
+  };
+  const untick = (r, k) => {
+    const next = { ...(rollout || {}), [r.id]: { ...(rollout?.[r.id] || {}) } };
+    delete next[r.id][k];
+    setRollout(next, `${c.steps.find((x) => x.k === k)?.label}: ${r.name} not done yet`);
+  };
+  const note = teamNote(c.rows.filter((r) => r.live));
+  const latest = c.versions[0];
+  return (
+    <section className={s.card} aria-label="Your menu changes">
+      <div className={s.cardHead}>
+        <h2 className={s.cardTitle}><Icon name="History" size={17} />Your menu changes</h2>
+        <span className={s.cardSub}>Menu v{latest.n} · {new Date(`${latest.day}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })} · {c.open ? `${c.open} still rolling out` : 'every change is fully rolled out'}</span>
+      </div>
+      <div className={s.changeList}>
+        {c.versions.flatMap((ver) => ver.changes.map((r) => (
+          <div key={r.id} className={s.changeRow}>
+            <div className={s.changeName}>
+              <b>{r.name}</b>
+              <span>{r.from != null ? cents(r.from) : ''} → <b>{cents(r.to)}</b> · v{ver.n}{r.test ? ` · test ${r.test.status}` : ''}</span>
+            </div>
+            <div className={s.steps} role="group" aria-label={`${r.name} rollout`}>
+              {c.steps.map((st) => {
+                const on = !!r.ticks[st.k];
+                const auto = st.k === 'check';
+                return (
+                  <button key={st.k} type="button" className={`${s.step} ${on ? s.stepOn : ''}`} disabled={auto && r.ticks.check === 'data'} aria-pressed={on}
+                    title={auto && !on ? `${st.label}: ticks itself when your next Toast data shows the new price` : st.label}
+                    onClick={() => (on ? untick(r, st.k) : tick([r], st.k))}>
+                    <Icon name={on ? 'CircleCheck' : STEP_ICON[st.k]} size={15} /><span>{st.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )))}
+      </div>
+      {(c.printQueue.length > 0 || note) && (
+        <div className={s.changeFoot}>
+          {c.printQueue.length > 0 && (
+            <span className={s.footItem}><Icon name="Printer" size={15} />{c.printQueue.length === 1 ? 'One change is' : `${c.printQueue.length} changes are`} waiting for the next reprint, so it’s one print run.
+              <Button variant="secondary" size="sm" onClick={() => tick(c.printQueue, 'print')}>Mark printed</Button></span>
+          )}
+          {note && (
+            <span className={s.footItem}><Icon name="Users" size={15} />Team note ready.
+              <Button variant="secondary" size="sm" icon="Copy" onClick={() => { try { void navigator.clipboard?.writeText(note); } catch { /* clipboard blocked: the note is shown */ } setCopied(true); cv.toast('Team note copied. Paste it in your team chat.'); }}>{copied ? 'Copied' : 'Copy'}</Button>
+              <Button variant="ghost" size="sm" onClick={() => tick(c.rows.filter((r) => r.live && !r.ticks.staff), 'staff')}>Mark told</Button></span>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/* ================================================================ specials and deals */
+const pick = (list, test, fallback) => list.find(test) || fallback;
+function defaultsFor(kind) {
+  const food = CV_MENU.filter((m) => !m.balancing && m.cat === 'Food');
+  const dessert = CV_MENU.filter((m) => !m.balancing && m.cat === 'Dessert').sort((a, b) => a.cost - b.cost)[0];
+  const starter = [...food].sort((a, b) => a.cost - b.cost)[0];
+  if (kind === 'bundle') return { kind, dish: pick(food, (m) => /taco/i.test(m.name), [...food].sort((a, b) => b.units - a.units)[0])?.key, buy: 3, takeUp: 0.25 };
+  if (kind === 'threshold') return { kind, free: starter?.key, threshold: 75, checks: 0 };
+  return { kind, free: (dessert || starter)?.key, days: 30, cards: 0 };
+}
+
+function Deals({ v }) {
+  const cv = useCv();
+  const [deals, setDeals] = useSaved('menu.deals', []);
+  const [draft, setDraft] = React.useState(null);
+  const list = Array.isArray(deals) ? deals : [];
+  const e = draft ? dealEconomics(CV_D, v.lab, draft) : null;
+  const save = (status) => {
+    const id = `deal-${Date.now().toString(36)}`;
+    const at = new Date().toISOString();
+    const row = { ...draft, id, status, at, ...(status === 'live' ? { liveAt: at } : {}) };
+    setDeals([row, ...list].slice(0, 40), `${e.title}: ${status === 'live' ? 'live' : 'saved as a draft'}`);
+    if (status === 'live') goLive(row, e);
+    setDraft(null);
+  };
+  const goLive = (row, econ) => {
+    void engine.createTask(`deal:${row.id}`, { title: `Set up the deal: ${econ.title}`, system: 'Toast', diff: [['Discount in Toast', 'None', econ.title], ['Who can use it', '—', row.kind === 'comeback' ? 'Guests with the card' : 'Every guest']] });
+    cv.toast(`${econ.title}: live. The Toast setup steps are on Today.`);
+  };
+  const update = (id, patch, note) => setDeals(list.map((x) => (x.id === id ? { ...x, ...patch } : x)), note);
+  const ladder = visitLadder(CV_D.room.guests || null);
+  const visit = keptPerGuest(CV_D);
+  return (
+    <section className={s.card} aria-label="Specials and deals">
+      <div className={s.cardHead}>
+        <h2 className={s.cardTitle}><Icon name="Gift" size={17} />Specials and deals</h2>
+        <span className={s.cardSub}>Give guests a reason to order more and come back. Each guest visit leaves you about <b className={s.green}>{cents(visit)}</b> after food and staff.</span>
+      </div>
+
+      {list.map((dl) => {
+        const econ = dealEconomics(CV_D, v.lab, dl);
+        if (!econ) return null;
+        const res = dealResults(CV_D, dl);
+        return <DealRow key={dl.id} dl={dl} econ={econ} res={res} onLive={() => { update(dl.id, { status: 'live', liveAt: new Date().toISOString() }, `${econ.title}: live`); goLive(dl, econ); }}
+          onEnd={() => update(dl.id, { status: 'ended' }, `${econ.title}: ended`)}
+          onCount={(c) => update(dl.id, { counts: [...(dl.counts || []).filter((x) => x.week !== c.week), c].slice(-104) }, `${econ.title}: ${c.redeemed} redeemed this week`)} />;
+      })}
+
+      {!draft ? (
+        <div className={s.kinds}>
+          {Object.entries(DEAL_KINDS).map(([k, kd]) => (
+            <button key={k} type="button" className={s.kind} onClick={() => setDraft(defaultsFor(k))}>
+              <Icon name={kd.icon} size={18} /><b>{kd.label}</b><span>{kd.example}</span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className={s.builder}>
+          <div className={s.builderForm}>
+            <span className={s.over}><Icon name={DEAL_KINDS[draft.kind].icon} size={14} />{DEAL_KINDS[draft.kind].label}</span>
+            {draft.kind === 'bundle' && (
+              <>
+                <label className={s.field}>Dish<select value={draft.dish} onChange={(x) => setDraft({ ...draft, dish: x.target.value })}>{CV_MENU.filter((m) => !m.balancing).map((m) => <option key={m.key} value={m.key}>{m.name}</option>)}</select></label>
+                <label className={s.field}>Buy<select value={draft.buy} onChange={(x) => setDraft({ ...draft, buy: +x.target.value })}>{[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}, get 1 free</option>)}</select></label>
+                <label className={s.field}>If this many of its guests take it<select value={draft.takeUp} onChange={(x) => setDraft({ ...draft, takeUp: +x.target.value })}>{[0.1, 0.25, 0.5].map((n) => <option key={n} value={n}>{Math.round(n * 100)}%</option>)}</select></label>
+              </>
+            )}
+            {draft.kind !== 'bundle' && (
+              <label className={s.field}>Free item<select value={draft.free} onChange={(x) => setDraft({ ...draft, free: x.target.value })}>{CV_MENU.filter((m) => !m.balancing).map((m) => <option key={m.key} value={m.key}>{m.name} ({cents(m.price)})</option>)}</select></label>
+            )}
+            {draft.kind === 'threshold' && (
+              <>
+                <label className={s.field}>Check of at least<span className={s.money}>$<input inputMode="decimal" value={draft.threshold} onChange={(x) => setDraft({ ...draft, threshold: +x.target.value || 0 })} /></span></label>
+                <label className={s.field}>Checks a week at that size (your count)<input inputMode="numeric" value={draft.checks || ''} placeholder="e.g. 60" onChange={(x) => setDraft({ ...draft, checks: +x.target.value || 0 })} /></label>
+              </>
+            )}
+            {draft.kind === 'comeback' && (
+              <label className={s.field}>Good for<select value={draft.days} onChange={(x) => setDraft({ ...draft, days: +x.target.value })}>{[14, 30, 60].map((n) => <option key={n} value={n}>{n} days</option>)}</select></label>
+            )}
+          </div>
+          {e && <DealMath e={e} />}
+          <div className={s.builderActions}>
+            <Button variant="secondary" icon="Check" onClick={() => save('live')}>Go live</Button>
+            <Button variant="ghost" onClick={() => save('draft')}>Save as draft</Button>
+            <Button variant="ghost" onClick={() => setDraft(null)}>Cancel</Button>
+          </div>
+        </div>
+      )}
+
+      <div className={s.ladder}>
+        <span className={s.ladderHead}><Icon name="Repeat" size={15} />Coming back</span>
+        {ladder ? (
+          <div className={s.ladderSteps}>
+            {ladder.map((st) => <span key={st.visit}><b>{st.guests.toLocaleString('en-US')}</b> {st.visit === 1 ? 'first visits' : st.visit === 2 ? 'came a 2nd time' : `came ${st.visit}+ times`}{st.onward != null ? <em>{Math.round(st.onward * 100)}% came back</em> : null}</span>)}
+          </div>
+        ) : (
+          <span className={s.cardSub}>The goal is every first-time guest’s 3rd visit. Connect your Toast guest book or loyalty data and this shows how many guests come back a 2nd and 3rd time. Until then, a come-back offer’s card count tells you.</span>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function DealMath({ e }) {
+  const say = e.kind === 'bundle'
+    ? (e.kept == null ? null : `Each free plate costs you ${cents(e.freeCost)} in food, while guests see ${cents(e.guestValue)} free. ${e.kept >= 0 ? `If ${Math.round(e.takeUp * 100)}% of its guests take it, it most likely keeps ${money(e.kept)} more a week${e.bad >= 0 ? ', even in a bad week.' : `, but a bad week loses ${money(-e.bad)}. Test it first.`}` : `At ${Math.round(e.takeUp * 100)}% take-up it most likely costs ${money(-e.kept)} a week; it works as a way to win new guests, not as a money maker.`}`)
+    : e.kind === 'threshold'
+      ? `Each free plate costs you ${cents(e.freeCost)} in food; guests see ${cents(e.guestValue)}.${e.checks ? ` At ${e.checks} checks a week it costs ${money(e.perWeek.foodCost)} a week, and pays for itself once guests add about ${money(e.spendUp)} a week reaching the line.` : ' Enter how many checks a week reach that size to see the weekly cost.'}`
+      : `Each free plate costs you ${cents(e.freeCost)}; a return visit leaves you about ${cents(e.visit)}. It pays for itself if at least 1 in ${Math.max(1, Math.round(1 / e.newShare))} redemptions is a guest who wouldn’t have come back otherwise.`;
+  return (
+    <div className={s.dealMath}>
+      <div className={s.dealNums}>
+        <span><small>You pay</small><b>{cents(e.freeCost)}</b><small>food, per free plate</small></span>
+        <span><small>Guests see</small><b className={s.green}>{cents(e.guestValue)}</b><small>free</small></span>
+        {e.kind === 'bundle' && e.kept != null && <span><small>Most likely</small><b className={e.kept >= 0 ? s.green : s.red}>{money(e.kept, { sign: true })}</b><small>a week <Claim k="mod" /></small></span>}
+        {e.kind === 'comeback' && <span><small>Each return visit</small><b className={s.green}>{cents(e.visit)}</b><small>kept</small></span>}
+      </div>
+      {say && <p className={s.maker}><span className={s.makerTag}><Icon name="Sparkles" size={14} />Menu Maker</span>{say}</p>}
+    </div>
+  );
+}
+
+function DealRow({ dl, econ, res, onLive, onEnd, onCount }) {
+  const [n, setN] = React.useState('');
+  const [g, setG] = React.useState('');
+  const week = CV_D.hist.rows.at(-1)?.iso;
+  const tone = dl.status === 'live' ? s.chip_good : dl.status === 'draft' ? s.chip_warn : '';
+  return (
+    <div className={s.dealRow}>
+      <div className={s.changeName}>
+        <b>{econ.title}</b>
+        <span>
+          <span className={`${s.chip} ${tone}`}>{dl.status === 'live' ? 'Live' : dl.status === 'draft' ? 'Draft' : 'Ended'}</span>
+          {' '}You pay {cents(econ.freeCost)} a free plate; guests see {cents(econ.guestValue)}.
+          {res && <> {res.redeemed} used in {res.weeks} {res.weeks === 1 ? 'week' : 'weeks'} · {money(res.food)} in food{res.returnRate != null ? ` · ${Math.round(res.returnRate * 100)}% of cards came back` : ''}{res.kept != null ? <> · up to <b className={res.kept >= 0 ? s.green : s.red}>{money(res.kept, { sign: true })}</b> kept, if those visits wouldn’t have happened</> : null}</>}
+        </span>
+      </div>
+      <div className={s.dealActs}>
+        {dl.status === 'draft' && <Button variant="secondary" size="sm" onClick={onLive}>Go live</Button>}
+        {dl.status === 'live' && (
+          <>
+            <label className={s.countField}><span className="sr-only">Used this week</span><input inputMode="numeric" placeholder="Used" value={n} onChange={(x) => setN(x.target.value)} /></label>
+            {dl.kind === 'comeback' && <label className={s.countField}><span className="sr-only">Cards handed out this week</span><input inputMode="numeric" placeholder="Handed out" value={g} onChange={(x) => setG(x.target.value)} /></label>}
+            <Button variant="secondary" size="sm" disabled={!(+n >= 0 && n !== '') || !week} onClick={() => { onCount({ week, redeemed: Math.round(+n), ...(dl.kind === 'comeback' && g !== '' ? { given: Math.round(+g) } : {}) }); setN(''); setG(''); }}>Add this week</Button>
+            <Button variant="ghost" size="sm" onClick={onEnd}>End</Button>
+          </>
+        )}
+      </div>
     </div>
   );
 }
