@@ -39,7 +39,7 @@ describe('Lever Check, computed', () => {
     const by = Object.fromEntries(v.levers.map((l) => [l.id, l]));
     expect(by.purchasing.big.value).toBe(`$${Math.round(d.inv.priceLeg).toLocaleString('en-US')}`);
     expect(by.controls.status).toBe('bad'); // one server over her post-send void limit
-    expect(by.labour.good.text).toMatch(/^\$97\/wk banked/); // the Thursday prep packet
+    expect(by.labour.good.text).toBe('Saving you $97 every week'); // the Thursday prep packet
     expect(v.banked).toBe(d.banked.week);
   });
 
