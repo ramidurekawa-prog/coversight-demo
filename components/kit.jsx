@@ -170,6 +170,13 @@ import {
   Settings,
   TrendingDown,
   User,
+  Star,
+  GraduationCap,
+  Sparkles,
+  ArrowUpDown,
+  UserRound,
+  NotebookPen,
+  IdCard,
 } from 'lucide-react';
 
 const ICONS = {
@@ -338,6 +345,13 @@ const ICONS = {
   Settings,
   TrendingDown,
   User,
+  Star,
+  GraduationCap,
+  Sparkles,
+  ArrowUpDown,
+  UserRound,
+  NotebookPen,
+  IdCard,
 };
 
 /** Every icon name the screens use. A unit test keeps this list complete. */

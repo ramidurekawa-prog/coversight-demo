@@ -83,7 +83,20 @@ export const ACTION_KEYS = {
   'service.manual': { scope: 'room', schema: z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), entries: z.array(z.object({ meal: z.enum(['lunch', 'dinner']), at: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/), covers: z.number().int().min(0).max(5000), servers: z.number().int().min(0).max(200).nullable(), saved: z.string().max(40) })).max(24) }) },
   /** This week: weeks marked reviewed, keyed by the data week's first day, with an optional note. Who reviewed comes from the row's user. */
   'week.review': { scope: 'room', schema: z.record(z.string().regex(/^\d{4}-\d{2}-\d{2}$/), z.object({ at: isoDate, note: z.string().trim().max(1000).optional() })).refine((r) => Object.keys(r).length <= 26, 'keeps at most 26 weeks') },
+  /**
+   * Staff: a manager's own notes on a person (a note, praise, training done, a
+   * talk held, or "I disagree with this read"), newest first, keyed by the
+   * person's id on the Staff page. Hand-entered and labelled so; never a
+   * statistic. Owners, admins and GMs only: other roles neither read nor write it.
+   */
+  'staff.notes': { scope: 'room', roles: ['owner', 'admin', 'gm'], schema: z.record(z.string().regex(/^[\w-]{1,60}$/), z.array(z.object({ at: isoDate, kind: z.enum(['note', 'praise', 'training', 'talk', 'disagree']), text: z.string().trim().max(400), by: z.string().max(80).optional() })).max(40)).refine((r) => Object.keys(r).length <= 200, 'too many people') },
 } as const;
+
+/** Keys only some roles may read or write (people notes). */
+const rolesFor = (key: string): readonly string[] | null => {
+  const spec = ACTION_KEYS[key as ActionKey] as { roles?: readonly string[] } | undefined;
+  return spec?.roles ?? null;
+};
 
 export type ActionKey = keyof typeof ACTION_KEYS;
 const MAX_BYTES = 20_000;
@@ -92,7 +105,7 @@ export const GROUP = '';
 export const ME = '@me';
 
 /** Current values: { [roomId | '']: { [key]: value } }, limited to the viewer's rooms. */
-export async function loadActions(db: Db, orgId: string, roomScope: string[] | null = null, userId: string | null = null) {
+export async function loadActions(db: Db, orgId: string, roomScope: string[] | null = null, userId: string | null = null, role: string | null = null) {
   // Person rows are the viewer's own only; agents and jobs (no userId) never see them.
   const own = userId ? or(notLike(actions.roomId, 'user:%'), eq(actions.roomId, `user:${userId}`)) : notLike(actions.roomId, 'user:%');
   const where = roomScope
@@ -106,6 +119,8 @@ export async function loadActions(db: Db, orgId: string, roomScope: string[] | n
   const out: Record<string, Record<string, unknown>> = {};
   for (const r of rows) {
     if (!(r.key in ACTION_KEYS)) continue;
+    const only = role ? rolesFor(r.key) : null;
+    if (only && !only.includes(role!)) continue;
     (out[r.roomId.startsWith('user:') ? ME : r.roomId] ??= {})[r.key] = r.value;
   }
   return out;
@@ -121,6 +136,8 @@ export async function saveAction(
   const room = spec.scope === 'group' ? GROUP : spec.scope === 'person' ? `user:${v.userId}` : roomId;
   if (typeof room !== 'string') throw new InputError('roomId is required');
   if (spec.scope === 'group' && roomLevel(v.role)) throw new AuthError(403, 'Only an owner or admin can change this.');
+  const only = rolesFor(key);
+  if (only && !only.includes(v.role)) throw new AuthError(403, 'Only an owner, admin or GM can change this.');
   if (spec.scope === 'room') {
     if (v.rooms && !v.rooms.includes(room)) throw new AuthError(403, 'That room is not one of yours.');
     const [r] = await db.select({ id: rooms.id }).from(rooms).where(and(eq(rooms.orgId, v.orgId), eq(rooms.id, room)));
