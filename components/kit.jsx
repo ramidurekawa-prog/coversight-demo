@@ -172,6 +172,7 @@ import {
   User,
   CircleAlert,
   Trophy,
+  Sparkles,
 } from 'lucide-react';
 
 const ICONS = {
@@ -342,6 +343,7 @@ const ICONS = {
   User,
   CircleAlert,
   Trophy,
+  Sparkles,
 };
 
 /** Every icon name the screens use. A unit test keeps this list complete. */
