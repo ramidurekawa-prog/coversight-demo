@@ -170,6 +170,9 @@ import {
   Settings,
   TrendingDown,
   User,
+  Sparkles,
+  Trophy,
+  Gem,
 } from 'lucide-react';
 
 const ICONS = {
@@ -338,6 +341,9 @@ const ICONS = {
   Settings,
   TrendingDown,
   User,
+  Sparkles,
+  Trophy,
+  Gem,
 };
 
 /** Every icon name the screens use. A unit test keeps this list complete. */

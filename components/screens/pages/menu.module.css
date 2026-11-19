@@ -1,0 +1,166 @@
+/* Menu prices: page-only styles on Today's tokens (app/theme.css, Manrope).
+ * Type 36 / 25 / 19 / 17 / 15 / 13.5. Persimmon only on the one action
+ * button and the selected chip; green for anything positive or potential. */
+
+.page {
+  --g: var(--success-600);
+  --g-bg: color-mix(in srgb, var(--success-600) 10%, transparent);
+  --w: var(--warning-600);
+  --w-bg: color-mix(in srgb, var(--warning-600) 11%, transparent);
+  --r: var(--error-600);
+  --soft: 0 0 0 1px color-mix(in srgb, var(--fg-1) 6%, transparent), 0 1px 2px rgba(20, 28, 40, 0.04), 0 12px 32px -20px rgba(20, 28, 40, 0.22);
+  max-width: 1180px;
+  margin: 0 auto;
+  gap: 18px !important;
+  color: var(--fg-1);
+  font-size: 17px;
+}
+.page :where(b, output) { font-variant-numeric: tabular-nums; }
+.green { color: var(--g); }
+.icGood { color: var(--g); }
+
+/* ---------------------------------------------------------------- answer */
+.head { display: flex; flex-direction: column; gap: 6px; }
+.statusRow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.chip { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 9px 0 8px; border-radius: 7px; font-size: 13.5px; font-weight: 700; background: var(--surface-sunken); }
+.chip_good { background: var(--g-bg); color: var(--g); }
+.chip_warn { background: var(--w-bg); color: var(--warning-700); }
+.chip_bad { background: color-mix(in srgb, var(--r) 11%, transparent); color: var(--r); }
+.context { font-size: 15px; font-weight: 500; color: var(--fg-2); }
+.headline { margin: 2px 0 0; font-size: 36px; font-weight: 700; line-height: 1.12; letter-spacing: -0.025em; text-wrap: balance; }
+.lines { display: flex; flex-wrap: wrap; gap: 6px 22px; font-size: 17px; }
+.lineGood, .lineWarn { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; }
+.lineGood { color: var(--g); }
+.lineGood svg { flex: none; }
+.lineWarn { color: var(--fg-1); }
+.lineWarn svg { color: var(--w); flex: none; }
+
+/* ---------------------------------------------------------------- three numbers */
+.kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.kpi { display: flex; flex-direction: column; gap: 2px; padding: 12px 18px; border-radius: 14px; background: var(--surface); box-shadow: var(--soft); min-width: 0; }
+.kpiWin { background: linear-gradient(180deg, color-mix(in srgb, var(--success-600) 9%, var(--surface)), var(--surface)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--success-600) 30%, transparent); }
+.kpiLbl { font-size: 15px; font-weight: 600; color: var(--fg-2); }
+.kpiBig { font-size: 36px; font-weight: 700; line-height: 1.1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.kpiBig small { font-size: 17px; font-weight: 600; color: var(--fg-2); letter-spacing: 0; }
+.kpiSub, .kpiGood, .kpiWarn { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 5px; font-size: 15px; font-weight: 600; color: var(--fg-2); }
+.kpiGood { color: var(--g); }
+.kpiWarn { color: var(--warning-700); }
+.bar { position: relative; display: block; height: 8px; margin: 4px 0 2px; border-radius: 99px; background: var(--surface-sunken); overflow: hidden; }
+.bar i { position: absolute; inset: 0 auto 0 0; border-radius: 99px; background: var(--g); }
+
+/* ---------------------------------------------------------------- action + picture */
+.main { display: grid; grid-template-columns: minmax(0, 1.08fr) minmax(0, 1fr); gap: 14px; align-items: stretch; }
+.action, .card, .fixCard { display: flex; flex-direction: column; gap: 10px; padding: 16px 20px; border-radius: 16px; background: var(--surface); box-shadow: var(--soft); min-width: 0; }
+.action { box-shadow: var(--soft), inset 4px 0 0 var(--primary); }
+.over { display: inline-flex; align-items: center; gap: 6px; font-size: 13.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--fg-2); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.moveChip { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border: none; border-radius: 10px; background: var(--surface-sunken); font: inherit; font-size: 15px; font-weight: 600; color: var(--fg-1); cursor: pointer; }
+.moveChip:hover { box-shadow: inset 0 0 0 1px var(--border-strong); }
+.moveChipOn { background: var(--cv-selected-bg); box-shadow: inset 0 0 0 2px var(--cv-selected); }
+.moveChip:focus-visible, .stepBtn:focus-visible, .detailTab:focus-visible, .textBtn:focus-visible { outline: none; box-shadow: var(--ring); }
+.chipMoney { color: var(--g); font-weight: 700; }
+.actionTitle { margin: 0; font-size: 25px; font-weight: 700; line-height: 1.2; letter-spacing: -0.015em; }
+.actionWhy { margin: 0; font-size: 17px; line-height: 1.45; color: var(--fg-2); }
+.facts { display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 15px; color: var(--fg-2); }
+.facts b { color: var(--fg-1); font-weight: 700; }
+.factWarn b { color: var(--warning-700); }
+.factGood { color: var(--g); font-weight: 600; }
+.factGood b { color: var(--g); }
+.priceRow { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+.priceLbl { font-size: 15px; font-weight: 600; color: var(--fg-2); }
+.stepper { display: inline-flex; align-items: center; gap: 2px; padding: 3px; border-radius: 12px; background: var(--surface-sunken); }
+.stepBtn { display: grid; place-items: center; width: 36px; height: 36px; border: none; border-radius: 9px; background: var(--surface); color: var(--fg-1); cursor: pointer; box-shadow: 0 0 0 1px var(--border); }
+.stepBtn:hover { box-shadow: 0 0 0 1px var(--border-strong); }
+.priceOut { min-width: 92px; text-align: center; font-size: 25px; font-weight: 700; }
+.recTag { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 9px; border-radius: 7px; background: var(--g-bg); color: var(--g); font-size: 13.5px; font-weight: 700; }
+.textBtn { padding: 4px 6px; border: none; background: none; font: inherit; font-size: 15px; font-weight: 600; color: var(--teal-700); cursor: pointer; border-radius: 6px; }
+.textBtn:hover { text-decoration: underline; text-underline-offset: 3px; }
+.gain { display: flex; flex-direction: column; gap: 6px; padding: 10px 14px; border-radius: 12px; background: var(--g-bg); }
+.gainMain { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; }
+.gainBig, .lossBig { font-size: 36px; font-weight: 800; line-height: 1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.gainBig { color: var(--g); }
+.lossBig { color: var(--r); }
+.gainUnit { font-size: 17px; font-weight: 600; color: var(--fg-2); }
+.gain :global(.cv-interval .band) { background: color-mix(in srgb, var(--success-600) 30%, transparent); }
+.gain :global(.cv-interval .pt) { background: var(--g); }
+.note { display: flex; gap: 8px; margin: 0; font-size: 15px; line-height: 1.45; color: var(--fg-2); }
+.note svg { flex: none; margin-top: 2px; color: var(--w); }
+.ctaRow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.notes { display: flex; flex-direction: column; gap: 6px; margin-top: auto; padding-top: 8px; border-top: 1px solid var(--border); }
+.cta { min-height: 48px; padding: 0 22px !important; font-size: 17px !important; font-weight: 700 !important; border-radius: 12px !important; }
+.ctaNote { font-size: 15px; color: var(--fg-2); }
+.doneMark { display: inline-flex; align-items: center; gap: 8px; padding: 10px 14px; border-radius: 12px; background: var(--g-bg); color: var(--g); font-size: 15px; font-weight: 700; }
+.unlock { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-radius: 12px; background: var(--w-bg); }
+.unlockHead { display: flex; align-items: center; gap: 7px; margin: 0; font-size: 15px; font-weight: 700; color: var(--warning-700); }
+
+.cardHead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; }
+.cardTitle { display: inline-flex; align-items: center; gap: 8px; margin: 0; font-size: 19px; font-weight: 700; }
+.cardSub { margin: 0; font-size: 15px; color: var(--fg-2); }
+.map { width: 100%; height: auto; display: block; }
+.zone_good { fill: color-mix(in srgb, var(--success-600) 7%, transparent); }
+.zone_warn { fill: color-mix(in srgb, var(--warning-600) 7%, transparent); }
+.zone_mute { fill: color-mix(in srgb, var(--fg-1) 3%, transparent); }
+.zoneLbl { font-size: 12.5px; font-weight: 700; fill: var(--fg-2); }
+.axis { font-size: 11.5px; fill: var(--fg-3); }
+.axisLbl { font-size: 11.5px; font-weight: 600; fill: var(--fg-2); }
+.dot { cursor: pointer; outline: none; }
+.dot circle { stroke-width: 2; transition: r 140ms; }
+.dot:focus-visible circle { stroke: var(--primary); stroke-width: 3; }
+.dot_good { fill: color-mix(in srgb, var(--success-600) 22%, var(--surface)); stroke: var(--g); }
+.dot_warn { fill: color-mix(in srgb, var(--warning-600) 20%, var(--surface)); stroke: var(--w); }
+.dot_mute { fill: var(--surface); stroke: var(--fg-3); }
+.dotOn { fill: var(--primary); stroke: var(--fg-1); }
+.dotLbl { font-size: 12.5px; font-weight: 600; fill: var(--fg-1); paint-order: stroke; stroke: var(--surface); stroke-width: 3px; stroke-linejoin: round; }
+.dotLblOn { font-size: 13.5px; font-weight: 800; fill: var(--fg-1); paint-order: stroke; stroke: var(--surface); stroke-width: 3px; stroke-linejoin: round; }
+.legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; font-size: 13.5px; color: var(--fg-2); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.lgGood { width: 12px; height: 12px; border-radius: 50%; background: color-mix(in srgb, var(--success-600) 22%, var(--surface)); box-shadow: inset 0 0 0 2px var(--g); }
+.lgDash { width: 12px; height: 12px; border-radius: 50%; border: 2px dashed var(--fg-3); }
+
+/* ---------------------------------------------------------------- fix it here */
+.fixCard { gap: 8px; box-shadow: var(--soft), inset 4px 0 0 var(--w); }
+.fixRow, .fixRowCompact { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 6px 12px; padding: 8px 0; border-top: 1px solid var(--border); }
+.fixRowCompact { padding: 0; border-top: none; }
+.fixDish { display: flex; flex-direction: column; min-width: 0; }
+.fixDish b { font-size: 17px; }
+.fixDish span { font-size: 13.5px; color: var(--fg-2); }
+.fixField { display: inline-flex; align-items: center; gap: 4px; height: 36px; padding: 0 10px; border-radius: 9px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--border-strong); font-weight: 600; }
+.fixField:focus-within { box-shadow: var(--ring); }
+.fixField input { width: 70px; border: none; outline: none; background: none; font: inherit; font-size: 17px; font-weight: 700; color: var(--fg-1); }
+.fixNote, .fixErr { grid-column: 1 / -1; margin: 0; font-size: 13.5px; color: var(--warning-700); }
+.fixErr { display: flex; gap: 6px; align-items: center; color: var(--r); }
+
+/* ---------------------------------------------------------------- detail */
+.detail { display: flex; flex-direction: column; border-radius: 16px; background: var(--surface); box-shadow: var(--soft); overflow: hidden; }
+.detailTabs { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 8px 10px; }
+.detailTab { display: inline-flex; align-items: center; gap: 7px; height: 38px; padding: 0 12px; border: none; border-radius: 10px; background: none; font: inherit; font-size: 15px; font-weight: 600; color: var(--fg-1); cursor: pointer; }
+.detailTab:hover { background: var(--surface-sunken); }
+.detailTabOn { background: var(--surface-sunken); }
+.mixNote { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; padding-right: 6px; font-size: 13.5px; color: var(--fg-2); max-width: 520px; }
+.mixNote svg { flex: none; }
+.detailBody { border-top: 1px solid var(--border); }
+.how { display: flex; flex-direction: column; gap: 10px; padding: 16px 20px; }
+.how p { margin: 0; font-size: 15px; line-height: 1.5; color: var(--fg-2); max-width: 80ch; }
+.how b { color: var(--fg-1); }
+.tagWarn { margin-left: 6px; padding: 2px 6px; border-radius: 5px; background: var(--w-bg); color: var(--warning-700); font-size: 12.5px; font-weight: 700; }
+.tdWarn { color: var(--warning-700); font-weight: 700; }
+.tdGood { color: var(--g); font-weight: 700; }
+
+@media (max-width: 1100px) {
+  .main { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 720px) {
+  .headline { font-size: 29px; }
+  /* On a phone the answer and the action come first; the three numbers follow. */
+  .head { order: 1; }
+  .main { order: 2; }
+  .fixCard { order: 3; }
+  .kpis { order: 4; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .detail { order: 5; }
+  .kpi { padding: 12px 14px; }
+  .kpiBig, .gainBig, .lossBig { font-size: 30px; }
+  .action, .card, .fixCard { padding: 14px; }
+  .mixNote { margin-left: 0; }
+  .fixRow, .fixRowCompact { grid-template-columns: minmax(0, 1fr) auto; }
+  .fixRow :global(.btn), .fixRowCompact :global(.btn) { grid-column: 1 / -1; }
+}
