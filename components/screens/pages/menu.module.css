@@ -58,6 +58,9 @@
 .moveChip:hover { box-shadow: inset 0 0 0 1px var(--border-strong); }
 .moveChipOn { background: var(--cv-selected-bg); box-shadow: inset 0 0 0 2px var(--cv-selected); }
 .moveChip:focus-visible, .stepBtn:focus-visible, .detailTab:focus-visible, .textBtn:focus-visible { outline: none; box-shadow: var(--ring); }
+.moreChip { height: 32px; padding: 0 10px; border: none; border-radius: 10px; background: none; font: inherit; font-size: 15px; font-weight: 700; color: var(--teal-700); cursor: pointer; }
+.moreChip:hover { background: var(--surface-sunken); }
+.moreChip:focus-visible { outline: none; box-shadow: var(--ring); }
 .chipMoney { color: var(--g); font-weight: 700; }
 .actionTitle { margin: 0; font-size: 25px; font-weight: 700; line-height: 1.2; letter-spacing: -0.015em; }
 .actionWhy { margin: 0; font-size: 17px; line-height: 1.45; color: var(--fg-2); }
@@ -81,8 +84,6 @@
 .gainBig { color: var(--g); }
 .lossBig { color: var(--r); }
 .gainUnit { font-size: 17px; font-weight: 600; color: var(--fg-2); }
-.gain :global(.cv-interval .band) { background: color-mix(in srgb, var(--success-600) 30%, transparent); }
-.gain :global(.cv-interval .pt) { background: var(--g); }
 .note { display: flex; gap: 8px; margin: 0; font-size: 15px; line-height: 1.45; color: var(--fg-2); }
 .note svg { flex: none; margin-top: 2px; color: var(--w); }
 .ctaRow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
@@ -116,6 +117,26 @@
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .lgGood { width: 12px; height: 12px; border-radius: 50%; background: color-mix(in srgb, var(--success-600) 22%, var(--surface)); box-shadow: inset 0 0 0 2px var(--g); }
 .lgDash { width: 12px; height: 12px; border-radius: 50%; border: 2px dashed var(--fg-3); }
+
+.cases { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; font-size: 15px; }
+.caseGood, .caseBad { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; }
+.caseGood { color: var(--g); }
+.caseBad { color: var(--r); }
+.caseNote { flex-basis: 100%; font-size: 13.5px; color: var(--fg-2); }
+.maker { margin-top: 2px !important; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; margin: 0; padding: 10px 12px; border-radius: 12px; background: var(--surface-sunken); font-size: 15px; line-height: 1.45; color: var(--fg-1); }
+.makerTag { display: inline-flex; align-items: center; gap: 5px; font-size: 13.5px; font-weight: 800; color: var(--teal-700); }
+.track { display: flex; flex-direction: column; gap: 6px; margin-top: auto; padding: 12px 14px; border-radius: 12px; background: var(--g-bg); }
+.trackHead { display: inline-flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 800; color: var(--g); }
+.trackNums { display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 15px; color: var(--fg-2); }
+.trackNums b { font-size: 19px; color: var(--fg-1); }
+.trackNums b.green { color: var(--g); }
+.trackNote, .trackNone { margin: 0; font-size: 13.5px; color: var(--fg-2); }
+.trackNone { display: flex; gap: 6px; align-items: center; margin-top: auto; }
+.balanced { padding-bottom: 6px; }
+.balHead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding: 12px 20px; }
+.balLine { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0; font-size: 17px; }
+.balKeep { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; color: var(--fg-2); }
+.balKeep select { height: 34px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--surface); font: inherit; font-weight: 700; color: var(--fg-1); }
 
 /* ---------------------------------------------------------------- fix it here */
 .fixCard { gap: 8px; box-shadow: var(--soft), inset 4px 0 0 var(--w); }

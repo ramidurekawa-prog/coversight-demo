@@ -10,10 +10,11 @@
 
 import * as React from 'react';
 import { Button, Icon } from '../../kit';
-import { engine, useEngine } from '../../engine';
-import { useCv, cvMoney, CV_D, CV_DS, CV_ROOM, CV_MENU, cvPriceMoveInterval, Claim, Interval, cvScale } from '../core';
+import { engine, useEngine, useSaved } from '../../engine';
+import { useCv, cvMoney, CV_D, CV_DS, CV_ROOM, CV_MENU, Claim, cvScale } from '../core';
 import { DenseMenu } from '../dense-sections';
 import { CORNERS, WAIT_WEEKS, menuView, plateCostRows } from '../../../lib/data/page/menu';
+import { explain, predict, reactionWord } from '../../../lib/data/page/menu-lab';
 import { analyze, checkRows } from '../../../lib/data/page/inputs';
 import { jfetch } from './inputs-data';
 import s from './menu.module.css';
@@ -21,7 +22,6 @@ import s from './menu.module.css';
 const money = (n, o) => cvMoney(Math.round(n), o);
 const cents = (n) => cvMoney(n, { cents: true });
 const pct = (n, dp = 0) => `${(n * 100).toFixed(dp)}%`;
-const FENCE = 0.08;
 const STATUS = {
   good: { label: 'On track', icon: 'CircleCheck', cls: 'chip_good' },
   watch: { label: 'Worth a look', icon: 'Eye', cls: 'chip_warn' },
@@ -132,23 +132,26 @@ function CostFix({ dish, unlocks, compact }) {
 }
 
 /* ================================================================ the recommended change */
-function Tester({ v, sel, setSel }) {
+function Tester({ v, sel, setSel, onMore }) {
   const cv = useCv();
   const eng = useEngine();
   const move = v.moves.find((m) => m.id === sel.move) || null;
   const item = CV_MENU.find((m) => m.key === sel.dish) || CV_MENU[0];
   const price = sel.price;
-  const sim = item.e == null ? null : cvPriceMoveInterval(item, price);
+  const r = item.balancing ? null : predict(v.lab, item, price);
+  const L = v.lab.dishes[item.key];
   const recommended = move && move.kind === 'price' && price === move.to;
   const changed = price !== item.price;
-  const step = (d) => setSel({ ...sel, price: Math.max(item.price - 3, Math.min(item.price + 4, Math.round((price + d) * 2) / 2)) });
-  const over = price / item.price - 1 > FENCE;
-  const wide = item.se != null && item.e && item.se / Math.abs(item.e) > 0.4;
+  const fence = v.fence / 100;
+  const step = (d) => { const st = item.price < 10 ? 0.25 : 0.5; setSel({ ...sel, price: Math.max(+(item.price * (1 - fence)).toFixed(2), Math.min(+(item.price * (1 + fence)).toFixed(2), Math.round((price + d * st) / st) * st)) }); };
+  const over = Math.abs(price / item.price - 1) > fence + 1e-9;
+  const wide = L?.se != null && L.e && L.se / Math.abs(L.e) > 0.4;
   const id = `price:${item.key}:${price}`;
-  const done = eng.tasks?.some((t) => t.roomId === CV_D.id && t.approvalId === id && t.status !== 'cancelled');
+  const done = eng.tasks?.some((t) => t.roomId === CV_D.id && t.approvalId.startsWith(`price:${item.key}:`) && t.status !== 'cancelled');
   const needsCost = item.costEstimated || (move && move.needsCost && move.item === item.key);
   const unlock = v.waiting.find((m) => m.item === item.key);
-  const plates = sim ? Math.round(sim.lost) : 0;
+  const plates = r ? Math.round(r.lost) : 0;
+  const say = changed && r ? explain(v.lab, item, r) : null;
 
   /* A change that isn't a price: a placement test, added to the plan as a task. */
   if (move && move.kind !== 'price') {
@@ -156,7 +159,7 @@ function Tester({ v, sel, setSel }) {
     const added = eng.tasks?.some((t) => t.roomId === CV_D.id && t.approvalId === mid && t.status !== 'cancelled');
     return (
       <section className={s.action} aria-label="Recommended change">
-        <MoveChips v={v} sel={sel} setSel={setSel} />
+        <MoveChips v={v} sel={sel} setSel={setSel} onMore={onMore} />
         <h2 className={s.actionTitle}>{move.title}</h2>
         <p className={s.actionWhy}>{move.why}</p>
         <Gain value={move.value} lo={move.lo} hi={move.hi} claim={move.claim} />
@@ -170,7 +173,7 @@ function Tester({ v, sel, setSel }) {
 
   return (
     <section className={s.action} aria-label="Recommended change">
-      <MoveChips v={v} sel={sel} setSel={setSel} />
+      <MoveChips v={v} sel={sel} setSel={setSel} onMore={onMore} />
       <h2 className={s.actionTitle}>
         {changed ? <>{price > item.price ? 'Raise' : 'Lower'} the {item.name.toLowerCase()} from {cents(item.price)} to {cents(price)}</> : <>{item.name} at {cents(item.price)}</>}
       </h2>
@@ -180,24 +183,25 @@ function Tester({ v, sel, setSel }) {
         <span className={item.cost / item.price > 0.4 ? s.factWarn : undefined}><b>{pct(item.cost / item.price)}</b> of the price is food</span>
       </div>
 
-      {item.e == null ? (
-        <p className={s.note}><Icon name="Ban" size={16} />{item.balancing ? 'This line rolls up sides and add-ons, so it has no single price to test.' : `The ${item.name.toLowerCase()} hasn’t changed price enough for us to know how guests react. Change it on judgment, and we’ll measure what happens.`}</p>
+      {!r ? (
+        <p className={s.note}><Icon name="Ban" size={16} />{item.balancing ? 'This line rolls up sides and add-ons, so it has no single price to test.' : `We don’t have enough weeks on the ${item.name.toLowerCase()} yet. Change it on judgment, and we’ll measure what happens.`}</p>
       ) : (
         <>
           <div className={s.priceRow}>
             <span className={s.priceLbl}>New price</span>
             <div className={s.stepper}>
-              <button type="button" className={s.stepBtn} onClick={() => step(-0.5)} aria-label="50 cents less"><Icon name="Minus" size={16} /></button>
+              <button type="button" className={s.stepBtn} onClick={() => step(-1)} aria-label="A step lower"><Icon name="Minus" size={16} /></button>
               <output className={s.priceOut} aria-live="polite">{cents(price)}</output>
-              <button type="button" className={s.stepBtn} onClick={() => step(0.5)} aria-label="50 cents more"><Icon name="Plus" size={16} /></button>
+              <button type="button" className={s.stepBtn} onClick={() => step(1)} aria-label="A step higher"><Icon name="Plus" size={16} /></button>
             </div>
-            {recommended ? <span className={s.recTag}><Icon name="Sparkles" size={14} />Our pick</span>
-              : move?.kind === 'price' && move.item === item.key ? <button type="button" className={s.textBtn} onClick={() => setSel({ ...sel, price: move.to })}>Back to our pick ({cents(move.to)})</button> : null}
+            {recommended ? <span className={s.recTag}><Icon name="Sparkles" size={14} />Best price</span>
+              : move?.kind === 'price' && move.item === item.key ? <button type="button" className={s.textBtn} onClick={() => setSel({ ...sel, price: move.to })}>Back to the best price ({cents(move.to)})</button> : null}
           </div>
           {changed && (
-            <Gain value={sim.delta} lo={sim.lo} hi={sim.hi} claim={item.costEstimated ? 'est' : 'mod'}>
-              <span>{plates > 0 ? <>About <b>{plates}</b> fewer {plates === 1 ? 'plate' : 'plates'} a week</> : plates < 0 ? <>About <b>{-plates}</b> more plates a week</> : 'About the same plates a week'}</span>
-              {sim.delta > 0 && !done && <span className={s.factGood}>Waiting {WAIT_WEEKS} weeks leaves about <b>{money(Math.round(sim.delta) * WAIT_WEEKS)}</b> on the table</span>}
+            <Gain value={r.kept} lo={r.bad} hi={r.good} claim={item.costEstimated ? 'est' : 'mod'}>
+              <span>Sales <b>{money(r.sales, { sign: true })}</b> a week</span>
+              <span>{plates > 0 ? <>About <b>{plates}</b> fewer {plates === 1 ? 'plate' : 'plates'} of {item.units}</> : plates < 0 ? <>About <b>{-plates}</b> more plates</> : 'About the same plates'}</span>
+              {r.kept > 0 && !done && <span className={s.factGood}>Waiting {WAIT_WEEKS} weeks leaves about <b>{money(Math.round(r.kept) * WAIT_WEEKS)}</b> on the table</span>}
             </Gain>
           )}
         </>
@@ -214,15 +218,16 @@ function Tester({ v, sel, setSel }) {
             <span className={s.doneMark}><Icon name="CircleCheck" size={18} />Approved. The steps are on Today, and the test starts when guests pay the new price.</span>
             {v.pick && <Button variant="secondary" iconRight="ArrowRight" onClick={() => setSel({ move: v.pick.id, dish: v.pick.item || sel.dish, price: v.pick.to ?? sel.price })}>Next: {CV_MENU.find((d) => d.key === v.pick.item)?.name || 'menu placement'} +{money(v.pick.value)}/wk</Button>}
           </>
-            : <Button icon="Check" className={s.cta} disabled={!changed || over || !sim || sim.delta <= 0} onClick={() => cv.approve(id)}>Review this change</Button>}
-          {!done && changed && sim && sim.delta > 0 && !over && <span className={s.ctaNote}>Tested for 6 weeks before anything counts.</span>}
+            : <Button icon="Check" className={s.cta} disabled={!changed || over || !r || r.kept <= 0} onClick={() => cv.approve(id)}>Review this change</Button>}
+          {!done && changed && r && r.kept > 0 && !over && <span className={s.ctaNote}>Tested for 6 weeks before anything counts.</span>}
         </div>
       )}
-      {sim && changed && (sim.lo < 0 && sim.delta > 0 || wide || over) && (
+      {say && <p className={s.maker}><span className={s.makerTag}><Icon name="Sparkles" size={14} />Menu Maker</span>{say}</p>}
+      {r && changed && (r.bad < 0 && r.kept > 0 || wide || over) && (
         <div className={s.notes}>
-          {sim.lo < 0 && sim.delta > 0 && <p className={s.note}><Icon name="TriangleAlert" size={16} />Uncertain: the low end of the range loses money. A test settles it before anything is counted.</p>}
-          {wide && <p className={s.note}><Icon name="TriangleAlert" size={16} />Guests’ reaction to this dish’s price is loosely measured, so expect a wide result and a longer test.</p>}
-          {over && <p className={s.note}><Icon name="Fence" size={16} />That’s more than your 8% limit for one price change. Pick a smaller step.</p>}
+          {r.bad < 0 && r.kept > 0 && <p className={s.note}><Icon name="TriangleAlert" size={16} />Uncertain: the bad case loses money. A test settles it before anything is counted.</p>}
+          {wide && <p className={s.note}><Icon name="TriangleAlert" size={16} />Guests’ reaction to this dish is loosely measured, so expect a wide result and a longer test.</p>}
+          {over && <p className={s.note}><Icon name="Fence" size={16} />That’s past your {v.fence}% limit for one price change. Pick a smaller step.</p>}
         </div>
       )}
     </section>
@@ -235,22 +240,28 @@ function Gain({ value, lo, hi, claim, children }) {
     <div className={s.gain}>
       <div className={s.gainMain}>
         <span className={up ? s.gainBig : s.lossBig}>{money(value, { sign: true })}</span>
-        <span className={s.gainUnit}>a week, potential</span>
+        <span className={s.gainUnit}>a week, most likely</span>
         <Claim k={claim} />
       </div>
       {Number.isFinite(lo) && Number.isFinite(hi) && (
-        <Interval lo={Math.round(lo)} pt={Math.round(value)} hi={Math.round(hi)} min={Math.min(0, Math.round(lo)) - 20} max={Math.round(hi) + 30} billedLabel="what we’d count once it’s proven" />
+        <div className={s.cases} title="8 in 10 weeks land between these. Potential until a test proves it.">
+          <span className={hi >= 0 ? s.caseGood : s.caseBad}><Icon name="TrendingUp" size={15} />Good week <b>{money(hi, { sign: true })}</b></span>
+          <span className={lo >= 0 ? s.caseGood : s.caseBad}><Icon name="TrendingDown" size={15} />Bad week <b>{money(lo, { sign: true })}</b></span>
+        </div>
       )}
       {children && <div className={s.facts}>{children}</div>}
     </div>
   );
 }
 
-function MoveChips({ v, sel, setSel }) {
+function MoveChips({ v, sel, setSel, onMore }) {
   if (!v.moves.length) return <span className={s.over}><Icon name="Sparkles" size={14} />Try a price on any dish</span>;
+  const sorted = [...v.moves].sort((a, b) => Number(b.ready) - Number(a.ready));
+  const shown = sorted.filter((m, i) => i < 3 || m.id === sel.move);
+  const more = v.moves.length + v.later.length - shown.length;
   return (
     <div className={s.chips} role="radiogroup" aria-label="Changes we found">
-      {[...v.moves].sort((a, b) => Number(b.ready) - Number(a.ready)).map((m, i) => {
+      {shown.map((m, i) => {
         const on = sel.move === m.id;
         const dish = m.item ? CV_MENU.find((d) => d.key === m.item) : null;
         return (
@@ -262,6 +273,7 @@ function MoveChips({ v, sel, setSel }) {
           </button>
         );
       })}
+      {more > 0 && <button type="button" className={s.moreChip} onClick={onMore}>+{more} more</button>}
     </div>
   );
 }
@@ -270,7 +282,10 @@ function MoveChips({ v, sel, setSel }) {
 function CvMenu() {
   const eng = useEngine();
   const windows = eng.mode === 'server' ? eng.windows || [] : null;
-  const v = React.useMemo(() => menuView(CV_D, { tasks: eng.tasks || [], windows }), [eng.tasks, windows, eng.version]); // eslint-disable-line react-hooks/exhaustive-deps
+  const fence = eng.actions?.[CV_D.id]?.fences?.f?.maxPrice ?? 8;
+  const [labSet, setLabSet] = useSaved('menu.lab', { keepOrders: 0.9 });
+  const keepOrders = labSet?.keepOrders ?? 0.9;
+  const v = React.useMemo(() => menuView(CV_D, { tasks: eng.tasks || [], windows, fence, keepOrders }), [eng.tasks, windows, eng.version, fence, keepOrders]); // eslint-disable-line react-hooks/exhaustive-deps
   const first = v.pick || v.moves[0] || null;
   const fallback = v.best || CV_MENU[0];
   const [sel, setSelRaw] = React.useState(() => (first
@@ -343,7 +358,7 @@ function CvMenu() {
 
       {/* 2 · The one thing to do, and 3 · why */}
       <div className={s.main}>
-        <Tester key={`${sel.move}-${sel.dish}`} v={v} sel={sel} setSel={setSel} />
+        <Tester key={`${sel.move}-${sel.dish}`} v={v} sel={sel} setSel={setSel} onMore={() => { setOpen('balanced'); setTimeout(() => document.getElementById('menu-detail')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50); }} />
         <section className={s.card} aria-label="Plate Map">
           <div className={s.cardHead}>
             <h2 className={s.cardTitle}>Plate Map</h2>
@@ -355,6 +370,7 @@ function CvMenu() {
             <span><i className={s.lgDash} />Price never tested</span>
             <Claim k="obs" />
           </div>
+          <TrackRecord t={v.track} />
         </section>
       </div>
 
@@ -371,9 +387,9 @@ function CvMenu() {
       )}
 
       {/* 4 · The detail, behind one click */}
-      <section className={s.detail}>
+      <section className={s.detail} id="menu-detail">
         <div className={s.detailTabs} role="tablist" aria-label="Menu detail">
-          {[['dishes', `Every dish (${v.dishes})`, 'LayoutList'], ['weeks', '52 weeks', 'ChartLine'], ['how', 'How we work it out', 'Calculator']].map(([k, label, icon]) => (
+          {[['balanced', `Balanced menu (${v.all.filter((m) => m.kind === 'price').length})`, 'Sparkles'], ['dishes', `Every dish (${v.dishes})`, 'LayoutList'], ['weeks', '52 weeks', 'ChartLine'], ['how', 'How we work it out', 'Calculator']].map(([k, label, icon]) => (
             <button key={k} type="button" role="tab" aria-selected={open === k} className={`${s.detailTab} ${open === k ? s.detailTabOn : ''}`} onClick={() => setOpen(open === k ? null : k)}>
               <Icon name={icon} size={16} />{label}<Icon name={open === k ? 'ChevronUp' : 'ChevronDown'} size={15} />
             </button>
@@ -384,12 +400,16 @@ function CvMenu() {
               : <><Icon name="Flame" size={15} />Hottest plate: {v.high[0] ? `${v.high[0].name}, ${pct(v.high[0].foodRate ?? v.high[0].cost / v.high[0].price)} food` : 'none over 40% food'}.</>}
           </span>
         </div>
+        {open === 'balanced' && <Balanced v={v} keepOrders={keepOrders} setKeep={(k) => setLabSet({ keepOrders: k }, `Balanced menu keeps at least ${Math.round(k * 100)}% of each dish's orders`)} onTry={(m) => { setSel({ move: m.id, dish: m.item, price: m.to }); document.querySelector(`.${s.action}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }} />}
         {open === 'dishes' && <DishTable v={v} sel={sel.dish} onSel={(k) => { pickDish(k); document.querySelector(`.${s.action}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }} />}
         {open === 'weeks' && <div className={s.detailBody}><DenseMenu /></div>}
         {open === 'how' && (
           <div className={`${s.detailBody} ${s.how}`}>
             <p><b>Earns per plate</b> is the price minus what the plate costs to make. The line on the Plate Map is your average plate, weighted by how many of each you sell.</p>
-            <p><b>How guests react to a price</b> comes from your own price history. When a dish hasn’t changed price enough, we don’t guess: we say so and measure after you change it.</p>
+            <p><b>How guests react to a price</b> is learned from your own weeks: what each dish sold at each price, with the week’s guest count taken out so a busy week isn’t read as a price effect. A dish with little history leans on how your whole menu reacts, never on a made-up number. Every new week and every finished test sharpens it.</p>
+            <p><b>Switching:</b> some guests who skip a dish after a price rise order another one instead. We measure how often that happens on your menu and count it only inside its range.</p>
+            <p><b>Good week and bad week</b> are the edges of the range 8 in 10 weeks land in. The track record checks that range against your real past price changes.</p>
+            <p><b>Balanced menu</b> tries every price inside your {v.fence}% limit for each dish and keeps the one that leaves the most money, only when even the bad week doesn’t lose money and the dish keeps at least {Math.round(v.keepOrders * 100)}% of its orders. Changes go out {v.all.length > 5 ? 'five at a time' : 'together'}, one menu update each round.</p>
             <p><b>Potential</b> money is a model until a test proves it. A change is tested for 6 weeks against dishes whose price didn’t move; only the low end of a verified result is ever counted.</p>
             <p><b>Sides and add-ons</b> is whatever the {v.dishes - 1} named dishes don’t cover in this week’s sales and food cost, so these totals always match what you earned.</p>
             <p className={s.cardSub}>Unmarked numbers come from your own restaurant’s data{CV_D.room.fromToast ? `: Toast through ${CV_D.room.fromToast.end}` : ''}.</p>
@@ -404,7 +424,7 @@ function DishTable({ v, sel, onSel }) {
   return (
     <div className={`cv-tablewrap ${s.detailBody}`} tabIndex={0} role="group" aria-label="Every dish">
       <table className="cv-table">
-        <thead><tr><th>Dish</th><th>Where it sits</th><th className="r">Price</th><th className="r">Plate cost</th><th className="r">Food share</th><th className="r">Earns a plate</th><th className="r">Plates a week</th><th className="r">+$1 adds a week</th></tr></thead>
+        <thead><tr><th>Dish</th><th>Where it sits</th><th className="r">Price</th><th className="r">Plate cost</th><th className="r">Food share</th><th className="r">Earns a plate</th><th className="r">Plates a week</th><th>Guests</th><th className="r">+$1 adds a week</th></tr></thead>
         <tbody>
           {v.list.map((m) => (
             <tr key={m.key} className={`cv-tr ${sel === m.key ? 'sel' : ''}`} onClick={() => onSel(m.key)}>
@@ -415,11 +435,67 @@ function DishTable({ v, sel, onSel }) {
               <td className={`r ${m.foodRate > 0.4 ? s.tdWarn : ''}`}>{pct(m.foodRate)}</td>
               <td className="r">{cents(m.cm)}</td>
               <td className="r">{m.units}</td>
-              <td className={`r ${m.plusOne > 0 ? s.tdGood : ''}`}>{m.plusOne == null ? 'not tested' : money(m.plusOne, { sign: true })}</td>
+              <td className="cv-xs">{m.balancing ? '—' : reactionWord(m.reaction)}</td>
+              <td className={`r ${m.plusOne > 0 ? s.tdGood : ''}`}>{m.plusOne == null ? '—' : money(m.plusOne, { sign: true })}</td>
             </tr>
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function TrackRecord({ t }) {
+  if (!t?.n) return <p className={s.trackNone}><Icon name="Info" size={15} />Once a few of your prices have changed, the Price Lab shows how close its predictions came.</p>;
+  const pct0 = (x) => `${(x * 100).toFixed(1)}%`;
+  return (
+    <div className={s.track}>
+      <span className={s.trackHead}><Icon name="BadgeCheck" size={16} />Price Lab track record</span>
+      <div className={s.trackNums}>
+        <span><b className={s.green}>{pct0(t.err)}</b> typical miss on plates sold</span>
+        <span><b>{pct0(t.naiveErr)}</b> if you guess “same as last week”</span>
+        <span><b className={s.green}>{Math.round(t.inside * 10)} in 10</b> landed inside our range</span>
+      </div>
+      <span className={s.trackNote}>We predicted {t.n} past price changes on {t.dishes} dishes from your other weeks only, then checked what really sold.</span>
+    </div>
+  );
+}
+
+function Balanced({ v, keepOrders, setKeep, onTry }) {
+  const rows = v.all.filter((m) => m.kind === 'price');
+  const round = new Set(v.moves.map((m) => m.id));
+  const total = rows.filter((m) => m.ready && !m.done).reduce((t, m) => t + m.value, 0);
+  return (
+    <div className={`${s.detailBody} ${s.balanced}`}>
+      <div className={s.balHead}>
+        <p className={s.balLine}>Every ready change together: <b className={s.green}>{money(total, { sign: true })} a week</b>, most likely <Claim k="mod" /></p>
+        <label className={s.balKeep}>Keep at least
+          <select value={keepOrders} onChange={(e) => setKeep(+e.target.value)}>
+            {[0.8, 0.85, 0.9, 0.95].map((k) => <option key={k} value={k}>{Math.round(k * 100)}%</option>)}
+          </select>
+          of each dish’s orders
+        </label>
+      </div>
+      <div className="cv-tablewrap" tabIndex={0} role="group" aria-label="Balanced menu">
+        <table className="cv-table">
+          <thead><tr><th>Dish</th><th className="r">Now</th><th className="r">Best price</th><th className="r">Most likely</th><th className="r">Bad week</th><th className="r">Sales</th><th>When</th><th /></tr></thead>
+          <tbody>
+            {rows.map((m) => (
+              <tr key={m.id}>
+                <td><b>{CV_MENU.find((d) => d.key === m.item)?.name}</b></td>
+                <td className="r">{cents(m.from)}</td>
+                <td className="r"><b>{cents(m.to)}</b></td>
+                <td className={`r ${s.tdGood}`}>{money(m.value, { sign: true })}</td>
+                <td className={`r ${m.lo >= 0 ? s.tdGood : s.tdWarn}`}>{money(m.lo, { sign: true })}</td>
+                <td className="r">{money(m.sales, { sign: true })}</td>
+                <td className="cv-xs">{m.done ? 'Done' : !m.ready ? 'Needs plate cost' : round.has(m.id) ? 'This round' : 'Next round'}</td>
+                <td>{!m.done && <button type="button" className={s.textBtn} onClick={() => onTry(m)}>Try it</button>}</td>
+              </tr>
+            ))}
+            {!rows.length && <tr><td colSpan={8} className="cv-faint">No price change keeps money in a bad week right now. Your prices are balanced.</td></tr>}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
