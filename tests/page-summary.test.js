@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import { deriveRoom } from '../lib/data/model.js';
-import { GROUPS, LEVERS, STATUS, leverSummary, vitalsOf } from '../lib/data/page/summary.js';
+import { GROUPS, LEVERS, STATUS, fixTask, leverSummary, vitalsOf } from '../lib/data/page/summary.js';
 import { comparators, defaultComparator } from '../lib/data/page/week.js';
 import { SEED } from '../lib/data/seed.js';
 
@@ -105,5 +105,16 @@ describe('Lever Check, computed', () => {
     expect(by.bar.big.value).toBe(`$${Math.round(d.usage.barWeek)}/wk`);
     expect(by.sales.big.value).toBe(`$${Math.round(d.week.net).toLocaleString('en-US')}`);
     expect(by.sales.good.text).toMatch(/^\d+ more guests/);
+  });
+
+  test('a fix is approved in place with the same task id the lever page uses', () => {
+    const d = deriveRoom(SEED, 'oakland');
+    const v = leverSummary(d, opts);
+    const by = Object.fromEntries(v.levers.map((l) => [l.id, l]));
+    expect(fixTask(by.controls.fix).approvalId).toBe('void-reason');
+    const price = fixTask(v.top.move);
+    expect(price.approvalId).toBe('price:ribeye:44');
+    expect(price.diff[0]).toEqual(['ribeye steak price', '$42', '$44']);
+    expect(fixTask(by.labour.fix)).toMatchObject({ approvalId: 'lever:satpeak', system: '7shifts' });
   });
 });

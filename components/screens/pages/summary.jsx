@@ -5,8 +5,9 @@ import * as React from 'react';
 import { Button, Icon } from '../../kit';
 import { CV_CLAIM, CV_D, CV_DS, CV_ROOM, cvMoney, useCv } from '../core';
 import { deriveRoom } from '../../../lib/data/model';
-import { useEngine } from '../../engine';
-import { GROUPS, LEVERS, NOT_TRACKED, STATUS, STATUS_ORDER, leverSummary } from '../../../lib/data/page/summary';
+import { engine, useEngine } from '../../engine';
+import { stepsFor } from '../../../lib/data/writebacks';
+import { GROUPS, LEVERS, NOT_TRACKED, STATUS, STATUS_ORDER, fixTask, leverSummary } from '../../../lib/data/page/summary';
 import s from './summary.module.css';
 
 /* ================================================================ Lever Check
@@ -112,8 +113,54 @@ function Hero({ view }) {
   );
 }
 
+/* ---------------------------------------------------------------- fix it here
+ * Approving a fix happens on this page: the same task the lever page would make
+ * (same approval id), with the steps shown first and Undo after. */
+function FixPanel({ f, onClose }) {
+  const cv = useCv();
+  const eng = useEngine();
+  const ref = React.useRef(null);
+  React.useEffect(() => { ref.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' }); }, [f.id]);
+  const t = fixTask(f);
+  const task = (eng.tasks || []).find((x) => x.roomId === CV_D.id && x.approvalId === t.approvalId && x.status !== 'cancelled');
+  const steps = t.system ? stepsFor(t.system, t.diff).slice(0, -1) : null;
+  const approve = async () => {
+    const made = await engine.createTask(t.approvalId, { title: t.title, system: t.system || 'Coversight', diff: t.diff });
+    if (made) cv.toast?.('Approved. The steps are on Today, and we’ll check that it worked.');
+  };
+  return (
+    <section ref={ref} className={`${s.fix} ${task ? s.fixDone : ''}`} aria-label={`Fix: ${f.title}`}>
+      <div className={s.fixMain}>
+        <span className={s.fixLabel}>{task ? 'Approved' : 'Fix it here'}</span>
+        <span className={s.fixTitle}>{f.title}</span>
+        <span className={s.fixWin}>Could add {winText(f)} <ClaimDot k={f.claim} /></span>
+        {f.why && <p className={s.fixWhy}>{f.why}</p>}
+        {steps && !task && (
+          <ol className={s.fixSteps} aria-label="What happens next">
+            {steps.map((x) => <li key={x}>{x}</li>)}
+          </ol>
+        )}
+        {task && <p className={s.fixWhy}>The steps are on Today. Tap Done there when it’s made, and we’ll check that it worked.</p>}
+      </div>
+      <div className={s.fixSide}>
+        {task ? (
+          <>
+            <span className={s.fixOk}><Icon name="CircleCheck" size={16} />Approved</span>
+            <button type="button" className={s.link} onClick={() => engine.taskAction(task.id, 'cancel')}>Undo</button>
+          </>
+        ) : (
+          <>
+            <Button icon="Check" onClick={approve}>Approve this fix</Button>
+            <button type="button" className={s.link} onClick={onClose}>Not now</button>
+          </>
+        )}
+      </div>
+    </section>
+  );
+}
+
 /* ---------------------------------------------------------------- start here */
-function StartHere({ view, go }) {
+function StartHere({ view, go, onFix }) {
   const red = view.levers.filter((l) => l.status === 'bad');
   const t = view.top;
   const l = red[0];
@@ -132,9 +179,11 @@ function StartHere({ view, go }) {
         </span>
       </div>
       <div className={s.startSide}>
-        <Button icon="ArrowRight" onClick={() => go(bad ? l.go : t.go)}>{bad ? `Fix ${l.name.toLowerCase()}` : `Open ${t.lever.toLowerCase()}`}</Button>
+        {bad
+          ? <Button icon="Wrench" onClick={() => (l.fix ? onFix(l.fix) : go(l.go))}>{`Fix ${l.name.toLowerCase()}`}</Button>
+          : <Button icon="Wrench" onClick={() => (t.move ? onFix(t.move) : go(t.go))}>Fix it now</Button>}
         {bad && t?.kind === 'move' && t.go !== l.go && (
-          <button type="button" className={s.nextWin} onClick={() => go(t.go)}>After that: {t.title} <b>+{cvMoney(Math.round(t.value))}/wk</b> <Icon name="ArrowRight" size={13} /></button>
+          <button type="button" className={s.nextWin} onClick={() => (t.move ? onFix(t.move) : go(t.go))}>After that: {t.title} <b>+{cvMoney(Math.round(t.value))}/wk</b> <Icon name="ArrowRight" size={13} /></button>
         )}
       </div>
     </section>
@@ -174,7 +223,7 @@ function Tile({ l, selected, onPick }) {
   );
 }
 
-function Detail({ l, go, onClose }) {
+function Detail({ l, go, onClose, onFix }) {
   const ref = React.useRef(null);
   React.useEffect(() => { ref.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' }); }, [l.id]);
   const facts = (l.facts || []).filter(Boolean);
@@ -197,7 +246,7 @@ function Detail({ l, go, onClose }) {
             <li><Icon name="CircleCheck" size={15} className={s.icoGood} /><span><b>Going well:</b> {l.good ? <>{l.good.text} <ClaimDot k={l.good.claim} /></> : 'Nothing to celebrate yet'}</span></li>
             <li><Icon name={l.bad ? 'CircleAlert' : 'Minus'} size={15} className={l.bad ? s.icoBad : s.icoMuted} /><span><b>Not going well:</b> {l.bad ? <>{l.bad.text} <ClaimDot k={l.bad.claim} /></> : 'Nothing wrong found'}</span></li>
             {l.handled && <li><Icon name={on[0]} size={15} className={s.icoInk} /><span><b>{ON_IT_LONG[l.handled.kind]}:</b> {l.handled.text} <span className={s.faint}>· {l.handled.sub}</span></span></li>}
-            {l.fix && <li><Icon name="Sparkles" size={15} className={s.icoGood} /><span><b>Easy win:</b> {l.fix.title}, <span className={s.win}>{l.fix.range ? winText(l.fix) : `about ${cvMoney(Math.round(l.fix.value))}/wk`}</span> <ClaimDot k={l.fix.claim} /></span></li>}
+            {l.fix && <li><Icon name="Sparkles" size={15} className={s.icoGood} /><span><b>Easy win:</b> {l.fix.title}, <span className={s.win}>{l.fix.range ? winText(l.fix) : `about ${cvMoney(Math.round(l.fix.value))}/wk`}</span> <ClaimDot k={l.fix.claim} /> <button type="button" className={s.fixInline} onClick={() => onFix(l.fix)}>Fix it here</button></span></li>}
           </ul>
           <div className={s.detailSide}>
             {l.trend && <span className={s.ctxTrend}><Spark trend={l.trend} label={l.name} w={160} h={40} /><span className={s.faint}>the last 12 weeks</span></span>}
@@ -208,7 +257,7 @@ function Detail({ l, go, onClose }) {
             )}
             {l.note && <p className={s.note}>{l.note}</p>}
             {l.dataNote && <p className={s.note}>{l.dataNote}</p>}
-            <button type="button" className={s.link} onClick={() => go(l.go)}>Open {l.name} <Icon name="ArrowRight" size={13} /></button>
+            <button type="button" className={`${s.link} ${s.linkQuiet}`} onClick={() => go(l.go)}>See the full {l.name} page <Icon name="ArrowRight" size={13} /></button>
           </div>
         </div>
       )}
@@ -254,12 +303,14 @@ function CvSummary() {
     [CV_D, real, eng.windows],
   );
   const [open, setOpen] = React.useState(null);
+  const [fixing, setFixing] = React.useState(null); // { f, at: 'start' | lever id }
   const order = (l) => STATUS_ORDER.indexOf(l.status) * 100 + LEVERS.findIndex((x) => x.id === l.id);
   const sorted = [...view.levers].sort((a, b) => order(a) - order(b));
   return (
     <div className={`cv-page ${s.page}`}>
       <Hero view={view} />
-      <StartHere view={view} go={cv.go} />
+      <StartHere view={view} go={cv.go} onFix={(f) => setFixing({ f, at: 'start' })} />
+      {fixing?.at === 'start' && <FixPanel f={fixing.f} onClose={() => setFixing(null)} />}
       <section aria-label="Every lever, worst first">
         <div className={s.gridHead}>
           <span className={s.gridTitle}>Every part of your restaurant</span>
@@ -279,7 +330,8 @@ function CvSummary() {
               <div className={`${s.grid} ${s[`grid${mine.length}`] || ''}`}>
                 {mine.map((l) => <Tile key={l.id} l={l} selected={open === l.id} onPick={() => setOpen(open === l.id ? null : l.id)} />)}
               </div>
-              {shown && <Detail l={shown} go={cv.go} onClose={() => setOpen(null)} />}
+              {shown && <Detail l={shown} go={cv.go} onClose={() => setOpen(null)} onFix={(f) => setFixing({ f, at: shown.id })} />}
+              {shown && fixing?.at === shown.id && <FixPanel f={fixing.f} onClose={() => setFixing(null)} />}
             </div>
           );
         })}
