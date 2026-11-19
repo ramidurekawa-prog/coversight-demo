@@ -110,7 +110,18 @@ here ships to customers.
   there (`rulesFor(profile)`, from the room's `state`/`city`); never type a
   pay rate or state a rule for a place with no table, and every rule says it
   is a summary to confirm with payroll. A new skill for an agent is a new
-  check, which also becomes a fact and can become its move. Sous talks to
+  check, which also becomes a fact and can become its move.
+  The *day loop* (`lib/ai/loop.js`, `dayLoop()`) gives Day Captain (Today),
+  Shift Pulse (Service) and Data Steward (Data pages) their checkups: last
+  night against Covercast's day-before call and its last-7-day record, today's
+  covers and each service's floor (Service's own `servicePlan`), every decision
+  still open (approved but not made, made but not in the data, hand-offs not
+  opened, meeting actions due) and the data behind it (stale feeds, missing
+  days, typo-looking days). Callers pass the loop's context as `day` (tasks,
+  queue hand-offs, open cards, meeting actions, fences; own rooms also their
+  series and Covercast). A loop left open (`LOOP_BREAK`) leads the moves;
+  staffing advice is held while 7shifts is stale. "What needs me before we
+  open?" answers with `openingList()`. Sous talks to
   people who do not want to read: a fact's `say` is one or two short spoken
   sentences and `todo` the one thing to do (an answer shows those first, the
   full record behind "Show me why"); write both for any new fact or check. The nightly `sous` job notifies
