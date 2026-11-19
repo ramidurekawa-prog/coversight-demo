@@ -170,6 +170,11 @@ import {
   Settings,
   TrendingDown,
   User,
+  ReceiptText,
+  ConciergeBell,
+  Target,
+  CircleStop,
+  Trophy,
 } from 'lucide-react';
 
 const ICONS = {
@@ -338,6 +343,11 @@ const ICONS = {
   Settings,
   TrendingDown,
   User,
+  ReceiptText,
+  ConciergeBell,
+  Target,
+  CircleStop,
+  Trophy,
 };
 
 /** Every icon name the screens use. A unit test keeps this list complete. */

@@ -37,6 +37,10 @@ export const toastSummary = z.object({
     tickets: z.object({
       stations: z.array(z.tuple([z.string().max(60), n(100)])).max(8),
       fri: z.array(n(120).nullable()).length(6), sat: z.array(n(120).nullable()).length(6),
+      // Kitchen page detail: per night and hour [tickets, average minutes, checks], 2-minute histograms by station and weekday-hour.
+      nights: z.array(z.object({ iso: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), recent: z.literal(true).optional(), hours: z.record(z.string().regex(/^([01]?\d|2[0-3])$/), z.tuple([n(100_000), n(120), n(100_000)])) })).max(100).optional(),
+      byStation: z.array(z.object({ name: z.string().max(60), sum: n(10_000_000), h: z.array(n(100_000)).length(21) })).max(8).optional(),
+      hist: z.record(z.string().regex(/^(Sun|Mon|Tue|Wed|Thu|Fri|Sat)\|([01]?\d|2[0-3])$/), z.array(n(100_000)).length(21)).optional(),
     }).optional(),
   }),
 });
