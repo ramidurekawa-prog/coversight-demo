@@ -73,6 +73,8 @@ function HealthRing({ levers, good }) {
   );
 }
 
+const FEED_PLAIN = { 'Kitchen display': 'kitchen screen', '7shifts': 'schedule app', Invoices: 'invoices', 'Inventory counts': 'stock counts', 'Waste log': 'waste log', Waitlist: 'waitlist', 'Delivery statements': 'delivery statements', 'Recipe costs': 'recipe costs', Toast: 'POS' };
+const plainFeeds = (xs) => xs.map((x) => FEED_PLAIN[x] || x).join(' and ');
 const winText = (f) => (f.range ? `${cvMoney(Math.max(0, Math.round(f.lo)))}–${cvMoney(Math.round(f.hi))}/wk` : `+${cvMoney(Math.round(f.value))}/wk`);
 const ON_IT = { testing: ['Timer', 'Testing'], verified: ['BadgeCheck', 'Banking'], held: ['CirclePause', 'On hold'] };
 const ON_IT_LONG = { testing: 'We’re testing a fix', verified: 'A fix is working', held: 'A fix is paused' };
@@ -197,7 +199,7 @@ function Tile({ l, selected, onPick }) {
     return (
       <button type="button" className={`${s.tile} ${s.tile_nodata} ${selected ? s.tileOn : ''}`} aria-pressed={selected} onClick={onPick}>
         <span className={s.tileHead}><span className={s.tileIcon}><Icon name={l.icon} size={17} /></span><span className={s.tileNameWrap}><span className={s.tileName}>{l.name}</span><span className={s.tileAbout}>{l.about}</span></span><StatusPill status="nodata" /></span>
-        <span className={s.tileLine}>We need your {l.missing.join(' and ')} to check this.</span>
+        <span className={s.tileLine}><Icon name="Lock" size={14} /><span>Connect your {plainFeeds(l.missing)} to unlock this.</span></span>
       </button>
     );
   }
@@ -238,7 +240,7 @@ function Detail({ l, go, onClose, onFix }) {
         <button type="button" className={s.close} onClick={onClose} aria-label="Close"><Icon name="X" size={16} /></button>
       </header>
       {l.status === 'nodata' ? (
-        <div className={s.detailBody}><p className={s.note}>Add your {l.missing.join(' and ')} and we can check this lever. Until then we don’t guess.</p>
+        <div className={s.detailBody}><p className={s.note}>Connect your {plainFeeds(l.missing)} and we can check this. Until then we don’t guess.</p>
           <button type="button" className={s.link} onClick={() => go(l.next.go)}>{l.next.label} <Icon name="ArrowRight" size={13} /></button></div>
       ) : (
         <div className={s.detailBody}>

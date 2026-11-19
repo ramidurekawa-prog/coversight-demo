@@ -67,6 +67,15 @@ describe('Lever Check, computed', () => {
     expect(p.missing).toEqual(['Invoices']);
   });
 
+  test('no kitchen screen connected: Kitchen speed is locked (grey), like the Kitchen page', () => {
+    const d = deriveRoom(SEED, 'oakland');
+    const off = { ...d, feeds: d.feeds.map((f) => (f.name === 'Kitchen display' ? { ...f, state: 'off' } : f)) };
+    const k = leverSummary(off, opts).levers.find((l) => l.id === 'kitchen');
+    expect(k.status).toBe('nodata');
+    expect(k.big).toBeNull();
+    expect(k.fix).toBeNull();
+  });
+
   test('a new room waiting on its first sales shows no numbers', () => {
     const d = deriveRoom(SEED, 'oakland');
     const waiting = { ...d, room: { ...d.room, profile: { ...d.room.profile, awaitingData: true } } };
