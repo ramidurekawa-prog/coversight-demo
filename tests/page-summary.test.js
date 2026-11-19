@@ -74,4 +74,26 @@ describe('Lever Check, computed', () => {
     expect(v.vitals).toBeNull();
     expect(v.levers.every((l) => l.status === 'nodata')).toBe(true);
   });
+
+  test('the hub: proof band, ranks, trends and what Coversight is doing all come from the data', () => {
+    const group = ROOMS.map((id) => deriveRoom(SEED, id));
+    const d = group[0];
+    const v = leverSummary(d, { ...opts, group });
+    expect(v.outcome.toDate).toBe(d.banked.toDate);
+    expect(v.outcome.payback.times.toFixed(1)).toBe(d.banked.coverage.toFixed(1)); // the pinned 1.2×
+    expect(v.outcome.plan.value).toBeCloseTo(d.plan.sorted.filter((c) => d.plan.chosen.has(c.id) && c.value > 0.5 && !c.prevent && !(c.needs === 'recipes')).reduce((t, c) => t + c.value, 0));
+    const by = Object.fromEntries(v.levers.map((l) => [l.id, l]));
+    expect(by.labour.handled.kind).toBe('testing'); // Tuesday dinner, closes Nov 3
+    expect(by.labour.trend.values).toHaveLength(12);
+    expect(v.handled).toBe(v.levers.filter((l) => l.handled).length);
+    for (const id of ['labour', 'menu', 'controls']) {
+      const ranks = group.map((g) => leverSummary(g, { ...opts, group }).levers.find((l) => l.id === id).rank.rank).sort();
+      expect(ranks, id).toEqual([1, 2, 3]);
+    }
+    // a real group never shows the sample's packets or payback
+    const real = leverSummary(d, { ...opts, group, windows: [] });
+    expect(real.outcome.toDate).toBe(0);
+    expect(real.outcome.payback).toBeNull();
+    expect(real.levers.every((l) => !l.handled)).toBe(true);
+  });
 });

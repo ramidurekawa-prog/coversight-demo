@@ -130,3 +130,43 @@
   .fix { grid-template-columns: 1fr; }
   .fixValue { white-space: normal; flex-wrap: wrap; }
 }
+
+/* ---- the hub: proof band, trends, rank, what Coversight is doing ------------ */
+.proof { display: flex; flex-direction: column; gap: 14px; padding: 22px 24px; border-radius: 16px; background: #172536; color: #F6F1E7; }
+:global([data-theme='dark']) .proof { background: #1B2230; }
+.proofLabel { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; color: #9FE0C4; }
+.proofRow { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 18px 24px; }
+.proofItem { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.proofBig { font-size: 36px; font-weight: 600; line-height: 1; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; color: #FFFFFF; }
+.proofText { font-size: 15px; line-height: 1.4; color: #C9D2DD; }
+.proofClaim { display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px; border-radius: 99px; background: rgba(159, 224, 196, 0.14); color: #9FE0C4; font-size: 12.5px; font-weight: 600; white-space: nowrap; vertical-align: 1px; }
+.proofNote { font-size: 14px; color: #C9D2DD; }
+
+.bigRow { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.spark { flex: none; color: var(--accent); opacity: 0.9; }
+
+.rank { align-self: flex-start; display: inline-flex; align-items: center; gap: 5px; margin-top: -6px; font-size: 13.5px; font-weight: 600; }
+.rank_good { color: var(--success-700); }
+.rank_bad { color: var(--fg-2); }
+.rank_neutral { color: var(--fg-2); }
+
+.onIt { display: grid; grid-template-columns: auto 1fr; gap: 6px 8px; align-items: start; padding: 10px 12px; border-radius: 12px; font-size: 15px; line-height: 1.4; }
+.onIt > svg { margin-top: 2px; }
+.onIt_testing { background: color-mix(in srgb, var(--accent) 7%, var(--surface)); }
+.onIt_testing > svg { color: var(--accent); }
+.onIt_verified { background: color-mix(in srgb, var(--success-600) 10%, var(--surface)); }
+.onIt_verified > svg { color: var(--success-600); }
+.onIt_held { background: var(--warning-50); }
+.onIt_held > svg { color: var(--warning-600); }
+.onItText b { font-weight: 600; }
+.bar { grid-column: 2; display: block; height: 6px; border-radius: 99px; background: color-mix(in srgb, var(--accent) 14%, transparent); overflow: hidden; }
+.bar i { display: block; height: 100%; border-radius: 99px; background: var(--accent); }
+
+.planLink { display: inline-flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 5px; border: 0; background: transparent; padding: 4px 6px; margin: 0 -6px; border-radius: 8px; font: inherit; font-size: 15px; color: var(--fg-2); cursor: pointer; text-align: right; }
+.planLink b { color: var(--fg-1); font-variant-numeric: tabular-nums; }
+.planLink:hover { background: var(--surface-sunken); color: var(--fg-1); }
+.planLink:focus-visible { outline: none; box-shadow: var(--ring); }
+@media (max-width: 760px) { .planLink { justify-content: flex-start; text-align: left; } }
+@media (max-width: 480px) { .proofBig { font-size: 30px; } .spark { width: 84px; } }
+@media (max-width: 1200px) { .vital .spark { display: none; } }
+@media (max-width: 480px) { .proofRow { grid-template-columns: repeat(2, minmax(0, 1fr)); } .proofBig { font-size: 26px; } }
