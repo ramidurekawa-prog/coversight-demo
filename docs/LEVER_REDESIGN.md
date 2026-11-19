@@ -61,6 +61,27 @@ parts their own names (as with Covercast and Sous). Borrow what works in the
 best restaurant software and in past restaurant consulting; never copy a
 competitor's look or name.
 
+**Make Coversight the place they work, not a report they check.** Ramidu
+(2026-11-19): "how do we get the client to focus on using our product and
+become reliant on coversight rather than still looking at their pos data,
+using native pos AI, and just doing things by hand". The goal is to make every
+client as efficient as they can be, with very high use of the platform. For
+every lever page, ask:
+
+- *Why would they open the POS instead?* Whatever they would look up there for
+  this lever (sales by hour, a check, a comp, a time entry) must be quicker to
+  find here, already explained. Never send them to the POS to finish a job.
+- *What does the POS's own AI or report already say?* Go past it: say what it
+  means for this room, what to do, the money at stake, and whether last time's
+  fix worked. A page that only restates POS numbers has failed.
+- *What do they still do by hand?* Spreadsheets, counts, texts to the GM,
+  supplier emails, schedule tweaks. Do the work up to a draft or one tap
+  (the email written, the task assigned, the count list ready on a phone) so
+  the next step happens inside Coversight.
+- *Why come back tomorrow?* Close the loop: decisions are remembered, results
+  of what they changed come back to this page, and the next useful thing is
+  waiting. Each visit should leave one clear action done.
+
 **Little to read, little to scroll.** About two minutes to understand and act.
 Real emphasis where it matters, and nowhere else. Polish like a strong SaaS
 product page. The answer and the action fit above the fold on a 1440 x 900
@@ -123,7 +144,8 @@ write back on their own.
    current page and every helper it imports, the lever's card in `summary.js`,
    and the project memory files your agent file names.
 2. Write a short plan for the thread (what the page will say, the one action,
-   the picture, what moves behind a click, the backend pieces) and post it
+   the picture, what moves behind a click, the backend pieces, and what
+   this page does that the POS, its AI and hand work don't) and post it
    before building when Ramidu is around; otherwise build the plan and say
    which reading you chose.
 3. Build on one branch and one PR for the page. Edit only the files your page
