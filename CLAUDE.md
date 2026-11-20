@@ -143,6 +143,14 @@ here ships to customers.
   reservations) live in `server/forecast-feeds.ts` and switch on with a key.
   `tests/forecast.test.ts` checks it beats the usual-night method on the
   sample; `node scripts/covercast-report.mjs` prints the full accuracy report.
+  The model is picked per task (`select.js`: day, service, slot, prep; V1,
+  V2 = V1 + gradient-boosted trees from `gbm.js`, each method alone): picked
+  on the first half of the scored window, used only if it holds up on the
+  second, else V1. Sellouts and turned-away guests (`forecast.signals`
+  `capacity`) feed demand. `live.js` forecasts the rest of a shift from the
+  host's counts (`forecast.live`); `decisions.js` sizes staffing and prep by
+  cost and keeps the pilot ledger (`forecast.decisions`). Backtest savings are
+  Simulated; only logged outcomes are Observed.
 - **Groups and people:** `server/team.ts`. A person can belong to several
   groups; the `cv-org` cookie picks the one in view (`viewerFor` only honours
   it for their own memberships). Invite tokens are stored hashed. Never
