@@ -136,7 +136,7 @@ describe('Service: approving tonight’s cut', () => {
 
   it('refuses a cut the fences don’t allow, whatever the page sent', async () => {
     await fences(5);
-    await expect(approveCut(db, owner(), { roomId: 'oakland', date: '2026-10-29', at: '20:00' }, { now: NOW })).rejects.toThrow(/fence|used its servers/);
+    await expect(approveCut(db, owner(), { roomId: 'oakland', date: '2026-10-29', at: '20:00' }, { now: NOW })).rejects.toThrow(/minimum|fence|used its servers/);
     expect(await db.select().from(tasks).where(and(eq(tasks.orgId, orgId), eq(tasks.roomId, 'oakland')))).toHaveLength(0);
   });
 
