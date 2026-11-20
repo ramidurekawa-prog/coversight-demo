@@ -29,7 +29,8 @@ describe('the day loop reads last night, today and every open decision', () => {
         }
       }
     }
-  });
+    // Three rooms read cold: Covercast plus its last seven day-ahead calls each, about a second a room.
+  }, 30_000);
 
   it('last night is the latest day on file, scored against the call Covercast made the day before', () => {
     const d = room('oakland');
