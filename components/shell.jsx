@@ -9,12 +9,13 @@ import { Button, Icon } from './kit';
 import { ApprovalModal, Claim, cvApproval, CV_CLAIM, CV_D, CV_LOCS, CvCtx, DerivDrawer, Pill } from './screens/core';
 import { engine, useEngine } from './engine';
 import { useClock } from './clock';
-import { CV_PAGE_DEPS, CvAsk } from './screens/extra';
+import { CV_PAGE_DEPS } from './screens/extra';
+import { PageAgent, SousButton, SousPanel } from './sous';
 import { useTodayCounts } from './screens/pages/today.badge';
 import './shell.css';
 
 /* The app chrome around every screen: the sidebar grouped by how often each
- * screen is used, and a top bar with the page, Ask, one data-health notice
+ * screen is used, and a top bar with the page, Sous (the AI teammate), one data-health notice
  * (only when something needs updating), the room switcher and quiet
  * utilities. Demo tools (finished product / build plan, view-as roles,
  * build gaps) sit in a strip that's hidden unless turned on with ?tools=1
@@ -168,10 +169,7 @@ function TopBar({ page, loc, onLoc, role, onRole, go, onMenu, onAsk, tools }) {
           <i /><span className="cv-wl">{CV_D.staleCount} source{CV_D.staleCount === 1 ? ' needs' : 's need'} updating</span><span className="cv-ws" aria-hidden="true">{CV_D.staleCount}</span>
         </button>
       )}
-      <button className="cv-health" onClick={onAsk} aria-label="Ask">
-        <Icon name="MessageCircle" size={15} />
-        <span className="cv-hide-sm">Ask</span>
-      </button>
+      <SousButton onClick={onAsk} />
       <div className="cv-pop-wrap">
         <button className="locpick" onClick={() => setPop(pop === 'loc' ? null : 'loc')} aria-expanded={pop === 'loc'}>
           <Icon name="MapPin" size={15} color="var(--accent)" />
@@ -370,7 +368,10 @@ function AppShell({ children }) {
   const [approval, setApproval] = React.useState(null);
   const [toast, setToast] = React.useState(null);
   const [navOpen, setNavOpen] = React.useState(false);
-  const [ask, setAsk] = React.useState(false);
+  // Sous: open or not (with a question handed over from the page's agent), and one conversation that follows the person across pages.
+  const [ask, setAsk] = React.useState(null);
+  const [sousTurns, setSousTurns] = React.useState([]);
+  React.useEffect(() => { setSousTurns([]); }, [eng.room]);
   const scrollRef = React.useRef(null);
   const toastTimer = React.useRef(null);
 
@@ -387,6 +388,18 @@ function AppShell({ children }) {
   }, [pathname]);
 
   const go = React.useCallback((p, params) => router.push(pathFor(p, params)), [router]);
+  // "/" opens Sous from anywhere, unless the person is typing.
+  React.useEffect(() => {
+    const k = (e) => {
+      if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = e.target;
+      if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      e.preventDefault();
+      setAsk({});
+    };
+    window.addEventListener('keydown', k);
+    return () => window.removeEventListener('keydown', k);
+  }, []);
   const pickRoom = React.useCallback((id) => { setAllMode(false); engine.setRoom(id); }, []);
   const showToast = React.useCallback((m) => {
     setToast(m);
@@ -451,15 +464,16 @@ function AppShell({ children }) {
           <Sidebar page={page} role={role} onNavigate={() => setNavOpen(false)} />
           {navOpen && <div className="cv-scrim" style={{ zIndex: 'calc(var(--z-drawer) - 1)' }} onClick={() => setNavOpen(false)} />}
           <div className="content">
-            <TopBar page={page} loc={loc} onLoc={chooseLoc} role={role} onRole={chooseRole} go={go} onMenu={() => setNavOpen(true)} onAsk={() => setAsk(true)} tools={tools} />
+            <TopBar page={page} loc={loc} onLoc={chooseLoc} role={role} onRole={chooseRole} go={go} onMenu={() => setNavOpen(true)} onAsk={() => setAsk({})} tools={tools} />
             <main className="scroll" ref={scrollRef} tabIndex={0} aria-label="Screen">
+              <PageAgent key={`${eng.room}:${page}`} page={page} role={role} onOpen={(q, run) => (run && run.act.kind === 'approve' ? setApproval({ id: run.act.id }) : run && run.act.kind === 'go' ? go(run.act.page, run.act.goId ? { id: run.act.goId } : undefined) : setAsk({ q: q || '', run: run || null }))} />
               <React.Fragment key={`${eng.room}-${eng.version}`}>{children}</React.Fragment>
             </main>
           </div>
         </div>
       </div>
       </div>
-      {ask && <CvAsk onClose={() => setAsk(false)} go={go} />}
+      {ask && <SousPanel onClose={() => setAsk(null)} go={go} role={role} tools={tools} page={page} first={ask.q || ''} run={ask.run || null} turns={sousTurns} setTurns={setSousTurns} />}
       {deriv && <DerivDrawer id={deriv} onClose={() => setDeriv(null)} />}
       {approval && (
         <ApprovalModal

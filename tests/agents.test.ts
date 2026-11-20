@@ -10,6 +10,7 @@ import { actions, agentEvents, agentProposals, agentRuns, notifications, orgs, t
 import { runJob } from '../server/jobs';
 import { createSampleOrg } from '../server/org';
 import { freshDb } from './helpers/db';
+import { fakeClaude } from './helpers/fake-claude';
 
 const NOW = new Date('2026-10-28T15:00:00Z');
 let db: Db;
@@ -141,10 +142,13 @@ describe('the crew on the server', () => {
     expect(a.topic).toBe('priorities');
     expect(a.text).toMatch(/ribeye/i);
     process.env.ANTHROPIC_API_KEY = 'sk-test';
-    const invent = (async () => new Response(JSON.stringify({ content: [{ type: 'text', text: 'Raise the ribeye; it will make $9,999 a week.' }] }), { status: 200 })) as unknown as typeof fetch;
-    const b = await ask(db, owner(), { who: 'operator', question: 'What should Oakland do first?' }, invent);
+    const invent = fakeClaude({ text: 'Raise the ribeye; it will make $9,999 a week.' });
+    const b = await ask(db, owner(), { who: 'operator', question: 'What should Oakland do first?' }, invent.f);
+    expect(invent.calls[0]!.body.model).toBe('claude-opus-5-5');
     expect(b.phrased).toBe(false);
     expect(b.text).toBe(a.text);
+    const plain = fakeClaude({ text: 'Start with the ribeye at Oakland.' });
+    expect((await ask(db, owner(), { who: 'operator', question: 'What should Oakland do first?' }, plain.f))).toMatchObject({ phrased: true, text: 'Start with the ribeye at Oakland.' });
     const c = await ask(db, owner(), { who: 'accountant', question: 'where do savings land in the ledger?' });
     expect(c.topic).toBe('ledger');
     expect(c.text).toMatch(/Nothing verified/);
