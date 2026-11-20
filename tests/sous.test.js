@@ -558,3 +558,66 @@ describe('Sous talks plainly', () => {
     }
   });
 });
+
+describe('Sous learns the restaurant and the person', () => {
+  it('keeps what it is told, answers from it, and shows it on the move it bears on', async () => {
+    const { addNote, asNote, notesFor, noteFacts, NOTES } = await import('../lib/ai/learn.js');
+    expect(asNote('Remember that we close Mondays')).toBe('We close Mondays');
+    expect(asNote('How did last week go?')).toBeNull();
+    let notes = addNote([], 'Call Bay Fish Co., never email them', { now: 1 });
+    notes = addNote(notes, 'We close Mondays', { now: 2 });
+    expect(addNote(notes, 'we close mondays', { now: 3 })).toBe(notes);
+    expect(addNote(Array.from({ length: NOTES.max }, (_, i) => ({ id: `x${i}`, text: `note ${i}`, at: '' })), 'one more', { now: 4 })).toHaveLength(NOTES.max);
+    const d = room('oakland');
+    const facts = sousFacts(d, { notes });
+    expect(facts.filter((f) => f.topic === 'notes')).toHaveLength(noteFacts(notes).length);
+    expect(sousAnswer('Are we open on Mondays?', facts).used).toContain(`note:${notes[0].id}`);
+    expect(sousAnswer('What do you know about us?', facts).used.every((id) => id.startsWith('note:'))).toBe(true);
+    const { sousMoves } = await import('../lib/ai/moves.js');
+    const vendor = sousMoves(d, { noticed: sousNoticed(d) }).find((m) => m.act.kind === 'email');
+    expect(notesFor(`${vendor.title} ${vendor.why}`, notes).map((n) => n.text)).toEqual(['Call Bay Fish Co., never email them']);
+    expect(notesFor('Raise the ribeye to $44', notes)).toEqual([]);
+    // "Never email them" wins over a move that would draft that email.
+    const { respectNotes } = await import('../lib/ai/learn.js');
+    const held = respectNotes([vendor], notes)[0];
+    expect(held.act).toEqual({ kind: 'go', page: vendor.go });
+    expect(respectNotes([vendor], [{ id: 'n', text: 'We close Mondays', at: '' }])[0].act.kind).toBe('email');
+  });
+
+  it('puts kinds of change proven here first and ones the room keeps setting aside last, without moving anything urgent', async () => {
+    const { rankMoves, sousLearned, learnedFact, SKIP_LIMIT } = await import('../lib/ai/learn.js');
+    const { sousMoves } = await import('../lib/ai/moves.js');
+    const d = room('oakland');
+    const noticed = sousNoticed(d);
+    const moves = sousMoves(d, { noticed });
+    const learned = sousLearned(d, {});
+    const won = Object.entries(learned).find(([, l]) => l.worked > 0);
+    expect(won, 'the sample has a verified change').toBeTruthy();
+    const ranked = rankMoves(moves, learned);
+    expect(ranked).toHaveLength(moves.length);
+    const urgent = (xs) => xs.filter((m) => m.source === 'noticed' || m.source === 'today').map((m) => m.id);
+    expect(urgent(ranked)).toEqual(urgent(moves));
+    const firstSuggestion = ranked.find((m) => m.source !== 'noticed' && m.source !== 'today' && m.learned);
+    expect(firstSuggestion.learned.kind).toBe('worked');
+    const fact = learnedFact(d, learned);
+    expect(fact.text).toContain(money(Math.round(won[1].week)));
+    expect(numbersOk(`${fact.say} ${fact.text}`, sousSheet(sousFacts(d, { learned })))).toBe(true);
+    // Turned down twice with nothing proven: that kind goes to the back and says why.
+    const mem = Object.fromEntries(Array.from({ length: SKIP_LIMIT }, (_, i) => [`register:comps:${i}`, { at: new Date().toISOString(), how: 'dismissed', sig: 'x' }]));
+    const cold = sousLearned({ ...d, banked: { live: [], reversed: [] }, proofs: [] }, { mem });
+    const back = rankMoves([{ id: 'a', topic: 'comps', source: 'plan' }, { id: 'b', topic: 'menu', source: 'plan' }], cold);
+    expect(back.map((m) => m.id)).toEqual(['b', 'a']);
+    expect(back[1].learned.kind).toBe('skipped');
+  });
+
+  it('offers each person the questions they usually ask first', async () => {
+    const { favoriteTopic, learnAsk, rankQuestions } = await import('../lib/ai/learn.js');
+    let me = { asked: {} };
+    expect(favoriteTopic(me)).toBeNull();
+    for (let i = 0; i < 3; i++) me = learnAsk(me, 'labor');
+    expect(favoriteTopic(me)).toBe('labor');
+    const topic = { a: 'week', b: 'labor', c: 'menu' };
+    expect(rankQuestions(['a', 'b', 'c'], me, (q) => topic[q])).toEqual(['b', 'a', 'c']);
+    expect(rankQuestions(['a', 'b', 'c'], { asked: {} }, (q) => topic[q])).toEqual(['a', 'b', 'c']);
+  });
+});

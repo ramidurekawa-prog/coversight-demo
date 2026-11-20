@@ -4,11 +4,12 @@ import * as React from 'react';
 
 import { agentAnswer, agentFor, agentRead, agentTeam } from '../lib/ai/agents';
 import { agentRecord, noticedSig, sousBoard, sousMoves, sousRemember } from '../lib/ai/moves';
+import { addNote, asNote, favoriteTopic, learnAsk, notesFor, rankMoves, rankQuestions, respectNotes, sousLearned } from '../lib/ai/learn';
 import { lineCheck } from '../lib/ai/playbook';
-import { SOUS, firstSentence, sousBrief, sousCites, sousFacts, sousNoticed, sousRole, sousSuggest, sousToday } from '../lib/ai/sous';
+import { SOUS, firstSentence, sousBrief, sousCites, sousFacts, sousNoticed, sousRelevant, sousRole, sousSuggest, sousToday } from '../lib/ai/sous';
 import { money } from '../lib/data/model';
 import { CV_PAGES } from '../lib/pages';
-import { engine, useEngine, useSaved } from './engine';
+import { ME, engine, useEngine, useSaved } from './engine';
 import { Button, Icon } from './kit';
 import { Claim, CV_D, CV_GROUP, useCv } from './screens/core';
 import './sous.css';
@@ -35,12 +36,15 @@ function useLocalSous(role, page) {
     const today = sousToday(CV_D, { stored: saved.queue || null, dismissed: saved.findings || {}, windows: eng.windows || [], tasks: eng.tasks || [] });
     const memory = sousRemember(sousNoticed(CV_D), mem || {});
     const noticed = memory.active;
+    // What the room has taught Sous: its notebook, and which kinds of change have worked or been set aside.
+    const notes = saved['sous.notes'] || [];
+    const learned = sousLearned(CV_D, { mem: mem || {}, acts: saved['sous.learn'] || [] });
     // The day loop: last night, today's plan and every decision still open, read by Day Captain, Shift Pulse and Data Steward.
     const day = { tasks: (eng.tasks || []).filter((t) => t.roomId === CV_D.id), assigned: today.view?.assigned || {}, open: today.open, fences: saved.fences ?? null };
-    const facts = sousFacts(CV_D, { role, windows: eng.windows || [], card: today.card, open: today.open, noticed, group: CV_GROUP, day });
+    const facts = sousFacts(CV_D, { role, windows: eng.windows || [], card: today.card, open: today.open, noticed, group: CV_GROUP, notes, learned, day });
     const brief = sousBrief(CV_D, { role, facts, noticed, card: today.card, open: today.open });
-    const moves = sousMoves(CV_D, { noticed, card: today.card, role, quietIds: memory.quietIds, day });
-    return { facts, brief, noticed, memory, moves, day, record: agentRecord(CV_D), suggest: sousSuggest(facts, role), agent: agentRead(page, facts, noticed, { role, moves }) };
+    const moves = respectNotes(rankMoves(sousMoves(CV_D, { noticed, card: today.card, role, quietIds: memory.quietIds, day }), learned), notes);
+    return { facts, brief, noticed, memory, moves, day, notes, learned, me: eng.actions?.[ME]?.['sous.me'] || { asked: {} }, record: agentRecord(CV_D), suggest: sousSuggest(facts, role), agent: agentRead(page, facts, noticed, { role, moves }) };
     // eng.version changes whenever the room or its data does.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [role, page, mem, eng.version, eng.room, eng.actions, eng.windows, eng.tasks]);
@@ -327,6 +331,7 @@ function Answer({ t, last, onGo, onAsk, onDo }) {
   return (
     <div className="a">
       <p className="short">{short}</p>
+      {t.noted && <p className="noted"><Icon name="NotebookPen" size={15} />{t.noted}</p>}
       {t.todo && <p className="todo"><b>Do this</b>{t.todo}</p>}
       {t.move && <Stake move={t.move} />}
       {t.move && <div className="cv-sous-acts"><Button icon={ACT[t.move.act.kind]?.icon} iconRight={ACT[t.move.act.kind] ? undefined : 'ArrowRight'} onClick={() => onDo(t.move)}>{ctaFor(t.move)}</Button></div>}
@@ -349,6 +354,11 @@ export function SousPanel({ onClose, go, role: shellRole = 'owner', tools = fals
   const role = sousRole(server ? eng.viewer?.role : shellRole);
   const local = useLocalSous(role, page);
   const [, setMem] = useSaved('sous', {});
+  const [notes, setNotes] = useSaved('sous.notes', []);
+  const [, setActs] = useSaved('sous.learn', []);
+  const [, setMe] = useSaved('sous.me', { asked: {} }, { person: true });
+  const [book2, setBook2] = React.useState(false);
+  const [noteText, setNoteText] = React.useState('');
   const [remote, setRemote] = React.useState(null);
   const [text, setText] = React.useState('');
   const [busy, setBusy] = React.useState(false);
@@ -388,7 +398,10 @@ export function SousPanel({ onClose, go, role: shellRole = 'owner', tools = fals
   const me = local.agent;
   const { move } = me;
   const special = me.agent.id !== 'sous';
-  const suggest = special && me.ask.length ? me.ask : local.suggest;
+  // This person's usual areas come first.
+  const suggest = rankQuestions(special && me.ask.length ? me.ask : local.suggest, local.me, (q) => sousRelevant(q, local.facts, 1, me.topics)[0]?.topic || '');
+  const fav = favoriteTopic(local.me);
+  const keep = (text) => { const next = addNote(notes, text, { by: eng.viewer?.name || '' }); if (next !== notes) setNotes(next, `Sous: remembered: ${String(text).slice(0, 80)}`); return next !== notes; };
   const leave = (p, params) => { onClose(); go(p, params); };
   const push = (t) => setTurns((xs) => [...xs, { by: me.agent.name, ...t }]);
   const board = sousBoard(CV_D, { moves: local.moves, memory: local.memory, mem: eng.actions?.[CV_D.id]?.sous || {}, page: me.agent.id });
@@ -401,6 +414,8 @@ export function SousPanel({ onClose, go, role: shellRole = 'owner', tools = fals
 
   /** Carry out a move, up to the point where the person decides: a draft to send, an approval to give, or the screen to do it on. */
   const act = async (m) => {
+    // Acting on a suggestion teaches Sous what gets used here.
+    setActs((xs) => [{ topic: m.topic, id: m.id, at: new Date().toISOString() }, ...(Array.isArray(xs) ? xs : [])].slice(0, 100), `Sous: acted on: ${m.title}`);
     if (m.act.kind === 'email') {
       let saved = false;
       if (server) saved = !!(await engine.draftEmail({ kind: 'vendor', subject: m.act.subject, body: m.act.body }).catch(() => null));
@@ -422,6 +437,14 @@ export function SousPanel({ onClose, go, role: shellRole = 'owner', tools = fals
     const q = String(question || '').trim().slice(0, 500);
     if (!q || busy) return;
     setText('');
+    // "Remember that…" goes in the notebook, not to the records.
+    const note = asNote(q);
+    if (note) {
+      const fresh = keep(note);
+      setTurns((xs) => [...xs, { q, by: me.agent.name, a: '', short: fresh ? 'Got it. I’ll remember that.' : 'I already have that written down.', todo: null, noted: note, cites: [], suggest: [] }]);
+      setBook2(true);
+      return;
+    }
     setBusy(true);
     setTurns((xs) => [...xs, { q, pending: true, by: me.agent.name }]);
     let a = null;
@@ -434,6 +457,9 @@ export function SousPanel({ onClose, go, role: shellRole = 'owner', tools = fals
     if (!a) a = agentAnswer(page, q, local.facts, { room: local.brief.room, role, move });
     // The button on an answer always comes from this browser's own move, never from text.
     const m = a.move ? local.moves.find((x) => x.id === a.move.id) || null : null;
+    // What this person asks about shapes what is offered first next time.
+    const about = local.facts.find((f) => f.id === a.used?.[0])?.topic;
+    if (about && a.grounded) setMe((p) => learnAsk(p, about), 'Sous: learned what you ask about');
     setTurns((xs) => xs.map((t, i) => (i === xs.length - 1 ? { q, by: me.agent.name, a: a.text, short: a.short, todo: a.todo || null, move: m, cites: a.cites || sousCites([]), claim: a.claim, grounded: a.grounded, suggest: a.suggest || [] } : t)));
     setBusy(false);
   };
@@ -513,6 +539,8 @@ export function SousPanel({ onClose, go, role: shellRole = 'owner', tools = fals
                     </button>
                     <p className="t">{m.title}</p>
                     <Stake move={m} />
+                    {m.learned && <p className={`cv-ticket-learned ${m.learned.kind}`}><Icon name={m.learned.kind === 'worked' ? 'BadgeCheck' : 'History'} size={14} />{m.learned.text}</p>}
+                    {notesFor(`${m.title} ${m.why}`, local.notes).map((n) => <p key={n.id} className="cv-ticket-learned note"><Icon name="NotebookPen" size={14} />You told me: {n.text}</p>)}
                     {isOpen && (
                       <div className="cv-ticket-why">
                         <p>{m.why}</p>
@@ -562,6 +590,31 @@ export function SousPanel({ onClose, go, role: shellRole = 'owner', tools = fals
               ))}
             </section>
           </div>
+
+          <section className="cv-sous-notes">
+            <button type="button" className="cv-sous-notes-h" onClick={() => setBook2((x) => !x)} aria-expanded={book2}>
+              <span className="ic"><Icon name="NotebookPen" size={16} /></span>
+              <span className="t"><b>What I know about {brief.room}</b><i>{notes.length ? `${notes.length} thing${notes.length === 1 ? '' : 's'} you told me` : 'Tell me how you run things and I’ll remember'}{fav ? ` · You ask about ${fav === 'stock' ? 'inventory' : fav === 'comps' ? 'the register' : fav} most` : ''}</i></span>
+              <Icon name={book2 ? 'ChevronDown' : 'ChevronRight'} size={16} />
+            </button>
+            {book2 && (
+              <div className="cv-sous-notes-b">
+                <form onSubmit={(e) => { e.preventDefault(); if (noteText.trim().length >= 3) { keep(noteText); setNoteText(''); } }}>
+                  <input value={noteText} onChange={(e) => setNoteText(e.target.value)} maxLength={240} placeholder="We close Mondays. Never cut Jess. Call Bay Fish, don’t email." aria-label={`Tell ${SOUS.name} something to remember`} />
+                  <Button variant="secondary" type="submit" disabled={noteText.trim().length < 3}>Remember</Button>
+                </form>
+                {notes.length > 0 && (
+                  <ul>
+                    {notes.map((n) => (
+                      <li key={n.id}><span>{n.text}</span><button type="button" className="cv-sous-more" onClick={() => setNotes(notes.filter((x) => x.id !== n.id), 'Sous: forgot a note')} aria-label={`Forget: ${n.text}`}>Forget</button></li>
+                    ))}
+                  </ul>
+                )}
+                {local.facts.find((f) => f.id === 'learned') && <p className="cv-sous-notes-learned"><Icon name="BadgeCheck" size={14} />{local.facts.find((f) => f.id === 'learned').say} {local.facts.find((f) => f.id === 'learned').todo}</p>}
+                <p className="fine">Everyone at {brief.room} who uses Coversight can see these. Say “remember that…” in the ask line to add one.</p>
+              </div>
+            )}
+          </section>
 
           <section className="cv-pass-room">
             <p><b>{brief.room} right now.</b> {brief.headline}</p>
