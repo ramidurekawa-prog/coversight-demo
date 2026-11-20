@@ -8,7 +8,7 @@ import { Icon, Button } from '../kit';
 import { Callout } from './core';
 
 /* Coversight — screens added in v2: First six weeks, Portfolio, Weekly meeting,
-   Finding detail, Fences & alerts, Billing, the Ask panel, and the
+   Finding detail, Fences & alerts, Billing, and the
    "What's missing" build view (platform gaps → waves → screens). */
 
 /* ================================================================ platform gaps */
@@ -53,69 +53,4 @@ const CV_PAGE_DEPS = {
 };
 const CV_GRADE_TONE = { A: "bad", B: "warn", C: "info", D: "neutral" };
 
-/* ================================================================ Ask panel */
-const CV_ASK = [
-  { q: "Why is the salmon test stuck?", a: "Recipe costs are 18 days old, so we can't tell what a salmon plate costs now. The test is quarantined, not failed. Upload this week's costs and it resumes; its window restarts from the upload.", src: [["Recipe costs", "uploaded Oct 9"], ["Verification packet · salmon plate cost", "data failure"]], go: "sources" },
-  { q: "How do you know the $97 is real?", a: "Nine Thursdays after the change were compared with nine matched Thursdays at Berkeley and Walnut Creek that didn't change. The measured effect is $97 to $127 a week. We bill on $97, the bottom of that range.", src: [["Verification packet · Thursday prep", "12 of 12 gates"], ["7shifts schedules", "18 hours ago"]], go: "packet" },
-  { q: "What should I do first this week?", a: "Raise the salmon to $30, but upload recipe costs first, or it can't verify. Then the ribeye to $44. Then call Bay Fish Co. and Valley Greens. Those three fit in about 2 manager-hours.", src: [["The plan", "ranked by value per hour"]], go: "plan" },
-  { q: "Why are faster table turns worth $0?", a: "The room was full for five 15-minute intervals all week. Outside those, a faster turn seats nobody new. And without waitlist data we can't show anyone was turned away, so we claim nothing.", src: [["Toast · seat-hours", "2 min ago"]], go: "throughput" },
-  { q: "Did Berkeley's server cut work?", a: "It looked like it for three weeks, then table turns slipped to 54 minutes against your 52-minute guard. We reversed it, removed $555 back to Aug 3, and the ranker now trusts Friday cuts at Berkeley less.", src: [["Verification packet · Berkeley Friday", "reversed Aug 24"]], go: "proof" },
-];
-function CvAsk({ onClose, go }) {
-  const [sel, setSel] = React.useState(null);
-  const [text, setText] = React.useState("");
-  const [free, setFree] = React.useState(false);
-  React.useEffect(() => {
-    const k = (e) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", k);
-    return () => window.removeEventListener("keydown", k);
-  }, [onClose]);
-  const item = sel != null ? CV_ASK[sel] : null;
-  return (
-    <>
-      <div className="cv-scrim" onClick={onClose} />
-      <aside className="cv-drawer" role="dialog" aria-label="Ask">
-        <div className="hd">
-          <div className="cv-col" style={{ gap: 4 }}><span className="cv-h3">Ask</span><span className="cv-xs cv-faint">Answers come only from your records, and each one shows which.</span></div>
-          <button className="iconbtn" onClick={onClose} aria-label="Close"><Icon name="X" size={18} /></button>
-        </div>
-        <div className="bd">
-          {!item && !free && (
-            <div className="cv-col" style={{ gap: 8 }}>
-              <span className="cv-over">Try one</span>
-              {CV_ASK.map((x, n) => (
-                <button key={x.q} className="cv-pop opt" style={{ position: "static", boxShadow: "none", border: "1px solid var(--border)", padding: "10px 12px", minWidth: 0 }} onClick={() => setSel(n)}>
-                  <Icon name="MessageCircle" size={15} />{x.q}
-                </button>
-              ))}
-            </div>
-          )}
-          {item && (
-            <div className="cv-col" style={{ gap: 14 }}>
-              <span style={{ fontWeight: 700 }}>{item.q}</span>
-              <p className="cv-small" style={{ lineHeight: 1.6 }}>{item.a}</p>
-              <div className="cv-col" style={{ gap: 6 }}>
-                <span className="cv-over">Records used</span>
-                <dl className="cv-kv">{item.src.map(([k, v]) => <React.Fragment key={k}><dt>{k}</dt><dd style={{ fontFamily: "var(--font-sans)" }}>{v}</dd></React.Fragment>)}</dl>
-              </div>
-              <div className="cv-row"><Button size="sm" onClick={() => { onClose(); go(item.go); }}>Open it</Button><Button size="sm" variant="ghost" onClick={() => setSel(null)}>Ask something else</Button></div>
-            </div>
-          )}
-          {free && (
-            <div className="cv-col" style={{ gap: 12 }}>
-              <Callout icon="Info">This mockup answers the suggested questions. In the product, every answer cites the records it used, and when no record supports an answer it says so instead of guessing.</Callout>
-              <Button size="sm" variant="ghost" onClick={() => { setFree(false); setText(""); }}>Back to suggestions</Button>
-            </div>
-          )}
-          <form className="cv-row nowrap" style={{ marginTop: "auto", gap: 8 }} onSubmit={(e) => { e.preventDefault(); if (text.trim()) { setSel(null); setFree(true); } }}>
-            <input id="cv-ask" value={text} onChange={(e) => setText(e.target.value)} placeholder="Ask about your rooms" className="input"
-              style={{ flex: 1, height: 38, padding: "0 12px", borderRadius: "var(--radius-md)", border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--fg-1)", font: "inherit", minWidth: 0 }} />
-            <Button type="submit" icon="ArrowUp" aria-label="Ask" />
-          </form>
-        </div>
-      </aside>
-    </>
-  );
-}
-
-export { CV_GAPS, CV_WAVES, CV_PAGE_DEPS, CV_GRADE_TONE, CV_ASK, CvAsk };
+export { CV_GAPS, CV_WAVES, CV_PAGE_DEPS, CV_GRADE_TONE };
