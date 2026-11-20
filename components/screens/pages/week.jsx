@@ -10,6 +10,7 @@ import { DenseWeek } from '../dense-sections';
 import { TestTrack, WeekBars } from './week-charts';
 import { useTodayTheme } from './today.themes';
 import './today.module.css';
+import { HowWeKnow } from '../touches';
 import s from './week.module.css';
 
 /* This week: your week in review, mostly as pictures. Big numbers first,
@@ -533,6 +534,7 @@ function StepResults({ v }) {
           <Claim k="book" />
           <div><span className={s.heroLbl}>This week</span><span className={s.trioNum}>{m(b.accrued)}</span></div>
           <div><span className={s.heroLbl}>To date</span><span className={s.trioNum}><Fig id="to-date" show={sample}>{m(b.toDate)}</Fig></span></div>
+          {sample && lead && <HowWeKnow proof={CV_D.proofs.find((p) => p.id === lead.id)} />}
         </div>
         <div className={s.list}>
           {tests.length === 0 && <span className="cv-small cv-muted">No tests running. Commit an action in step 2, then test it.</span>}

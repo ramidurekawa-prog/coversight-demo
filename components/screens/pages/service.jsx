@@ -5,6 +5,7 @@ import * as React from 'react';
 import { Icon, Button } from '../../kit';
 import { engine, useEngine, useSaved } from '../../engine';
 import { useCv, cvMoney, CV_D, CV_ROOM, CV_NOW, Claim, Money, Pill, PageHead } from '../core';
+import { ServiceCheck } from '../touches';
 import { DenseService } from '../dense-sections';
 import { covercastPace, shiftPulseDay } from '../../../lib/data/forecast/index.js';
 import { useCovercast } from '../covercast';
@@ -659,7 +660,10 @@ function CvService() {
         </div>
       </div>
 
-      <div className={s.mode}><span className={`${s.dot} ${source.dot}`} />{source.text}</div>
+      <div className="cv-row" style={{ justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+        <div className={s.mode}><span className={`${s.dot} ${source.dot}`} />{source.text}</div>
+        {!own && <ServiceCheck d={CV_D} period="Last week" />}
+      </div>
       {banner}
 
       <div className={`${s.strip} ${s.stripSlim}`} role="group" aria-label="Lunch, dinner or the full day">

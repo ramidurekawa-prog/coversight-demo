@@ -8,6 +8,7 @@ import { and, desc, eq, inArray, notLike, or } from 'drizzle-orm';
 import { z } from 'zod';
 
 import type { Db } from './db/client';
+import { kitchenSchemas } from './page/kitchen';
 import { meetingSchemas } from './page/meeting';
 import { actions, auditLog, rooms } from './db/schema';
 import { InputError } from './org';
@@ -123,12 +124,33 @@ export const ACTION_KEYS = {
   'forecast.decisions': { scope: 'room', schema: forecastDecisions },
   /** Weekly meeting: the room's slot (day of week, 0 = Sunday, local time, length) and who usually attends. */
   'meeting.schedule': { scope: 'room', schema: meetingSchemas.schedule },
+  /** Labor: days entered by hand (cost and hours), for when no schedule or payroll feed is connected or one is down. One entry per date. */
+  'labour.entries': { scope: 'room', schema: z.array(z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), cost: z.number().min(0).max(200_000).optional(), hours: z.number().min(0).max(5000).optional(), sched: z.number().min(0).max(5000).optional() })).max(120) },
+  /** Labor: which view one person opens the page in (GM, owner or operations). Never changes a figure. */
+  'labour.view': { scope: 'person', schema: z.enum(['gm', 'owner', 'ops']) },
+  /** Labor: what the operator said about each suggested move (planned or not for us). Advice only: never changes a schedule. */
+  'labour.moves': { scope: 'room', schema: z.record(id, z.object({ s: z.enum(['planned', 'skipped']), at: isoDate, t: z.string().max(160).optional() })) },
+  /** Labor: cooks on the line by hour for each weekday, entered by hand when no schedule feed carries kitchen roles. Read-only analysis: never changes a schedule. */
+  'labour.crew': { scope: 'room', schema: z.record(z.string().regex(/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)$/), z.record(z.string().regex(/^([01]?\d|2[0-3])$/), z.number().min(0).max(40))) },
   /** Trends: why a week or a run of weeks was unusual, per "<week start>:<metric>". */
   'trends.notes': { scope: 'room', schema: z.record(z.string().regex(TRENDS_NOTE_KEY), z.object({ cause: z.enum(TRENDS_CAUSES.map((c: { value: string }) => c.value) as [string, ...string[]]), text: z.string().trim().max(280), at: isoDate })).refine((r) => Object.keys(r).length <= 300, 'too many notes') },
   /** Service: tonight's count entered by hand when no live feed is on (covers so far, servers on), per night. */
   'service.manual': { scope: 'room', schema: z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), entries: z.array(z.object({ meal: z.enum(['lunch', 'dinner']), at: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/), covers: z.number().int().min(0).max(5000), servers: z.number().int().min(0).max(200).nullable(), saved: z.string().max(40) })).max(24) }) },
   /** This week: weeks marked reviewed, keyed by the data week's first day, with an optional note. Who reviewed comes from the row's user. */
   'week.review': { scope: 'room', schema: z.record(z.string().regex(/^\d{4}-\d{2}-\d{2}$/), z.object({ at: isoDate, note: z.string().trim().max(1000).optional() })).refine((r) => Object.keys(r).length <= 26, 'keeps at most 26 weeks') },
+  /** Kitchen: Line Trials, one change on the line at a time, measured on matched nights. Recording one never changes a kitchen screen. */
+  'kitchen.trials': { scope: 'room', schema: kitchenSchemas.trials },
+  /**
+   * Staff: a manager's own notes on a person (a note, praise, training done, a
+   * talk held, or "I disagree with this read"), newest first, keyed by the
+   * person's id on the Staff page. Hand-entered and labelled so; never a
+   * statistic. Owners, admins and GMs only: other roles neither read nor write it.
+   */
+  'staff.notes': { scope: 'room', roles: ['owner', 'admin', 'gm'], schema: z.record(z.string().regex(/^[\w-]{1,60}$/), z.array(z.object({ at: isoDate, kind: z.enum(['note', 'praise', 'training', 'talk', 'disagree']), text: z.string().trim().max(400), by: z.string().max(80).optional() })).max(40)).refine((r) => Object.keys(r).length <= 200, 'too many people') },
+  /** All rooms: attention items acknowledged or snoozed in this room, by item id (`<roomId>:<kind>:<key>`). */
+  'portfolio.handled': { scope: 'room', schema: z.record(z.string().regex(/^[^:\s]{1,60}:[a-z]+:\S{1,100}$/).max(120), z.object({ s: z.enum(['ack', 'snooze']), at: isoDate, until: isoDate.optional() })).refine((v) => Object.keys(v).length <= 50, 'at most 50 handled items') },
+  /** Daily detail: this room's day parts, whole hours on the service clock (4 = 4 am … 28 = 4 am next day), no overlaps. */
+  'daily.dayparts': { scope: 'room', schema: z.array(z.object({ name: z.string().trim().min(1).max(30), from: z.number().int().min(4).max(27), to: z.number().int().min(5).max(28) })).min(1).max(8).refine((a) => a.every((p) => p.to > p.from) && [...a].sort((x, y) => x.from - y.from).every((p, i, s) => !i || s[i - 1]!.to <= p.from), 'day parts must run forward and not overlap') },
   /** Menu prices: the Balanced menu's limit, the least share of a dish's orders a price move may keep. */
   'menu.lab': { scope: 'room', schema: z.object({ keepOrders: z.number().min(0.5).max(1) }) },
   /** Menu prices: each approved price change's rollout steps, ticked with the time (toast, apps, print, staff, check). */
@@ -143,6 +165,12 @@ export const ACTION_KEYS = {
   'menu.rollout': { scope: 'room', schema: z.record(z.string().regex(/^price:[\w-]+:[\d.]+$/).max(120), z.partialRecord(z.enum(['toast', 'apps', 'print', 'staff', 'check']), isoDate)).refine((r) => Object.keys(r).length <= 300, 'too many changes') },
 } as const;
 
+/** Keys only some roles may read or write (people notes). */
+const rolesFor = (key: string): readonly string[] | null => {
+  const spec = ACTION_KEYS[key as ActionKey] as { roles?: readonly string[] } | undefined;
+  return spec?.roles ?? null;
+};
+
 export type ActionKey = keyof typeof ACTION_KEYS;
 const MAX_BYTES = 20_000;
 export const GROUP = '';
@@ -150,7 +178,7 @@ export const GROUP = '';
 export const ME = '@me';
 
 /** Current values: { [roomId | '']: { [key]: value } }, limited to the viewer's rooms. */
-export async function loadActions(db: Db, orgId: string, roomScope: string[] | null = null, userId: string | null = null) {
+export async function loadActions(db: Db, orgId: string, roomScope: string[] | null = null, userId: string | null = null, role: string | null = null) {
   // Person rows are the viewer's own only; agents and jobs (no userId) never see them.
   const own = userId ? or(notLike(actions.roomId, 'user:%'), eq(actions.roomId, `user:${userId}`)) : notLike(actions.roomId, 'user:%');
   const where = roomScope
@@ -164,6 +192,8 @@ export async function loadActions(db: Db, orgId: string, roomScope: string[] | n
   const out: Record<string, Record<string, unknown>> = {};
   for (const r of rows) {
     if (!(r.key in ACTION_KEYS)) continue;
+    const only = role ? rolesFor(r.key) : null;
+    if (only && !only.includes(role!)) continue;
     (out[r.roomId.startsWith('user:') ? ME : r.roomId] ??= {})[r.key] = r.value;
   }
   return out;
@@ -179,6 +209,8 @@ export async function saveAction(
   const room = spec.scope === 'group' ? GROUP : spec.scope === 'person' ? `user:${v.userId}` : roomId;
   if (typeof room !== 'string') throw new InputError('roomId is required');
   if (spec.scope === 'group' && roomLevel(v.role)) throw new AuthError(403, 'Only an owner or admin can change this.');
+  const only = rolesFor(key);
+  if (only && !only.includes(v.role)) throw new AuthError(403, 'Only an owner, admin or GM can change this.');
   if (spec.scope === 'room') {
     if (v.rooms && !v.rooms.includes(room)) throw new AuthError(403, 'That room is not one of yours.');
     const [r] = await db.select({ id: rooms.id }).from(rooms).where(and(eq(rooms.orgId, v.orgId), eq(rooms.id, room)));
