@@ -109,6 +109,7 @@ function CvInputs() {
   const ownKinds = rows.filter((r) => r.src.key === 'hand' || r.src.key === 'linked').length;
   const head = pageState({ sample, items, own: ownKinds, connected: systems.filter((x) => !x.sample && x.state !== 'off').length });
 
+  const daysIn = eng.inputs?.[CV_D.id]?.days?.rows?.length || 0;
   const needs = items.length;
   const headline = needs ? `${needs} of ${rows.length} need${needs === 1 ? 's' : ''} your data` : 'Your data is up to date';
 
@@ -119,6 +120,12 @@ function CvInputs() {
         right={sample
           ? <Button size="sm" variant="secondary" icon="FlaskConical" onClick={() => setPanel({ type: 'sample' })}>Sample data</Button>
           : <Pill tone="good" icon="Cloud">Saved to your account</Pill>} />
+
+      <button type="button" className={s.todayBar} onClick={() => open('days', 'grid', true)}>
+        <span className="cv-q-ico"><Icon name="CalendarDays" size={20} /></span>
+        <span><b>Enter today’s sales and labor</b><span className={s.todaySub}>{daysIn ? `${daysIn} day${daysIn === 1 ? '' : 's'} entered so far. ` : ''}Net sales, guests and labor for one day. About 30 seconds.</span></span>
+        <span className={s.todayGo}>Enter<Icon name="ChevronRight" size={16} /></span>
+      </button>
 
       <AddWays over={dragging} onFiles={(f) => add('file', f)} onPhoto={(f) => add('scan', f)}
         onWay={(id) => (id === 'connect' ? router.push('/connect') : add(id === 'link' ? 'connect' : id === 'type' ? 'manual' : 'paste'))} />
