@@ -112,6 +112,9 @@ import {
   CreditCard,
   Copy,
   Mail,
+  Mic,
+  NotebookPen,
+  Volume2,
   MapPin,
   Menu,
   MessageCircle,
@@ -175,7 +178,6 @@ import {
   Sparkles,
   ArrowUpDown,
   UserRound,
-  NotebookPen,
   IdCard,
 } from 'lucide-react';
 
@@ -287,6 +289,9 @@ const ICONS = {
   CreditCard,
   Copy,
   Mail,
+  Mic,
+  NotebookPen,
+  Volume2,
   MapPin,
   Menu,
   MessageCircle,
@@ -350,7 +355,6 @@ const ICONS = {
   Sparkles,
   ArrowUpDown,
   UserRound,
-  NotebookPen,
   IdCard,
 };
 

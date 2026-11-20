@@ -6,6 +6,7 @@ import { loadActions, saveAction } from '../server/actions';
 import { createSampleOrg } from '../server/org';
 import { redactStaff, staffCoach, staffSummary } from '../server/page/staff';
 import { freshDb } from './helpers/db';
+import { fakeClaude } from './helpers/fake-claude';
 
 let db: Db;
 beforeEach(async () => {
@@ -44,7 +45,7 @@ describe('the staff API', () => {
     expect(redactStaff(base, {}, 'gm').base.rooms.oakland).toHaveProperty('staffShifts');
   });
 
-  it('coach: Coversight’s own words without a key; Claude’s with one, never a firing call', async () => {
+  it('coach: Coversight’s own words without a key; Claude’s through the shared engine with one, never a firing call or a new number', async () => {
     const org = await createSampleOrg(db, { ownerId: 'u1' });
     const owner = { orgId: org.id, userId: 'u1', role: 'owner' as const, rooms: null };
     const plain = await staffCoach(db, owner, { room: 'oakland', person: 'kayla-p' });
@@ -52,13 +53,13 @@ describe('the staff API', () => {
     expect(plain.text).toMatch(/closer look/i);
     await expect(staffCoach(db, { ...owner, role: 'floor' as const }, { room: 'oakland' })).rejects.toThrow(/owner, admin or GM/);
     process.env.ANTHROPIC_API_KEY = 'test';
-    let sent: { model?: string; messages?: { content: string }[] } = {};
-    const ok = (text: string) => (async (_u: unknown, init?: { body?: string }) => { sent = JSON.parse(String(init?.body)); return new Response(JSON.stringify({ content: [{ type: 'text', text }] })); }) as unknown as typeof fetch;
-    const ai = await staffCoach(db, owner, { room: 'oakland', person: 'kayla-p' }, ok('Worth a private word with Kayla this week.'));
+    const good = fakeClaude({ text: 'Worth a private word with Kayla before her next shift.' });
+    const ai = await staffCoach(db, owner, { room: 'oakland', person: 'kayla-p' }, good.f);
     expect(ai.by).toBe('claude');
-    expect(sent.model).toBe('claude-opus-5-5');
-    expect(sent.messages?.[0]?.content).toContain('Kayla P.');
-    const bad = await staffCoach(db, owner, { room: 'oakland', person: 'kayla-p' }, ok('You should fire Kayla.'));
-    expect(bad.by).toBe('coversight');
+    expect(good.calls[0]!.body.model).toBe('claude-opus-5-5');
+    expect(JSON.stringify(good.calls[0]!.body.messages)).toContain('Kayla P.');
+    expect((await staffCoach(db, owner, { room: 'oakland', person: 'kayla-p' }, fakeClaude({ text: 'You should fire Kayla.' }).f)).by).toBe('coversight');
+    expect((await staffCoach(db, owner, { room: 'oakland', person: 'kayla-p' }, fakeClaude({ text: 'She cost you $9,999 last month.' }).f)).by).toBe('coversight');
+    expect((await staffCoach(db, owner, { room: 'oakland' }, fakeClaude({}, 529).f)).by).toBe('coversight');
   });
 });

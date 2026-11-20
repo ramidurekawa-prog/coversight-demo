@@ -3,12 +3,15 @@
 // (other roles get the team-level read without anyone's name). The coach
 // (POST /api/page/staff/coach) asks Claude to talk the read through in plain
 // words when ANTHROPIC_API_KEY is set; without it, it returns the same read in
-// Coversight's own words. Either way the figures are the ones computed here,
+// Coversight's own words. It goes through the one AI engine (server/ai/claude.ts). Either way the figures are the ones computed here,
 // never the model's: it is given the evidence and told not to add numbers.
 import { z } from 'zod';
 
 import { anonymize, evidenceLines, staffPage } from '../../lib/data/page/staff.js';
+import { numbersOk } from '../../lib/ai/sous.js';
+import { AI_MODEL, aiAllowance, aiConfigured, askClaude } from '../ai/claude';
 import type { Db } from '../db/client';
+import { auditLog } from '../db/schema';
 import { loadDataset } from '../dataset';
 import { InputError } from '../org';
 import { AuthError, type Viewer } from '../session';
@@ -19,7 +22,6 @@ type V = Pick<Viewer, 'orgId' | 'rooms' | 'role'>;
 type Page = any;
 /** Who may see names and rankings. */
 export const SEES_NAMES = (role: string) => role === 'owner' || role === 'admin' || role === 'gm';
-export const COACH_MODEL = () => process.env.ANTHROPIC_STAFF_MODEL || 'claude-opus-5-5';
 
 async function pageFor(db: Db, v: V, roomId: unknown): Promise<Page> {
   if (typeof roomId !== 'string' || !roomId) throw new InputError('room is required');
@@ -48,9 +50,10 @@ export function redactStaff<T extends { rooms?: Record<string, Record<string, un
 }
 
 const coachBody = z.object({ room: z.string().min(1).max(60), person: z.string().regex(/^[\w-]{1,60}$/).nullable().optional(), question: z.string().trim().max(300).optional() });
+const COACH_SCHEMA = { type: 'object', properties: { text: { type: 'string' } }, required: ['text'], additionalProperties: false };
 
-/** The coach's answer: { text, by: 'claude' | 'coversight', model? }. */
-export async function staffCoach(db: Db, v: V, raw: unknown, fetchImpl: typeof fetch = fetch) {
+/** The coach's answer: { text, by: 'claude' | 'coversight' }. Goes through the one AI engine (askClaude) and its daily allowance. */
+export async function staffCoach(db: Db, v: V & { userId?: string }, raw: unknown, fetchImpl?: typeof fetch) {
   if (!SEES_NAMES(v.role)) throw new AuthError(403, 'Only an owner, admin or GM can ask about people.');
   const b = coachBody.safeParse(raw);
   if (!b.success) throw new InputError('Send a room, and optionally a person and a question.');
@@ -58,33 +61,25 @@ export async function staffCoach(db: Db, v: V, raw: unknown, fetchImpl: typeof f
   if (!page) throw new InputError('no such room');
   const person = b.data.person ? page.people.find((p: { id: string }) => p.id === b.data.person) : null;
   if (b.data.person && !person) throw new InputError('That person isn’t on this room’s team.');
-  const fallback = fallbackText(page, person);
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) return { text: fallback, by: 'coversight' as const };
-  const facts = person
+  const fallback = { text: fallbackText(page, person), by: 'coversight' as const };
+  if (!aiConfigured() || !(await aiAllowance(db, v.orgId, 'ask'))) return fallback;
+  const facts = (person
     ? [...evidenceLines(person, page.period), `Coversight's read: ${person.read.title}. ${person.read.line}`, ...person.read.why, ...person.read.alt.map((a: string) => `Could also explain it: ${a}`)]
-    : [`Team of ${page.sellers.length} who sell, ${page.period.label}.`, ...Object.entries(page.team.counts).map(([k, n]) => `${k}: ${n}`), ...page.team.missing.map((m: { line: string }) => `Might be missing: ${m.line}`), ...page.team.overCorrect.map((m: { line: string }) => `Might be over-correcting: ${m.line}`), page.team.action ? `Top action: ${page.team.action.title}. ${page.team.action.line}` : ''];
-  let res: Response;
-  try {
-    res = await fetchImpl('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({
-        model: COACH_MODEL(),
-        max_tokens: 500,
-        system: COACH_SYSTEM,
-        messages: [{ role: 'user', content: `Facts from the restaurant's POS (use only these numbers):\n${facts.filter(Boolean).map((f) => `- ${f}`).join('\n')}\n\nManager's question: ${b.data.question || (person ? `What should I do about ${person.name}?` : 'What should I focus on with my team this week?')}` }],
-      }),
-      signal: AbortSignal.timeout(30_000),
-    });
-  } catch {
-    return { text: fallback, by: 'coversight' as const };
-  }
-  if (!res.ok) return { text: fallback, by: 'coversight' as const };
-  const out = (await res.json().catch(() => null)) as { content?: { type: string; text?: string }[] } | null;
-  const text = out?.content?.filter((c) => c.type === 'text').map((c) => c.text).join('').trim();
-  if (!text || /\b(fire|terminate|let (him|her|them) go|dismiss)\b/i.test(text)) return { text: fallback, by: 'coversight' as const };
-  return { text: text.slice(0, 1500), by: 'claude' as const, model: COACH_MODEL() };
+    : [`Team of ${page.sellers.length} who sell, ${page.period.label}.`, ...Object.entries(page.team.counts).map(([k, n]) => `${k}: ${n}`), ...page.team.missing.map((m: { line: string }) => `Might be missing: ${m.line}`), ...page.team.overCorrect.map((m: { line: string }) => `Might be over-correcting: ${m.line}`), page.team.action ? `Top action: ${page.team.action.title}. ${page.team.action.line}` : '']).filter(Boolean);
+  const sheet = facts.map((f: string) => `- ${f}`).join('\n');
+  const question = b.data.question || (person ? `What should I do about ${person.name}?` : 'What should I focus on with my team this week?');
+  const res = await askClaude<{ text: string }>({
+    system: COACH_SYSTEM,
+    schema: COACH_SCHEMA,
+    maxTokens: 800,
+    timeoutMs: 30_000,
+    messages: [{ role: 'user', content: `Facts from the restaurant's POS (use only these numbers):\n${sheet}\n\nManager's question: ${question}` }],
+  }, fetchImpl);
+  const text = res.ok ? String(res.data.text || '').trim().slice(0, 1500) : '';
+  // Discard anything that adds a figure the facts don't hold, or talks about firing.
+  const ok = !!text && numbersOk(text, sheet, question) && !/\b(fire|fired|firing|terminate|let (him|her|them) go|dismiss)\b/i.test(text);
+  if (v.userId) await db.insert(auditLog).values({ orgId: v.orgId, userId: v.userId, action: 'agents.ask', detail: { roomId: b.data.room, agent: 'staff', engine: ok ? 'ai' : 'builtin' } });
+  return ok ? { text, by: 'claude' as const, model: AI_MODEL } : fallback;
 }
 
 export const COACH_SYSTEM = [
