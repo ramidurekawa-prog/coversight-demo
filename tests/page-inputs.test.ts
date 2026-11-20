@@ -146,6 +146,72 @@ describe('shared rules', () => {
   });
 });
 
+describe('daily sales and labor', () => {
+  const day = (date: string, sales: number, extra: Record<string, number> = {}): { date: string; sales: number; covers?: number; labor_cost?: number } => ({ date, sales, ...extra });
+  const week = (from: number, n = 7) => Array.from({ length: n }, (_, i) => day(`2026-10-${String(from + i).padStart(2, '0')}`, 5000 + i * 100, { covers: 100 + i, labor_cost: 1500 }));
+
+  it('reads hand-written dates, refuses a repeated or future day, and flags odd figures', () => {
+    const ok = checkRows('days', [{ date: '10/20/2026', sales: '5,200', covers: '110', labor_hours: '80' }], S.rooms.oakland, undefined, { now: NOW });
+    expect(ok.ok).toBe(true);
+    expect(ok.rows[0]).toMatchObject({ date: '2026-10-20', sales: 5200, covers: 110, labor_hours: 80 });
+    expect(checkRows('days', [day('2026-10-20', 1), day('Oct 20, 2026', 2)], S.rooms.oakland, undefined, { now: NOW }).error).toMatch(/date appears twice/);
+    expect(checkRows('days', [day('2026-12-01', 1)], S.rooms.oakland, undefined, { now: NOW }).error).toMatch(/future/);
+    expect(checkRows('days', [day('soon', 1)], S.rooms.oakland, undefined, { now: NOW }).error).toMatch(/isn’t a date/);
+    const odd = checkRows('days', [day('2026-10-20', 5000, { labor_cost: 6000 })], S.rooms.oakland, undefined, { now: NOW });
+    expect(odd.ok).toBe(true);
+    expect(odd.issues.some((i: { msg: string }) => /above sales/.test(i.msg))).toBe(true);
+  });
+
+  it('a day entered again replaces that day; other days stay', () => {
+    const m = mergeRows('days', [day('2026-10-20', 100), day('2026-10-21', 200)], [day('2026-10-21', 250), day('2026-10-22', 300)]);
+    expect(m.rows).toEqual([day('2026-10-20', 100), day('2026-10-21', 250), day('2026-10-22', 300)]);
+    expect(m.added).toBe(1);
+  });
+
+  it('fewer than 5 days move nothing, and says so', () => {
+    const base = deriveRoom(applyInputs(S, {}), 'oakland');
+    const ds = applyInputs(S, { oakland: { days: { rows: week(21, 4) } } });
+    expect(deriveRoom(ds, 'oakland').week.net).toBe(base.week.net);
+    const c = checkRows('days', week(21, 4), S.rooms.oakland, undefined, { now: NOW });
+    expect(c.ok).toBe(true);
+    expect(c.issues.some((i: { msg: string }) => /4 of 7 days/.test(i.msg))).toBe(true);
+  });
+
+  it('a full week becomes this week’s sales, guests and labor, and the totals still close', () => {
+    const rows = week(21);
+    const ds = applyInputs(S, { oakland: { days: { rows } } });
+    const d = deriveRoom(ds, 'oakland');
+    const net = rows.reduce((s, r) => s + r.sales, 0);
+    expect(d.week.net).toBe(net);
+    expect(d.week.labour).toBe(1500 * 7);
+    expect(d.week.covers).toBe(rows.reduce((s, r) => s + r.covers!, 0));
+    expect(d.week.earned).toBeCloseTo(d.week.net - d.week.food - d.week.labour, 6);
+    const base = deriveRoom(applyInputs(S, {}), 'oakland');
+    expect(d.week.foodRate).toBeCloseTo(base.week.foodRate, 6);
+    const last = ds.rooms.oakland.history.at(-1);
+    expect(last).toMatchObject({ net, iso: '2026-10-21', own: true });
+    // Other rooms and earlier weeks are untouched.
+    expect(ds.rooms.berkeley).toBe(S.rooms.berkeley);
+    expect(ds.rooms.oakland.history.at(-2)).toEqual(S.rooms.oakland.history.at(-2));
+  });
+
+  it('hours without a cost use the room’s usual wage, and a day with no labor leaves labor alone', () => {
+    const hours = week(21).map((r) => ({ date: r.date, sales: r.sales, labor_hours: 100 }));
+    expect(deriveRoom(applyInputs(S, { oakland: { days: { rows: hours } } }), 'oakland').week.labour).toBe(Math.round(700 * S.rooms.oakland.levers.wage));
+    const partial = week(21).map((r, i) => (i ? r : day(r.date, r.sales)));
+    const base = deriveRoom(applyInputs(S, {}), 'oakland');
+    expect(deriveRoom(applyInputs(S, { oakland: { days: { rows: partial } } }), 'oakland').week.labour).toBe(base.week.labour);
+  });
+
+  it('saving on the server adds days to the ones already there', async () => {
+    await commitChecked(db, owner(), { roomId: 'oakland', kind: 'days', rows: [{ date: '2026-10-20', sales: 5000 }] });
+    await commitChecked(db, owner(), { roomId: 'oakland', kind: 'days', rows: [{ date: '2026-10-21', sales: 6000 }, { date: '2026-10-20', sales: 5100 }] });
+    expect((await loadInputs(db, orgId)).inputs.oakland!.days!.rows).toEqual([{ date: '2026-10-20', sales: 5100, covers: null, labor_cost: null, labor_hours: null }, { date: '2026-10-21', sales: 6000, covers: null, labor_cost: null, labor_hours: null }]);
+    await commitChecked(db, owner(), { roomId: 'oakland', kind: 'days', rows: [{ date: '2026-10-22', sales: 7000 }], opts: { replace: true }, confirm: true });
+    expect((await loadInputs(db, orgId)).inputs.oakland!.days!.n).toBe(1);
+  });
+});
+
 describe('commit on the server', () => {
   it('invalid files cannot commit', async () => {
     await expect(commitChecked(db, owner(), { roomId: 'oakland', kind: 'waste', rows: [waste('lots')] })).rejects.toThrow(/Not saved: Row 1.*isn't a number/);

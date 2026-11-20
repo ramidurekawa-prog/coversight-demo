@@ -7,12 +7,12 @@ import { and, desc, eq, gte } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { addDays } from '../lib/data/forecast/calendar.js';
-import { covercastRoom, reforecast, seriesFromOrders, seriesFromSample } from '../lib/data/forecast/index.js';
+import { arrivalsForecast, covercastRoom, reforecast, seriesFromOrders, seriesFromSample } from '../lib/data/forecast/index.js';
 import { localDay } from '../lib/data/page/today.js';
 import type { Db } from './db/client';
 import { actions, posDays, serviceLive } from './db/schema';
 import { loadDataset } from './dataset';
-import { eventsFeed, reservationsFeed, weatherFeed } from './forecast-feeds';
+import { arrivalsFeed, eventsFeed, reservationsFeed, weatherFeed } from './forecast-feeds';
 import { InputError } from './org';
 import { AuthError, type Viewer } from './session';
 
@@ -51,7 +51,14 @@ export async function loadForecast(db: Db, v: V, room: unknown, { now = new Date
   const [saved] = await db.select({ value: actions.value }).from(actions)
     .where(and(eq(actions.orgId, v.orgId), eq(actions.roomId, p.data), eq(actions.key, 'forecast.signals'))).orderBy(desc(actions.at), desc(actions.id)).limit(1);
   const own = (saved?.value ?? {}) as Signals;
-  const stored = await db.select({ day: posDays.day, orders: posDays.orders }).from(posDays)
+  const latest = async (key: string) => {
+    const [row] = await db.select({ value: actions.value }).from(actions)
+      .where(and(eq(actions.orgId, v.orgId), eq(actions.roomId, p.data), eq(actions.key, key))).orderBy(desc(actions.at), desc(actions.id)).limit(1);
+    return (row?.value ?? null) as any;
+  };
+  const liveLog = await latest('forecast.live');
+  const decisions = await latest('forecast.decisions');
+  const stored = await db.select({ day: posDays.day, orders: posDays.orders, items: posDays.items }).from(posDays)
     .where(and(eq(posDays.orgId, v.orgId), eq(posDays.roomId, p.data), gte(posDays.day, addDays(local, -HISTORY_DAYS))));
   const fromPos = stored.length ? seriesFromOrders(stored) : null;
   const series = fromPos?.days.length ? fromPos : r.fromToast ? null : seriesFromSample(r);
@@ -73,7 +80,15 @@ export async function loadForecast(db: Db, v: V, room: unknown, { now = new Date
     events: [...(own.events ?? []), ...(ev?.events ?? []).filter((e) => !manualEv.has(`${e.date}|${e.name.toLowerCase()}`))],
     reservations: (own.reservations ?? []).map((x) => ({ ...x, source: 'manual' })),
   };
-  const f = covercastRoom(r, { series: series ?? undefined, today, days, signals });
+  const f = covercastRoom(r, { series: series ?? undefined, today, days, signals, models: true, live: liveLog, decisions });
+  const arrivalsStatus = arrivalsFeed().status;
+  // Tonight from the host's counts, when the latest check is logged for today.
+  let arrivals = null;
+  const todayLog = (liveLog?.services ?? []).filter((x: any) => x.date === local && x.cuts?.length).at(-1);
+  if (todayLog && f.ready && f.covers?.days?.[0]?.iso === local) {
+    const cut = todayLog.cuts.at(-1);
+    arrivals = { service: todayLog.service, at: cut.at, ...arrivalsForecast({ ...cut, planTotal: cut.planSoFar + cut.planRest, learned: f.live!.learned, q: (f.live!.validation as any)?.q ?? null }) };
+  }
 
   // During service: the rest of today, re-forecast from covers so far.
   let intraday = null;
@@ -93,9 +108,10 @@ export async function loadForecast(db: Db, v: V, room: unknown, { now = new Date
   }
   return {
     roomId: p.data, today, tz, source, sample,
-    feeds: [wx?.status ?? { key: 'weather', label: 'Weather', status: 'off', note: 'Not used for the sample group.' }, ev?.status ?? { key: 'events', label: 'Events nearby', status: 'off', note: 'Not used for the sample group.' }, rs.status],
+    feeds: [wx?.status ?? { key: 'weather', label: 'Weather', status: 'off', note: 'Not used for the sample group.' }, ev?.status ?? { key: 'events', label: 'Events nearby', status: 'off', note: 'Not used for the sample group.' }, rs.status, arrivalsStatus],
     location: loc,
     forecast: f,
     intraday,
+    arrivals,
   };
 }

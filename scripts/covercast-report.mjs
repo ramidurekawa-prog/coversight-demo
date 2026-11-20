@@ -8,6 +8,7 @@ import { backtestDays, backtestHours } from '../lib/data/forecast/engine.js';
 import { seriesFromSample } from '../lib/data/forecast/series.js';
 import { serverRate } from '../lib/data/forecast/index.js';
 import { backtestShiftPulse } from '../lib/data/forecast/shift-pulse.js';
+import { pickModels } from '../lib/data/forecast/select.js';
 import { METHODS } from '../lib/data/forecast/methods.js';
 import { SEED } from '../lib/data/seed.js';
 import { stressRoom } from '../tests/helpers/forecast-fixture.js';
@@ -61,4 +62,21 @@ for (const id of Object.keys(ds.rooms)) {
     const st = r.staffing[sv];
     console.log(`| ${room.profile?.short ?? id} | ${sv} | ${pct(r.plan[sv].old.wape)} → ${pct(r.plan[sv].covercast.wape)} | ${live} | ${st.old.shortHours} → ${st.covercast.shortHours} | ${st.old.spareServerHours} → ${st.covercast.spareServerHours} |`);
   }
+}
+
+// The model by task (lib/data/forecast/select.js): each candidate's error on the first half
+// (where the pick is made) and the second half (which checks it), and what each task uses.
+console.log('\nModel by task (error on first half / second half; "use" = what runs):\n');
+for (const { name, s } of sets) {
+  const p = pickModels(s);
+  if (!p.ready) continue;
+  console.log(`**${name}** (scored ${p.from} to ${p.through}, split at ${p.splitAt})\n`);
+  console.log('| Task | Use | Candidates |\n|---|---|---|');
+  for (const [k, t] of Object.entries(p.tasks)) {
+    if (!t?.candidates) continue;
+    const c = Object.entries(t.candidates).map(([key, x]) => `${key} ${pct(x.pick?.wape)} / ${pct(x.check?.wape)}`).join(', ');
+    console.log(`| ${k} (${t.unit}) | ${t.use}${t.use !== t.pick ? ` (picked ${t.pick}, didn't hold up)` : ''} | ${c} |`);
+  }
+  const n = p.tasks.nights.v1;
+  console.log(`\nNights (V1, day ahead): busy ${pct(n.busy.wape)} (old ${pct(n.busy.oldWape)}, above range ${n.busy.aboveRange}%, n ${n.busy.n}) · special ${pct(n.special.wape)} (old ${pct(n.special.oldWape)}, n ${n.special.n}) · ordinary ${pct(n.ordinary.wape)} (old ${pct(n.ordinary.oldWape)}, n ${n.ordinary.n})\n`);
 }
