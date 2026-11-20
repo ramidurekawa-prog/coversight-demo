@@ -19,6 +19,7 @@
     "vercel-build": "pnpm db:migrate && next build"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.4.0",
     "@fontsource/dm-sans": "^5.3.0",
     "@fontsource/ibm-plex-mono": "^5.3.0",
     "@fontsource/ibm-plex-sans": "^5.3.0",

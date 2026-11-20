@@ -112,6 +112,9 @@ import {
   CreditCard,
   Copy,
   Mail,
+  Mic,
+  NotebookPen,
+  Volume2,
   MapPin,
   Menu,
   MessageCircle,
@@ -171,6 +174,13 @@ import {
   Settings,
   TrendingDown,
   User,
+  Sparkles,
+  Trophy,
+  Gem,
+  Printer,
+  Gift,
+  Repeat,
+  ChevronLeft,
 } from 'lucide-react';
 
 const ICONS = {
@@ -281,6 +291,9 @@ const ICONS = {
   CreditCard,
   Copy,
   Mail,
+  Mic,
+  NotebookPen,
+  Volume2,
   MapPin,
   Menu,
   MessageCircle,
@@ -340,6 +353,13 @@ const ICONS = {
   Settings,
   TrendingDown,
   User,
+  Sparkles,
+  Trophy,
+  Gem,
+  Printer,
+  Gift,
+  Repeat,
+  ChevronLeft,
 };
 
 /** Every icon name the screens use. A unit test keeps this list complete. */
