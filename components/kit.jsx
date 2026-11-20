@@ -150,7 +150,6 @@ import {
   Timer,
   TrendingDown,
   TrendingUp,
-  TrendingDown,
   TriangleAlert,
   Truck,
   Undo2,
@@ -182,12 +181,10 @@ import {
   Trophy,
   Rocket,
   Sparkles,
-  Trophy,
   Gem,
   Printer,
   Gift,
   Repeat,
-  ChevronLeft,
 } from 'lucide-react';
 
 const ICONS = {
@@ -336,7 +333,6 @@ const ICONS = {
   Timer,
   TrendingDown,
   TrendingUp,
-  TrendingDown,
   TriangleAlert,
   Truck,
   Undo2,
@@ -368,12 +364,10 @@ const ICONS = {
   Trophy,
   Rocket,
   Sparkles,
-  Trophy,
   Gem,
   Printer,
   Gift,
   Repeat,
-  ChevronLeft,
 };
 
 /** Every icon name the screens use. A unit test keeps this list complete. */
