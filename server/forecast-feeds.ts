@@ -13,7 +13,7 @@
 //    partner access" when a key is set; bookings are entered by hand until then.
 
 type Fetch = typeof fetch;
-export type FeedStatus = { key: 'weather' | 'events' | 'reservations'; label: string; status: 'off' | 'ok' | 'down' | 'waiting' | 'needs-location'; note: string; at?: string };
+export type FeedStatus = { key: 'weather' | 'events' | 'reservations' | 'arrivals'; label: string; status: 'off' | 'ok' | 'down' | 'waiting' | 'needs-location'; note: string; at?: string };
 export type WeatherDay = { date: string; rainIn: number; tempF: number | null; source: 'openweather' };
 export type EventDay = { date: string; name: string; lift: null; by: 'Ticketmaster' };
 
@@ -78,5 +78,20 @@ export function reservationsFeed(): { status: FeedStatus } {
     status: has
       ? { key: 'reservations', label: 'Reservations', status: 'waiting', note: 'A reservation key is set. OpenTable and Resy share bookings with approved partners only, so this switches on once access is granted. Enter bookings by hand meanwhile.' }
       : { key: 'reservations', label: 'Reservations', status: 'off', note: 'No reservation feed. Enter covers on the books by hand; Covercast learns how bookings turn into covers.' },
+  };
+}
+
+/**
+ * Guest arrivals and walk-ins from a reservation or waitlist system's seated
+ * events. Placeholder until partner access (OpenTable, Resy and SevenRooms
+ * share seating data with approved partners only); the host's own counts,
+ * logged with the 'forecast.live' action, are the way in meanwhile.
+ */
+export function arrivalsFeed(): { status: FeedStatus } {
+  const has = !!(process.env.OPENTABLE_API_KEY || process.env.RESY_API_KEY || process.env.SEVENROOMS_API_KEY);
+  return {
+    status: has
+      ? { key: 'arrivals', label: 'Guest arrivals', status: 'waiting', note: 'A reservation key is set. Seated and walk-in counts switch on once partner access is granted. Log the host’s counts meanwhile.' }
+      : { key: 'arrivals', label: 'Guest arrivals', status: 'off', note: 'No waitlist or reservation feed. Log the host’s counts (seated, walk-ins) at a few checks a night, and Covercast forecasts the rest of the shift from them.' },
   };
 }
