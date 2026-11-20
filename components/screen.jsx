@@ -11,7 +11,7 @@ import { CvChannels } from './screens/pages/channels';
 import { CvComparison } from './screens/pages/comparison';
 import { CvConnect } from './screens/pages/connect';
 import { CvControls } from './screens/pages/controls';
-import { CvCoverage } from './screens/pages/coverage';
+import { CvSummary } from './screens/pages/summary';
 import { CvDaily } from './screens/pages/daily';
 import { CvData } from './screens/pages/data';
 import { CvFences } from './screens/pages/fences';
@@ -31,6 +31,7 @@ import { CvProof } from './screens/pages/proof';
 import { CvPurchasing } from './screens/pages/purchasing';
 import { CvService } from './screens/pages/service';
 import { CvSources } from './screens/pages/sources';
+import { CvStaff } from './screens/pages/staff';
 import { CvStart } from './screens/pages/start';
 import { CvSystem } from './screens/pages/system';
 import { CvTeam } from './screens/pages/team';
@@ -55,9 +56,10 @@ export const SCREENS = {
   finding: CvFinding,
   menu: CvMenu,
   labour: CvLabour,
+  staff: CvStaff,
   throughput: CvThroughput,
   purchasing: CvPurchasing,
-  coverage: CvCoverage,
+  summary: CvSummary,
   inventory: CvInventory,
   kitchen: CvKitchen,
   controls: CvControls,
