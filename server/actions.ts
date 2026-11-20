@@ -123,6 +123,14 @@ export const ACTION_KEYS = {
   'forecast.decisions': { scope: 'room', schema: forecastDecisions },
   /** Weekly meeting: the room's slot (day of week, 0 = Sunday, local time, length) and who usually attends. */
   'meeting.schedule': { scope: 'room', schema: meetingSchemas.schedule },
+  /** Labor: days entered by hand (cost and hours), for when no schedule or payroll feed is connected or one is down. One entry per date. */
+  'labour.entries': { scope: 'room', schema: z.array(z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), cost: z.number().min(0).max(200_000).optional(), hours: z.number().min(0).max(5000).optional(), sched: z.number().min(0).max(5000).optional() })).max(120) },
+  /** Labor: which view one person opens the page in (GM, owner or operations). Never changes a figure. */
+  'labour.view': { scope: 'person', schema: z.enum(['gm', 'owner', 'ops']) },
+  /** Labor: what the operator said about each suggested move (planned or not for us). Advice only: never changes a schedule. */
+  'labour.moves': { scope: 'room', schema: z.record(id, z.object({ s: z.enum(['planned', 'skipped']), at: isoDate, t: z.string().max(160).optional() })) },
+  /** Labor: cooks on the line by hour for each weekday, entered by hand when no schedule feed carries kitchen roles. Read-only analysis: never changes a schedule. */
+  'labour.crew': { scope: 'room', schema: z.record(z.string().regex(/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)$/), z.record(z.string().regex(/^([01]?\d|2[0-3])$/), z.number().min(0).max(40))) },
   /** Trends: why a week or a run of weeks was unusual, per "<week start>:<metric>". */
   'trends.notes': { scope: 'room', schema: z.record(z.string().regex(TRENDS_NOTE_KEY), z.object({ cause: z.enum(TRENDS_CAUSES.map((c: { value: string }) => c.value) as [string, ...string[]]), text: z.string().trim().max(280), at: isoDate })).refine((r) => Object.keys(r).length <= 300, 'too many notes') },
   /** Service: tonight's count entered by hand when no live feed is on (covers so far, servers on), per night. */
