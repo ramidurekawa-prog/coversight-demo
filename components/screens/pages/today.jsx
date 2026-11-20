@@ -13,6 +13,7 @@ import { cvApproval, useCv, CV_D, CV_GROUP, CV_NOW } from '../core';
 import { useDense } from '../dense-ui';
 import { reportTodayView } from './today.badge';
 import { useClock } from '../../clock';
+import { useCovercast } from '../covercast';
 import { Yesterday } from './today.last';
 import { applyScenario, useLayout } from './today.layout';
 import {
@@ -279,13 +280,16 @@ function CvToday() {
 
   // The same running clock as the top bar, so every date and time on screen agrees.
   const clock = useClock({ own, tz });
-  const now = { label: clock.label, time: clock.time };
+  const now = { label: clock.label, time: clock.time, iso: clock.iso };
   const period = servicePeriod(clockMinutes(now.time));
   const live = useLive(own);
-  const sv = tonight(d, now, live.data);
-  const brief = briefing(d, { cards, view, now, live: live.data });
+  // The sample paces from Covercast like Service does (own rooms get it from the server's live read).
+  const cc = useCovercast(CV_D.room, CV_D.id, eng.mode === 'server', !own);
+  const liveData = own ? live.data : (cc ? { covercast: cc } : null);
+  const sv = tonight(d, now, liveData);
+  const brief = briefing(d, { cards, view, now, live: liveData });
   const res = resultsOf(d, { cards, view });
-  const tiles = tileData({ d, dense: sc.noHistory ? null : dense, sv, flags: sc, now, live: live.data });
+  const tiles = tileData({ d, dense: sc.noHistory ? null : dense, sv, flags: sc, now, live: own ? live.data : null });
   const through = cards[0]?.source?.through || liveCards[0]?.source?.through;
 
   /** Say it on screen and to a screen reader. */

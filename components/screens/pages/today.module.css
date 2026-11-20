@@ -431,6 +431,29 @@ button.pill { cursor: pointer; }
 .st_warn { color: var(--warning-600); }
 .st_neutral { color: var(--fg-2); }
 
+/* ---------------------------------------------------------------- density (2026-11-18)
+ * Ramidu's 8.3/10 review: the large cards pushed the other priorities below the fold.
+ * Type sizes stay as chosen (36 / 24 / 17); only padding, gaps and chart heights shrink,
+ * so on a 1440 x 900 laptop the action card and the next priorities show without scrolling. */
+.page { padding-top: 18px; gap: 14px; }
+.status { gap: 4px; }
+.headline { margin-top: 2px; }
+.tile { gap: 6px; padding: 14px 18px 12px; }
+.tileFig { margin-top: 2px; }
+.tileViz { margin-top: 0; padding-top: 8px; }
+.sparkWrap { gap: 4px; }
+.action { grid-template-columns: minmax(0, 1fr) 320px; gap: var(--s3) var(--s5); padding: 16px 22px 16px 28px; }
+.actionMain { gap: 4px; }
+.actionWhy { max-width: 72ch; }
+.actionViz { margin-top: 4px; }
+.actionSide { gap: 6px; padding-left: var(--s5); }
+.actionBtn { min-height: 46px; }
+.staff { gap: 6px; }
+.row { min-height: 56px; padding: 10px 14px; }
+.stripPart { padding: 12px 18px; }
+.worthBig .worthRow { gap: 4px 10px; }
+.worthBig .worthMeans { font-size: 14px; line-height: 1.35; }
+
 @media (prefers-reduced-motion: reduce) {
   .scrim, .panel, .receipt, .stripFlash { animation: none; }
   .tile, .row { transition: none; }
@@ -485,6 +508,17 @@ button.pill { cursor: pointer; }
   .facts dd { margin-bottom: 8px; }
   .checks { grid-template-columns: 1fr; }
   .kpiFig { font-size: 27px; }
+}
+
+/* Phones (density, 2026-11-18): the three key numbers become one swipe row, so the
+ * action card sits right under them instead of three stacked cards down. */
+@media (max-width: 640px) {
+  .page { gap: 14px; }
+  .tiles { display: flex; gap: var(--s2); margin: 0 -16px; padding: 2px 16px 4px; overflow-x: auto; scroll-snap-type: x mandatory; scroll-padding: 0 16px; scrollbar-width: none; }
+  .tiles::-webkit-scrollbar { display: none; }
+  .tile { flex: 0 0 88%; scroll-snap-align: start; padding: 14px 16px 12px; }
+  .action { padding: 16px 16px 16px 22px; gap: 12px; }
+  .actionSide { padding-top: var(--s3); }
 }
 
 /* ---------------------------------------------------------------- sidebar, while Today's Persimmon & Ink theme is on */
