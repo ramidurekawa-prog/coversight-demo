@@ -98,7 +98,9 @@ describe('tonight on the server', () => {
     await expect(saveManual(db, floor(), { roomId: 'oakland' }, NOW)).rejects.toThrow(/Enter covers/);
     await expect(saveManual(db, floor(), { roomId: 'oakland', covers: -3 }, NOW)).rejects.toThrow(/invalid/);
     const r1 = await saveManual(db, floor(), { roomId: 'oakland', covers: 42, servers: 4 }, NOW);
-    expect(r1.tonight).toMatchObject({ source: 'manual', so: 42, servers: 4, serversFrom: 'manual', enteredBy: 'Luis', pace: null });
+    // No usual night of its own yet, but Covercast (the forecast Service uses) has tonight, so the count is paced against it.
+    expect(r1.tonight).toMatchObject({ source: 'manual', so: 42, servers: 4, serversFrom: 'manual', enteredBy: 'Luis', engine: 'Covercast' });
+    expect(typeof r1.tonight.pace).toBe('number');
     const r2 = await saveManual(db, floor(), { roomId: 'oakland', clear: true }, NOW);
     expect(r2.tonight.source).toBe('none');
   });

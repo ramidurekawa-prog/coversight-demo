@@ -334,7 +334,7 @@ describe('Covercast on the server', () => {
     const after = (await loadForecast(db, gm(), 'oakland')).forecast.covers!.days[2]!;
     expect(after).toMatchObject({ iso: first.iso, value: 0 });
     await expect(saveAction(db, gm(), { roomId: 'oakland', key: 'forecast.signals', value: { closures: ['tomorrow'] } })).rejects.toThrow();
-  });
+  }, 20_000); // two full Covercast runs: over 5 s when the whole suite runs in parallel
   it('switches to the room’s own Toast days once they are stored', async () => {
     const days = Array.from({ length: 42 }, (_, i) => addDays('2026-10-06', i));
     for (const day of days) await db.insert(posDays).values({ orgId, roomId: 'walnut', day, items: [], orders: mapToastDay({ orders: ordersFor(day) as never[], tz: 'America/Los_Angeles' }).orders, time: [], payments: [] });

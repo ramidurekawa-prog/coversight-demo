@@ -6,7 +6,8 @@ import { Icon, Button } from '../../kit';
 import { engine, useEngine, useSaved } from '../../engine';
 import { useCv, cvMoney, CV_D, CV_ROOM, CV_NOW, Claim, Money, Pill, PageHead } from '../core';
 import { DenseService } from '../dense-sections';
-import { covercastRoom, livePace, liveTuning, quarterCurve, shiftPulseDay } from '../../../lib/data/forecast/index.js';
+import { covercastPace, shiftPulseDay } from '../../../lib/data/forecast/index.js';
+import { useCovercast } from '../covercast';
 import {
   addDays, bandSpread, clockLabel, clockMinutes, cutApprovalId, dayOfDate, dayOutlook, fencesOf, hhmm, hourRows, isCutFor, localNow,
   manualNight, MEALS, mealOf, MIN_CALIBRATED, needsFrom, pacing, planTotals, serviceRecap, servicePlan, slotRows, SLOT_MIN, toCsv,
@@ -121,29 +122,6 @@ function useLive(roomId, enabled) {
   return live;
 }
 
-/**
- * Covercast for this room: from the server when there is one (the same call
- * the server's checks use), else computed here from the room's data. Null
- * until it's ready, or when there isn't enough history: the page then runs on
- * the old rules and says so.
- */
-function useCovercast(room, roomId, useServer) {
-  const [srv, setSrv] = React.useState(/** @type {any} */ (null));
-  React.useEffect(() => {
-    if (!useServer) return undefined;
-    let stop = false;
-    setSrv(null);
-    call(`/api/forecast?room=${encodeURIComponent(roomId)}&days=14`).then((b) => { if (!stop) setSrv(b.forecast?.ready ? b.forecast : false); }).catch(() => { if (!stop) setSrv(false); });
-    return () => { stop = true; };
-  }, [roomId, useServer]);
-  const local = React.useMemo(() => {
-    if (useServer) return null;
-    try { const f = covercastRoom(room, { accuracy: false }); return f.ready ? f : null; } catch { return null; }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomId, useServer]);
-  return useServer ? (srv || null) : local;
-}
-
 /* ================================================================ one shape for every live source */
 
 /** A live service from Toast, in the page's one shape. */
@@ -163,12 +141,11 @@ function fromSample(sv, cc, date, plan, fences) {
   // The scene's own call (cut, wait, quiet) stands; the pace and the likely finish are Covercast's when it has the day.
   const start = 17 * 60;
   const win = { start, end: start + sv.comp.length * SLOT_MIN };
-  const ccDay = cc?.covers?.days?.find((d) => d.iso === date) ?? null;
-  const curve = ccDay ? quarterCurve(ccDay, win) : null;
-  const useCc = !!curve && curve.some((x) => x > 0);
-  const comp = useCc ? curve : sv.comp;
+  const cp = covercastPace(cc, date, { actual: sv.actual, now: sv.now, start, slots: sv.comp.length, service: 'dinner' });
+  const useCc = !!cp;
+  const comp = useCc ? cp.comp : sv.comp;
   const p = useCc
-    ? livePace({ curve, actual: sv.actual, now: sv.now, service: 'dinner', start, tuned: liveTuning(cc.shiftPulse, 'dinner', start + sv.now * SLOT_MIN) })
+    ? (({ comp: _c, engine: _e, ...rest }) => rest)(cp)
     : pacing({ comp: sv.comp, actual: sv.actual, now: sv.now, spread: sv.mode === 'wait' ? 0.2 : bandSpread(sv.now, sv.comp.length) * 0.65 });
   const tile = sv.tiles.find((t) => t[0] === 'Servers on');
   const on = tile ? +tile[1] : null;
