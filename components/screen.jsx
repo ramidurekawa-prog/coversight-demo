@@ -11,7 +11,7 @@ import { CvChannels } from './screens/pages/channels';
 import { CvComparison } from './screens/pages/comparison';
 import { CvConnect } from './screens/pages/connect';
 import { CvControls } from './screens/pages/controls';
-import { CvCoverage } from './screens/pages/coverage';
+import { CvSummary } from './screens/pages/summary';
 import { CvDaily } from './screens/pages/daily';
 import { CvData } from './screens/pages/data';
 import { CvFences } from './screens/pages/fences';
@@ -59,7 +59,7 @@ export const SCREENS = {
   staff: CvStaff,
   throughput: CvThroughput,
   purchasing: CvPurchasing,
-  coverage: CvCoverage,
+  summary: CvSummary,
   inventory: CvInventory,
   kitchen: CvKitchen,
   controls: CvControls,
