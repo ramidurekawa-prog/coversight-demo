@@ -41,7 +41,7 @@ const STARTERS = {
   role: ['Server', 'Bartender', 'Host', 'Busser', 'Food runner', 'Line cook', 'Prep cook', 'Dishwasher', 'Shift lead', 'Manager'],
 };
 
-function Grid({ kind, rows, setRows, issues, find = '', onRemove, only = null, cards = false, picks = {} }) {
+function Grid({ kind, rows, setRows, issues, find = '', onRemove, only = null, cards = false, picks = {}, unitOf = null }) {
   const cols = SCHEMAS[kind].columns;
   const bad = (i, k) => issues.find((x) => x.row === i + 1 && (x.col === k || x.col == null) && x.level === 'error') || issues.find((x) => x.row === i + 1 && x.col === k);
   const q = find.trim().toLowerCase();
@@ -50,7 +50,7 @@ function Grid({ kind, rows, setRows, issues, find = '', onRemove, only = null, c
   return (
     <div className="cv-tablewrap" tabIndex={0} role="group" aria-label={`${SCHEMAS[kind].title} rows`} style={cards ? undefined : { maxHeight: 460, overflowY: 'auto' }}>
       <table className={`cv-table cv-grid-edit ${s.gridTable} ${cards ? s.gridCards : ''}`}>
-        <thead><tr><th style={{ width: 36 }}>#</th>{cols.map((c) => <th key={c.k} className={c.type === 'money' || c.type === 'number' ? 'r' : ''}>{c.label}{c.required ? '' : <span className="cv-faint" style={{ fontWeight: 400, textTransform: 'none' }}> · optional</span>}</th>)}<th style={{ width: 40 }}><span className="sr-only">Remove</span></th></tr></thead>
+        <thead><tr><th style={{ width: 36 }}>#</th>{cols.map((c) => <th key={c.k} className={c.type === 'money' || c.type === 'number' ? 'r' : ''}>{c.label}{c.required ? '' : <span className="cv-faint" style={{ fontWeight: 400, textTransform: 'none' }}> · optional</span>}{c.unit && <span className={s.unitHint}>{c.unit}</span>}</th>)}<th style={{ width: 40 }}><span className="sr-only">Remove</span></th></tr></thead>
         <tbody>
           {rows.map((r, i) => (!shows(r, i) ? null : (
             <tr key={i}>
@@ -61,7 +61,7 @@ function Grid({ kind, rows, setRows, issues, find = '', onRemove, only = null, c
                 const cls = `${s.cell} ${num ? s.num : ''} ${b ? (b.level === 'error' ? s.err : s.warn) : ''}`;
                 const label = `${c.label}, row ${i + 1}`;
                 return (
-                  <td key={c.k} data-label={c.label}>
+                  <td key={c.k} data-label={c.label} data-unit={c.unit || undefined}>
                     {c.type === 'enum' ? (
                       <select id={cellId(kind, i, c.k)} aria-label={label} aria-invalid={b?.level === 'error' || undefined} value={r[c.k] ?? ''} onChange={(e) => set(i, c.k, e.target.value)} className={cls}>
                         <option value="">Choose…</option>
@@ -70,8 +70,10 @@ function Grid({ kind, rows, setRows, issues, find = '', onRemove, only = null, c
                     ) : (
                       <input id={cellId(kind, i, c.k)} aria-label={label} aria-invalid={b?.level === 'error' || undefined} title={b?.msg} value={r[c.k] ?? ''} inputMode={num ? 'decimal' : 'text'}
                         type={c.k === 'date' ? 'date' : 'text'} list={picks[c.k]?.length ? `pick-${kind}-${c.k}` : undefined} autoComplete="off"
+                        placeholder={c.type === 'money' ? '$' : undefined}
                         onChange={(e) => set(i, c.k, e.target.value)} className={cls} />
                     )}
+                    {c.rowUnit && unitOf?.(r) && <span className={s.rowUnit}>{unitOf(r)}</span>}
                   </td>
                 );
               })}
@@ -285,8 +287,8 @@ export function Editor({ kind, seed, startMode, lastEntry = null, onUndo, onHist
   const [mode, setMode] = React.useState(seed ? 'csv' : startMode || 'grid');
   const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
   // Quick add: the rows that are there, plus one new one (the waste log only ever adds).
-  const quickRows = () => { const blank = { ...blankRow(), ...(schema.columns.some((c) => c.k === 'date') ? { date: today() } : {}) }; return kind === 'waste' ? [blank] : [...initialRows(), blank]; };
-  const [rows, setRowsState] = React.useState(quick ? quickRows : initialRows);
+  const quickRows = () => { const blank = { ...blankRow(), ...(schema.columns.some((c) => c.k === 'date') ? { date: today() } : {}) }; return kind === 'waste' || kind === 'days' ? [blank] : [...initialRows(), blank]; };
+  const [rows, setRowsState] = React.useState(quick ? quickRows : () => { const r = initialRows(); return kind === 'days' && !r.length ? quickRows() : r; });
   // Pick-lists: what's already in this room's data, per text column, so a name is chosen instead of retyped.
   const picks = React.useMemo(() => {
     const base = templateRows(kind, room);
@@ -296,6 +298,13 @@ export function Editor({ kind, seed, startMode, lastEntry = null, onUndo, onHist
     for (const [k, list] of Object.entries(STARTERS)) if (out[k]) out[k] = [...new Set([...out[k], ...list])];
     return out;
   }, [kind, room]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The unit a row's quantities are in: the row's own unit, or the counted item's.
+  const unitOf = React.useCallback((r) => {
+    if (r.unit) return String(r.unit);
+    const k = String(r.item || '').trim().toLowerCase();
+    const c = k && (room.counts || []).find((x) => String(x.item).toLowerCase() === k || String(x.label || '').toLowerCase() === k);
+    return c?.unit || '';
+  }, [room]);
   const [csv, setCsvState] = React.useState(seed?.csv ?? '');
   const [file, setFile] = React.useState(seed ? { name: seed.source, source: seed.via || 'file' } : null);
   const [map, setMapState] = React.useState(null);
@@ -305,7 +314,8 @@ export function Editor({ kind, seed, startMode, lastEntry = null, onUndo, onHist
   const [yes, setYes] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [dirty, setDirty] = React.useState(!!seed);
-  const [replace, setReplace] = React.useState(() => !!eng.inputs[CV_D.id]?.[kind]?.opts?.replace);
+  // Days add up over time, so replacing them is never remembered from the last save.
+  const [replace, setReplace] = React.useState(() => kind !== 'days' && !!eng.inputs[CV_D.id]?.[kind]?.opts?.replace);
   const opts = cleanOpts(kind, { replace });
   const fileRef = React.useRef(null);
   const [find, setFind] = React.useState('');
@@ -432,7 +442,7 @@ export function Editor({ kind, seed, startMode, lastEntry = null, onUndo, onHist
       {mode === 'grid' ? (
         <>
           {!quick && <span className="cv-xs cv-faint">{kind === 'waste' ? `Each row adds to the log${eng.inputs[CV_D.id]?.waste?.rows?.length ? ` (${plural(eng.inputs[CV_D.id].waste.rows.length, 'entry', 'entries')} logged so far)` : ''}. A row already logged isn’t added twice.` : 'Click any value to change it. Nothing is saved until you press Save.'}</span>}
-          <Grid kind={kind} rows={rows} setRows={setRows} issues={result?.issues || []} find={find} picks={picks} only={quick ? rows.length - 1 : null} cards={quick} onRemove={() => { if (schema.replace && !replace) setReplace(true); }} />
+          <Grid kind={kind} rows={rows} setRows={setRows} issues={result?.issues || []} find={find} picks={picks} unitOf={unitOf} only={quick ? rows.length - 1 : null} cards={quick} onRemove={() => { if (schema.replace && !replace) setReplace(true); }} />
         </>
       ) : (
         <div className="cv-col" style={{ gap: 8 }}>

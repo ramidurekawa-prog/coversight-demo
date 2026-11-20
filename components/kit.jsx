@@ -179,6 +179,11 @@ import {
   CircleStop,
   Trophy,
   Sparkles,
+  Gem,
+  Printer,
+  Gift,
+  Repeat,
+  ChevronLeft,
 } from 'lucide-react';
 
 const ICONS = {
@@ -356,6 +361,11 @@ const ICONS = {
   CircleStop,
   Trophy,
   Sparkles,
+  Gem,
+  Printer,
+  Gift,
+  Repeat,
+  ChevronLeft,
 };
 
 /** Every icon name the screens use. A unit test keeps this list complete. */
