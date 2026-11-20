@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { SEED } from '../lib/data/seed.js';
-import { deriveGroup, deriveRoom, choosePlan } from '../lib/data/model.js';
+import { deriveGroup, deriveRoom, choosePlan, money as cvMoney } from '../lib/data/model.js';
 import { densify } from '../lib/data/dense.js';
 import {
   awaitingData, bankedFromWindows, blockedReason, buildCommit, comparators, decompose, planState, setItemStatus,
@@ -90,6 +90,27 @@ describe('This week, on the sample', () => {
     // With fresh recipe costs entered, it isn't blocked any more.
     const fresh = { ...d, feeds: d.feeds.map((f) => (f.name === 'Recipe costs' ? { ...f, state: 'healthy' } : f)) };
     expect(blockedReason(d.candidates.find((c) => c.id === 'salmon'), fresh)).toBeNull();
+  });
+
+  it('explains each action quickly in plain words, using only its own computed numbers', () => {
+    for (const id of ['oakland', 'berkeley', 'walnut']) for (const c of view(id).plan.ranked) {
+      const said = c.talk.join(' ');
+      expect(c.talk.length).toBe(c.blocked ? 3 : 2);
+      expect(said.length).toBeLessThan(330);
+      expect(said).not.toMatch(/elasticity|old engine/i);
+      expect(said).toContain(cvMoney(Math.round(c.value)));
+      if (c.conservative > 0 && Math.round(c.conservative) < Math.round(c.value)) expect(said).toContain(cvMoney(Math.round(c.conservative)));
+      if (c.blocked) expect(said).toMatch(/First, bring in current/);
+    }
+  });
+
+  it('marks each of the last weeks green or red against the same normal week the page compares with', () => {
+    const g = v.green;
+    expect(g.line).toBeCloseTo(v.decomposition.contribution.then, 6);
+    expect(g.now).toBe(v.decomposition.contribution.change >= 0);
+    expect(g.weeks.length).toBe(v.history.length);
+    expect(g.count).toBe(g.weeks.filter((w) => w.earned >= g.line).length);
+    expect(g.weeks.at(-1).current).toBe(true);
   });
 
   it('chooses the plan the way The plan page does, with the saved hours and set-aside findings', () => {
@@ -218,5 +239,24 @@ describe('the digest and the review record', () => {
     expect(Object.keys(kept)).toHaveLength(REVIEW_KEEP);
     expect(Object.keys(kept)).toContain('2026-10-22');
     expect(Object.keys(kept)).not.toContain('2026-01-01');
+  });
+});
+
+describe('the scorecard', () => {
+  it('scores sales, food and labor against the same normal week, each with the best ready fix from the plan', () => {
+    for (const id of ['oakland', 'berkeley', 'walnut']) {
+      const v = view(id);
+      expect(v.score.map((f) => f.key)).toEqual(['net', 'food', 'labour']);
+      const total = v.score.reduce((t, f) => t + f.effect, 0);
+      expect(total).toBeCloseTo(v.decomposition.contribution.change, 6);
+      for (const f of v.score) {
+        expect(f.good).toBe(f.effect >= 0);
+        if (!f.fix) continue;
+        const item = v.plan.ranked.find((i) => i.id === f.fix.id);
+        expect(item).toBeTruthy();
+        expect(item.blocked).toBeFalsy();
+        expect(f.fix.worth).toBe(item.conservative ?? item.value);
+      }
+    }
   });
 });
