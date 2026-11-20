@@ -12,6 +12,7 @@ import { meetingSchemas } from './page/meeting';
 import { actions, auditLog, rooms } from './db/schema';
 import { InputError } from './org';
 import { AuthError, roomLevel, type Viewer } from './session';
+import { CAUSES as TRENDS_CAUSES, NOTE_KEY_RE as TRENDS_NOTE_KEY } from '../lib/data/page/trends.js';
 
 const id = z.string().min(1).max(120);
 const isoDate = z.string().max(40);
@@ -122,6 +123,8 @@ export const ACTION_KEYS = {
   'forecast.decisions': { scope: 'room', schema: forecastDecisions },
   /** Weekly meeting: the room's slot (day of week, 0 = Sunday, local time, length) and who usually attends. */
   'meeting.schedule': { scope: 'room', schema: meetingSchemas.schedule },
+  /** Trends: why a week or a run of weeks was unusual, per "<week start>:<metric>". */
+  'trends.notes': { scope: 'room', schema: z.record(z.string().regex(TRENDS_NOTE_KEY), z.object({ cause: z.enum(TRENDS_CAUSES.map((c: { value: string }) => c.value) as [string, ...string[]]), text: z.string().trim().max(280), at: isoDate })).refine((r) => Object.keys(r).length <= 300, 'too many notes') },
   /** Service: tonight's count entered by hand when no live feed is on (covers so far, servers on), per night. */
   'service.manual': { scope: 'room', schema: z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), entries: z.array(z.object({ meal: z.enum(['lunch', 'dinner']), at: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/), covers: z.number().int().min(0).max(5000), servers: z.number().int().min(0).max(200).nullable(), saved: z.string().max(40) })).max(24) }) },
   /** This week: weeks marked reviewed, keyed by the data week's first day, with an optional note. Who reviewed comes from the row's user. */
