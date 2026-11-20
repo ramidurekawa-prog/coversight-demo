@@ -137,6 +137,10 @@ export const ACTION_KEYS = {
   'service.manual': { scope: 'room', schema: z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), entries: z.array(z.object({ meal: z.enum(['lunch', 'dinner']), at: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/), covers: z.number().int().min(0).max(5000), servers: z.number().int().min(0).max(200).nullable(), saved: z.string().max(40) })).max(24) }) },
   /** This week: weeks marked reviewed, keyed by the data week's first day, with an optional note. Who reviewed comes from the row's user. */
   'week.review': { scope: 'room', schema: z.record(z.string().regex(/^\d{4}-\d{2}-\d{2}$/), z.object({ at: isoDate, note: z.string().trim().max(1000).optional() })).refine((r) => Object.keys(r).length <= 26, 'keeps at most 26 weeks') },
+  /** All rooms: attention items acknowledged or snoozed in this room, by item id (`<roomId>:<kind>:<key>`). */
+  'portfolio.handled': { scope: 'room', schema: z.record(z.string().regex(/^[^:\s]{1,60}:[a-z]+:\S{1,100}$/).max(120), z.object({ s: z.enum(['ack', 'snooze']), at: isoDate, until: isoDate.optional() })).refine((v) => Object.keys(v).length <= 50, 'at most 50 handled items') },
+  /** Daily detail: this room's day parts, whole hours on the service clock (4 = 4 am … 28 = 4 am next day), no overlaps. */
+  'daily.dayparts': { scope: 'room', schema: z.array(z.object({ name: z.string().trim().min(1).max(30), from: z.number().int().min(4).max(27), to: z.number().int().min(5).max(28) })).min(1).max(8).refine((a) => a.every((p) => p.to > p.from) && [...a].sort((x, y) => x.from - y.from).every((p, i, s) => !i || s[i - 1]!.to <= p.from), 'day parts must run forward and not overlap') },
   /** Menu prices: the Balanced menu's limit, the least share of a dish's orders a price move may keep. */
   'menu.lab': { scope: 'room', schema: z.object({ keepOrders: z.number().min(0.5).max(1) }) },
   /** Menu prices: each approved price change's rollout steps, ticked with the time (toast, apps, print, staff, check). */
