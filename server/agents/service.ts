@@ -4,6 +4,7 @@
 // createTask, saveAction), with that person as the actor, never an agent.
 import { and, desc, eq, gt, inArray, sql } from 'drizzle-orm';
 
+import { numbersOk } from '../../lib/ai/sous.js';
 import { answer } from '../../lib/agents/copilot.js';
 import { approvalFor, CREW, LEVER_ACCOUNT } from '../../lib/agents/crew.js';
 import { runCycle } from '../../lib/agents/cycle.js';
@@ -18,6 +19,7 @@ import { InputError } from '../org';
 import { startWindow } from '../proof';
 import { AuthError, roomLevel, type Viewer } from '../session';
 import { createTask } from '../tasks';
+import { aiAllowance, aiConfigured, askClaude } from '../ai/claude';
 import { dbStore } from './store';
 
 type V = Pick<Viewer, 'orgId' | 'userId' | 'role' | 'rooms'>;
@@ -106,7 +108,7 @@ export async function decide(db: Db, v: V, id: string, raw: unknown) {
 }
 
 /** Ask a copilot. The answer is built from facts; Claude (when configured) only rephrases them. */
-export async function ask(db: Db, v: V, raw: unknown, fetchImpl: typeof fetch = fetch) {
+export async function ask(db: Db, v: V, raw: unknown, fetchImpl?: typeof fetch) {
   const { who: role, question, roomId } = (raw ?? {}) as { who?: string; question?: string; roomId?: string };
   const q = String(question ?? '').trim().slice(0, 500);
   if (!q) throw new InputError('Ask a question.');
@@ -115,28 +117,17 @@ export async function ask(db: Db, v: V, raw: unknown, fetchImpl: typeof fetch = 
   const scoped = { ...facts, rooms: facts.rooms.filter((r) => !v.rooms || v.rooms.includes(r.id)), windows: facts.windows.filter((w) => !v.rooms || v.rooms.includes(w.roomId)) };
   const base = answer(copilot, q, scoped, { roomId: roomId && (!v.rooms || v.rooms.includes(roomId)) ? roomId : undefined });
   let text = base.text, phrased = false;
-  const [org] = await db.select({ sample: orgs.sample }).from(orgs).where(eq(orgs.id, v.orgId));
-  const asked = (await db.select({ n: sql<number>`count(*)::int` }).from(auditLog).where(and(eq(auditLog.orgId, v.orgId), inArray(auditLog.action, ['agents.ask']), gt(auditLog.at, new Date(Date.now() - 864e5)))))[0]?.n ?? 0;
-  if (process.env.ANTHROPIC_API_KEY && base.topic !== 'help' && asked < (org?.sample ? 20 : 500)) {
-    try {
-      const res = await fetchImpl('https://api.anthropic.com/v1/messages', {
-        method: 'POST', signal: AbortSignal.timeout(30_000),
-        headers: { 'content-type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
-        body: JSON.stringify({
-          model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-5-5', max_tokens: 600,
-          system: `You are Coversight's ${copilot} copilot for a restaurant group. Answer the question using ONLY the facts given. Keep every number exactly as given; add no new numbers, estimates or advice beyond the facts. Plain words, at most 120 words. If the facts don't answer it, say so.`,
-          messages: [{ role: 'user', content: `Question: ${q}\n\nFacts:\n${base.text}` }],
-        }),
-      });
-      if (res.ok) {
-        const j = (await res.json()) as { content?: { type: string; text?: string }[] };
-        const t = j.content?.find((c) => c.type === 'text')?.text?.trim();
-        // Keep the phrasing only if it introduced no number the facts don't contain.
-        const nums = (s: string) => (s.match(/\d[\d,.]*/g) || []).map((x) => x.replace(/[,.]$/, ''));
-        if (t && nums(t).every((n) => base.text.includes(n))) { text = t; phrased = true; }
-      }
-    } catch { /* the facts answer stands */ }
+  if (base.topic !== 'help' && aiConfigured() && (await aiAllowance(db, v.orgId, 'ask'))) {
+    const r = await askClaude<{ text: string }>({
+      system: `You are Coversight's ${copilot} copilot for a restaurant group. Answer the question using only the facts given. Keep every number exactly as given, because your reply is discarded if it contains a number the facts don't; add no new numbers, estimates or advice beyond the facts. Plain words, at most 120 words. If the facts don't answer it, say so.`,
+      schema: { type: 'object', additionalProperties: false, required: ['text'], properties: { text: { type: 'string' } } },
+      maxTokens: 2000,
+      messages: [{ role: 'user', content: `Question: ${q}\n\nFacts:\n${base.text}` }],
+    }, fetchImpl);
+    const t = r.ok ? String(r.data.text ?? '').trim() : '';
+    // Keep the phrasing only if it introduced no number the facts don't contain.
+    if (t && numbersOk(t, base.text, q)) { text = t; phrased = true; }
   }
-  await db.insert(auditLog).values({ orgId: v.orgId, userId: v.userId, action: 'agents.ask', detail: { copilot, topic: base.topic, phrased } });
+  await db.insert(auditLog).values({ orgId: v.orgId, userId: v.userId, action: 'agents.ask', detail: { copilot, topic: base.topic, phrased, engine: phrased ? 'ai' : 'builtin' } });
   return { copilot, topic: base.topic, text, facts: base.text, phrased, cites: base.cites };
 }
