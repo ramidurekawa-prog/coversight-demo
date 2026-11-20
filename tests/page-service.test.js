@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { addDays, serviceRecap, dayOfDate, dayOutlook, hourRows, mealOf, slotRows, toCsv, bandSpread, calibratedBand, clockLabel, clockMinutes, cutApprovalId, cutExecution, fencesOf, isCutFor, lastOrderAt, liveNight, localNow, manualNight, pacing, serviceCall, serviceHealth, servicePlan, serversOn, serviceWindow, slotCovers } from '../lib/data/page/service.js';
+import { addDays, planTotals, serviceRecap, dayOfDate, dayOutlook, hourRows, mealOf, slotRows, toCsv, bandSpread, calibratedBand, clockLabel, clockMinutes, cutApprovalId, cutExecution, fencesOf, isCutFor, lastOrderAt, liveNight, localNow, manualNight, pacing, serviceCall, serviceHealth, servicePlan, serversOn, serviceWindow, slotCovers } from '../lib/data/page/service.js';
 
 const hours = (day, rows) => rows.flatMap(([hour, covers, servers]) => [0, 1, 2, 3].map((week) => ({ week, day, hour, covers, servers })));
 // 24+ busy hours so the room's pace can be measured; Thursday has a spare server from 8 pm.
@@ -217,6 +217,21 @@ describe('lunch, dinner and the full day', () => {
     expect(r).toMatchObject({ guests: 28, usual: 28, pace: 0, idleHours: 3, idleCost: 60, peakNeed: 2, busiest: 12 });
     expect(serviceRecap({ plan, slots: [], start: 660, servers: 3 })).toBeNull();
     expect(serviceRecap({ plan, slots: [1], start: 660, servers: 3 }).idleCost).toBeNull();
+  });
+  it('never counts a server your own minimum keeps on as idle or needed less', () => {
+    const plan = { rate: 10, hours: [{ hour: 11, covers: 8, servers: 3, floor: 3 }, { hour: 12, covers: 20, servers: 3, floor: 3 }] };
+    const r = serviceRecap({ plan, slots: [2, 2, 2, 2, 5, 5, 5, 5], start: 11 * 60, servers: 3, wage: 20 });
+    expect(r).toMatchObject({ idleHours: 0, idleCost: 0, peakNeed: 3, peakByRule: true, shortHours: 0 });
+    const rows = hourRows({ hours: [{ hour: 20, covers: 10, peak: 12, servers: 5, need: 2, floor: 4, weeks: 4 }, { hour: 21, covers: 6, peak: 8, servers: 3, need: 1, floor: 4, weeks: 4 }] });
+    expect(rows.map((r) => [r.need, r.demand, r.byRule, r.spare, r.short])).toEqual([[4, 2, true, 1, 0], [4, 1, true, 0, 0]]);
+  });
+  it('gives a service one total and one range, whoever reads it', () => {
+    const hours = [{ hour: 18, covers: 40, peak: 46 }, { hour: 19, covers: 50, peak: 58 }];
+    expect(planTotals({ hours })).toEqual({ covers: 90, low: null, high: 104, from: 'history' });
+    // Covercast's service range (80–110 on 95) scaled to the hours the chart draws (90), not the sum of each hour's top.
+    expect(planTotals({ hours, engine: { covers: 95, low: 80, high: 110 } })).toEqual({ covers: 90, low: 76, high: 104, from: 'Covercast' });
+    expect(dayOutlook({ lunch: null, dinner: { hours, weeks: 4, engine: { covers: 95, low: 80, high: 110 } } })).toMatchObject({ usual: 90, busiest: 104 });
+    expect(planTotals(null)).toBeNull();
   });
   const room = { levers: { serviceHours: [
     ...[0, 1, 2, 3].flatMap((week) => [[11, 20, 3], [12, 30, 3], [13, 22, 3], [14, 8, 3]].map(([hour, covers, servers]) => ({ week, day: 'Tue', hour, covers, servers }))),
