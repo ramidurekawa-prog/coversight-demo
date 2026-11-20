@@ -9,6 +9,7 @@ import { runJob } from '../server/jobs';
 import { addLink, directUrl, fetchLink, listLinks, pullLinks, removeLink } from '../server/links';
 import { createSampleOrg } from '../server/org';
 import { freshDb } from './helpers/db';
+import { fakeClaude } from './helpers/fake-claude';
 
 /** A one-sheet .xlsx with inline strings. */
 function book(sheets: { name: string; rows: (string | number)[][] }[]) {
@@ -115,27 +116,22 @@ describe('links', () => {
 
 describe('photos and PDFs', () => {
   const photo = { name: 'invoice.jpg', type: 'image/jpeg', data: Buffer.from('fake-jpeg-bytes-here').toString('base64') };
-  const fakeClaude = (input: unknown, status = 200) => {
-    const calls: { url: string; body: Record<string, unknown>; headers: Record<string, string> }[] = [];
-    const f = (async (url: string, init: { body: string; headers: Record<string, string> }) => {
-      calls.push({ url, body: JSON.parse(init.body), headers: init.headers });
-      return new Response(JSON.stringify(status === 200 ? { content: [{ type: 'tool_use', name: 'record_rows', input }] } : { error: {} }), { status });
-    }) as unknown as typeof fetch;
-    return { f, calls };
-  };
-
   it('needs ANTHROPIC_API_KEY, and says so plainly', async () => {
     await expect(extractRows(db, owner(), photo, fakeClaude({}).f)).rejects.toThrow(/ANTHROPIC_API_KEY/);
   });
 
   it('reads rows for review: only the kind’s columns, as text, never committed', async () => {
     process.env.ANTHROPIC_API_KEY = 'sk-test-key';
-    const c = fakeClaude({ kind: 'invoices', rows: [{ item: 'Salmon fillet', vendor: 'Pacific Seafood', unit: 'lb', unit_price: 11.25, qty: 40, extra: 'dropped' }, { item: '', unit_price: null }], notes: 'Line 3 smudged.' });
+    const c = fakeClaude({ kind: 'invoices', columns: ['item', 'vendor', 'unit', 'unit_price', 'qty', 'extra'], rows: [['Salmon fillet', 'Pacific Seafood', 'lb', '11.25', '40', 'dropped'], ['', '', '', '', '', '']], notes: 'Line 3 smudged.' });
     const out = await extractRows(db, owner(), photo, c.f);
     expect(out).toMatchObject({ kind: 'invoices', notes: 'Line 3 smudged.', rows: [{ item: 'Salmon fillet', vendor: 'Pacific Seafood', unit: 'lb', unit_price: '11.25', qty: '40' }] });
     expect(out.rows[0]).not.toHaveProperty('extra');
-    expect(c.calls[0]!.url).toBe('https://api.anthropic.com/v1/messages');
-    expect(c.calls[0]!.headers['x-api-key']).toBe('sk-test-key');
+    expect(c.calls[0]!.url).toMatch(/^https:\/\/api\.anthropic\.com\/v1\/messages/);
+    expect(c.calls[0]!.headers.get('authorization')).toBe('Bearer sk-test-key');
+    // One engine, one model: Opus 5.5, answering in a fixed shape (this model refuses a forced tool call).
+    expect(c.calls[0]!.body.model).toBe('claude-opus-5-5');
+    expect(c.calls[0]!.body.output_config.format.type).toBe('json_schema');
+    expect(c.calls[0]!.body.tool_choice).toBeUndefined();
     const content = (c.calls[0]!.body.messages as { content: { type: string }[] }[])[0]!.content;
     expect(content[0]!.type).toBe('image');
     expect(await db.select().from(inputs).where(eq(inputs.orgId, orgId))).toHaveLength(0);
@@ -145,10 +141,10 @@ describe('photos and PDFs', () => {
 
   it('a PDF goes as a document; a refused key and wrong types fail in plain words', async () => {
     process.env.ANTHROPIC_API_KEY = 'sk-test-key';
-    const c = fakeClaude({ kind: 'counts', rows: [{ item: 'Salmon', close: 14 }] });
+    const c = fakeClaude({ kind: 'counts', columns: ['item', 'close'], rows: [['Salmon', '14']], notes: '' });
     await extractRows(db, owner(), { ...photo, name: 'count.pdf', type: 'application/pdf', kind: 'counts' }, c.f);
     expect((c.calls[0]!.body.messages as { content: { type: string }[] }[])[0]!.content[0]!.type).toBe('document');
-    expect((c.calls[0]!.body.tool_choice as { name: string }).name).toBe('record_rows');
+    expect(c.calls[0]!.body.output_config.format.schema.properties.kind.enum).toEqual(['counts']);
     await expect(extractRows(db, owner(), photo, fakeClaude({}, 401).f)).rejects.toThrow(/was refused/);
     await expect(extractRows(db, owner(), { ...photo, type: 'image/heic' }, c.f)).rejects.toThrow(/JPEG, PNG/);
   });
@@ -156,7 +152,7 @@ describe('photos and PDFs', () => {
   it('a sample group gets a few reads a day', async () => {
     process.env.ANTHROPIC_API_KEY = 'sk-test-key';
     expect((await db.select().from(orgs).where(eq(orgs.id, orgId)))[0]!.sample).toBe(true);
-    const c = fakeClaude({ kind: 'waste', rows: [{ item: 'Salmon', qty: 2, reason: 'spoiled' }] });
+    const c = fakeClaude({ kind: 'waste', columns: ['item', 'qty', 'reason'], rows: [['Salmon', '2', 'spoiled']], notes: '' });
     for (let i = 0; i < DAILY.sample; i++) await extractRows(db, owner(), photo, c.f);
     await expect(extractRows(db, owner(), photo, c.f)).rejects.toThrow(/photos a day/);
   });

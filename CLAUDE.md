@@ -49,7 +49,7 @@ here ships to customers.
   hours, the period package) use `useSaved(key, initial)` from
   `components/engine.js`; each key needs a zod schema and scope in
   `server/actions.ts` `ACTION_KEYS`, or the server refuses it.
-- **Jobs and tests:** `server/jobs.ts` (sync, links, detection, proof, reverify, billing, cleanup)
+- **Jobs and tests:** `server/jobs.ts` (sync, links, detection, proof, reverify, billing, cleanup, sous)
   run from Vercel Cron (`vercel.json` → `/api/cron/<job>`, `CRON_SECRET`) or
   "Run now". Test windows (`server/proof.ts`) are measured in weeks of the
   room's *data* via `lib/data/readers.js` and closed with `lib/data/pilot.js`;
@@ -68,7 +68,7 @@ here ships to customers.
     `server/links.ts` fetches Google Sheets / Dropbox links (those hosts only)
     and re-reads linked ones daily (`links` job), committing only tabs with
     zero errors. `server/extract.ts` reads a photo or PDF into rows with
-    Claude when `ANTHROPIC_API_KEY` is set; rows always go back for review.
+    Claude (through the shared AI engine) when `ANTHROPIC_API_KEY` is set; rows always go back for review.
 - **The agent crew:** `lib/agents/` (pure). `crew.js` holds the 19 roles; each
   subscribes to events and returns *effects*; `policy.js` `authorize()` checks
   every effect (permission level, the one agent a job belongs to, and the
@@ -78,6 +78,52 @@ here ships to customers.
   commit data or confirm mappings: a person's accept in `server/agents/service.ts`
   does that, as that person. `tests/crew-scenarios.test.js` grades the crew on
   scenarios; add one when an agent learns something new.
+- **AI (Sous):** every AI call goes through `askClaude()` in `server/ai/claude.ts`
+  (one model, `claude-opus-5-5`, via `@anthropic-ai/sdk`; structured JSON
+  replies; a per-group daily allowance). It is a placeholder that switches on
+  with `ANTHROPIC_API_KEY`: with no key, or the provider down, every caller
+  falls back to its built-in path, so nothing may depend on AI to work.
+  Sous, the AI teammate (`lib/ai/sous.js`, pure; `server/ai/sous.ts`;
+  `components/sous.jsx`, opened from the top bar on every page), reads a
+  derived room into plain-sentence *facts* and answers, briefs and notices from
+  those only. AI-written text must pass `numbersOk()` (no figure the facts
+  don't contain) or it is discarded. New things for Sous to know are new facts
+  in `sousFacts()`, never numbers in a prompt. Every page has its own Sous
+  agent (`lib/ai/agents.js`: a name, a job, the fact topics it leads with and
+  its questions), shown above the page by `PageAgent` from the shell, so page
+  files stay untouched. Agents hold no data of their own: they all read the
+  same facts, which is the shared brain. A new page needs an entry there
+  (`tests/sous.test.js` fails without one). `lib/ai/moves.js` holds what an
+  agent recommends (`sousMoves()`: one move, its stake with a claim, and an
+  act that is only ever a draft, an approval sheet or a screen: agents never
+  send, approve or change anything themselves), what the room told it
+  (`sousRemember()`, saved under the `sous` action key; `sous.seen` per person
+  keeps the strip quiet until an agent has something new) and each area's
+  verified track record (`agentRecord()`). `sousLinks()` ties one ingredient
+  across pages; its figures keep their own claims and are never summed.
+  Sous opens as *the Pass* (`sousBoard()`: tickets in three lanes, Do now /
+  Keeping an eye on / Proven, with one ask line), not a chat window: keep it
+  a board. Each specialist's expertise is its *line check*
+  (`lib/ai/playbook.js`: `lineCheck(page, d)`): the things a consultant in
+  that area checks, run on the room, each `found` (with the fix), `clear` or
+  `needs` (says what data is missing). Wage rules are tables by state and city
+  there (`rulesFor(profile)`, from the room's `state`/`city`); never type a
+  pay rate or state a rule for a place with no table, and every rule says it
+  is a summary to confirm with payroll. A new skill for an agent is a new
+  check, which also becomes a fact and can become its move. Sous talks to
+  people who do not want to read: a fact's `say` is one or two short spoken
+  sentences and `todo` the one thing to do (an answer shows those first, the
+  full record behind "Show me why"); write both for any new fact or check. Sous learns
+  by memory, never by retraining (`lib/ai/learn.js`): the room's notebook
+  (`sous.notes`, people's own words, read as "You told me" records and shown
+  on the moves they bear on; a "never email" note turns an email move into a
+  screen), what works here (`sousLearned()` from proofs, the `sous.learn` log
+  of moves acted on and what was set aside; `rankMoves()` puts proven kinds
+  first and never reorders anything urgent) and the person (`sous.me`: what
+  they ask about orders the questions offered). The nightly `sous` job notifies
+  what it noticed and pre-writes briefs. `tests/sous.test.js` and
+  `tests/sous.test.ts` cover it; `tests/helpers/fake-claude.ts` stands in for
+  the API.
 - **Forecasting (Covercast):** `lib/data/forecast/` (pure) forecasts covers and
   sales by day, week, service, hour and 15 minutes, with a measured 80% range;
   `server/forecast.ts` + `GET /api/forecast?room=`. Pages that show a forecast
