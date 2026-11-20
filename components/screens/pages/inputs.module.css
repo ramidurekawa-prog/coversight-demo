@@ -534,3 +534,19 @@ button.mRow.on { background: var(--accent-subtle); }
 .menu > button:hover:not(:disabled), .menu > button:focus-visible { background: var(--surface-sunken); }
 .menu > button:disabled { opacity: 0.5; cursor: default; }
 .menu small { display: block; font-size: 13px; font-weight: 400; color: var(--fg-2); }
+
+/* Units: every number says what it is measured in. */
+.page .unitHint { display: block; font-weight: 400; font-size: 12px; line-height: 1.3; text-transform: none; letter-spacing: 0; color: var(--fg-3); white-space: normal; max-width: 22ch; }
+.page th.r .unitHint, .page :global(th.r) .unitHint { margin-left: auto; }
+.page .rowUnit { display: block; font-size: 12px; color: var(--fg-3); text-align: right; padding: 2px 8px 0; }
+.page .gridCards td[data-unit]::after { content: attr(data-unit); display: block; font-size: 13px; color: var(--fg-3); padding-top: 4px; }
+@media (max-width: 700px) { .page .gridTable td[data-unit]::after { content: attr(data-unit); display: block; font-size: 13px; color: var(--fg-3); padding-top: 4px; } }
+
+/* The daily entry: one obvious button for today's sales and labor. */
+.todayBar { all: unset; box-sizing: border-box; cursor: pointer; display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 16px 20px; border-radius: var(--card-r); background: var(--surface); box-shadow: var(--soft); }
+.todayBar:hover { box-shadow: 0 0 0 1.5px var(--fg-1); }
+.todayBar:focus-visible { box-shadow: var(--ring); }
+.todayBar b { display: block; font-size: 18px; }
+.todayBar .todaySub { font-size: 14px; color: var(--fg-2); }
+.todayGo { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; color: var(--fg-1); white-space: nowrap; }
+@media (max-width: 700px) { .todayBar { grid-template-columns: 40px minmax(0, 1fr); padding: 14px 16px; } .todayGo { display: none; } }

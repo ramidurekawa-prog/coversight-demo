@@ -152,7 +152,7 @@ export async function liveService(db: Db, v: V, roomIdRaw: unknown, { now = new 
     await notify(db, {
       orgId: v.orgId, roomId, kind: 'service.cut', severity: 'info',
       title: `${MEALS[meal].label}: one fewer server from ${clockLabel(call.at!)} looks safe`,
-      body: `Covers are pacing ${Math.abs(call.pace)}% ${call.pace < 0 ? 'under' : 'over'} a comparable ${DAYS[dow]}. Even at the top of the band, ${call.serversNow! - 1} servers cover the rest of the night.`,
+      body: `Covers are ${Math.abs(call.pace)}% ${call.pace < 0 ? 'under' : 'over'} ${value.night.engine ? 'Covercast’s forecast' : `a comparable ${DAYS[dow]}`}. ${call.serversNow! - 1} servers can handle up to ${call.so + call.range[1]} guests, the top of the likely range.`,
       link: '/service', dedupe: `service-cut:${roomId}:${date}${meal === 'lunch' ? ':lunch' : ''}`,
     }).catch(() => null);
   }

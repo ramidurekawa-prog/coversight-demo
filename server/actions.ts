@@ -25,6 +25,35 @@ const forecastSignals = z.object({
   reservations: z.array(z.object({ date: day, covers: z.number().int().min(0).max(5000), asOf: day })).max(250).optional(),
   days: z.array(z.object({ date: day, covers: z.number().int().min(0).max(20_000).optional(), net: z.number().min(0).max(5_000_000).optional() })).max(250).optional(),
   location: z.object({ lat: z.number().min(-90).max(90), lon: z.number().min(-180).max(180) }).nullable().optional(),
+  /** Sold-out services and guests turned away, so a full house reads as demand, not a quiet night. */
+  capacity: z.array(z.object({ date: day, service: z.enum(['lunch', 'dinner']).nullable().optional(), soldOut: z.boolean(), turnedAway: z.number().int().min(0).max(5000).nullable().optional() })).max(250).optional(),
+});
+
+const count = z.number().int().min(0).max(5000);
+/** Services logged with the host's counts: bookings and plan as they stood at forecast time, counts at each check, the final covers. */
+const forecastLive = z.object({
+  services: z.array(z.object({
+    date: day, service: z.enum(['lunch', 'dinner']),
+    booked: count, asOf: z.string().max(40).optional(),
+    cuts: z.array(z.object({
+      at: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/), seated: count, walkIns: count,
+      bookedSeated: count.nullable().optional(), bookedBefore: count.nullable().optional(), bookedRest: count.nullable().optional(),
+      planSoFar: z.number().min(0).max(5000), planRest: z.number().min(0).max(5000),
+    })).max(12),
+    final: z.object({ covers: count, walkIns: count.nullable().optional(), bookedSeated: count.nullable().optional() }).nullable().optional(),
+  })).max(400),
+});
+
+const money = z.number().min(0).max(1_000_000);
+/** Costs to size by, and the pilot ledger: what was recommended, what was done, what happened. */
+const forecastDecisions = z.object({
+  costs: z.object({ shortHour: money.nullable().optional(), idleHour: money.nullable().optional() }).optional(),
+  entries: z.array(z.object({
+    date: day, service: z.enum(['lunch', 'dinner']).optional(), kind: z.enum(['staff', 'prep']),
+    recommended: z.number().min(0).max(100_000).nullable().optional(), usual: z.number().min(0).max(100_000).nullable().optional(), did: z.number().min(0).max(100_000).nullable().optional(),
+    followed: z.boolean(),
+    outcome: z.object({ waste: money.optional(), stockouts: count.optional(), laborCost: money.optional(), covers: count.optional(), ticketMin: z.number().min(0).max(300).optional(), guestIssues: count.optional() }).optional(),
+  })).max(500).optional(),
 });
 
 const layoutRole = z.object({ metrics: z.array(z.string().max(20)).max(6), widgets: z.array(z.string().max(20)).max(6) });
@@ -60,6 +89,16 @@ export const ACTION_KEYS = {
   billing: { scope: 'group', schema: z.object({ status: z.enum(['open', 'approved', 'disputed']), note: z.string().max(2000).optional(), at: isoDate.optional(), period: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).optional() }) },
   /** Where each lever's savings land in the group's chart of accounts, confirmed by a named person. */
   glmap: { scope: 'group', schema: z.record(z.string().min(1).max(40), z.object({ account: z.string().trim().min(1).max(80), by: z.string().max(80), at: isoDate })) },
+  /** What the room has told Sous about things it noticed: handled (checked again after two weeks) or set aside (until the numbers change). */
+  sous: { scope: 'room', schema: z.record(z.string().min(1).max(80).regex(/^[\w:.-]+$/), z.object({ at: isoDate, how: z.enum(['handled', 'dismissed']), sig: z.string().max(40), title: z.string().max(200).optional() })).refine((r) => Object.keys(r).length <= 100, 'too many') },
+  /** The room's notebook: what people told Sous to remember. Read as records in every answer. */
+  'sous.notes': { scope: 'room', schema: z.array(z.object({ id: z.string().min(1).max(40).regex(/^[\w-]+$/), text: z.string().trim().min(3).max(240), at: isoDate, by: z.string().max(80).optional() })).max(50) },
+  /** Suggestions this room acted on, by area, so Sous learns what gets used here. */
+  'sous.learn': { scope: 'room', schema: z.array(z.object({ topic: z.string().min(1).max(40).regex(/^[\w-]+$/), id: z.string().max(120), at: isoDate })).max(100) },
+  /** What this person asks Sous about, by area, so their usual questions are offered first. */
+  'sous.me': { scope: 'person', schema: z.object({ asked: z.record(z.string().min(1).max(40).regex(/^[\w-]+$/), z.number().int().min(0).max(999)).refine((r) => Object.keys(r).length <= 40, 'too many') }) },
+  /** What each page's agent last told this person, by "room:page", so it only speaks up when something is new. */
+  'sous.seen': { scope: 'person', schema: z.record(z.string().min(1).max(110), z.string().max(40)).refine((r) => Object.keys(r).length <= 300, 'too many') },
   /** Ideas to test later that can't be valued yet (no data source for them). */
   ideas: { scope: 'room', schema: z.array(z.object({ id: id, title: z.string().trim().min(1).max(200), why: z.string().max(400).optional(), at: isoDate })).max(50) },
   /** Autonomy level per lever (0 observes … 4 holds the line), set on System. */
@@ -77,12 +116,28 @@ export const ACTION_KEYS = {
    * weather feed). Feeds add to these; a hand entry is never overwritten.
    */
   'forecast.signals': { scope: 'room', schema: forecastSignals },
+  /** Covercast live: services logged with the host's counts (arrivals, walk-ins, bookings as they stood). */
+  'forecast.live': { scope: 'room', schema: forecastLive },
+  /** Covercast decisions: what a short server-hour costs, and the pilot ledger. */
+  'forecast.decisions': { scope: 'room', schema: forecastDecisions },
   /** Weekly meeting: the room's slot (day of week, 0 = Sunday, local time, length) and who usually attends. */
   'meeting.schedule': { scope: 'room', schema: meetingSchemas.schedule },
   /** Service: tonight's count entered by hand when no live feed is on (covers so far, servers on), per night. */
   'service.manual': { scope: 'room', schema: z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), entries: z.array(z.object({ meal: z.enum(['lunch', 'dinner']), at: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/), covers: z.number().int().min(0).max(5000), servers: z.number().int().min(0).max(200).nullable(), saved: z.string().max(40) })).max(24) }) },
   /** This week: weeks marked reviewed, keyed by the data week's first day, with an optional note. Who reviewed comes from the row's user. */
   'week.review': { scope: 'room', schema: z.record(z.string().regex(/^\d{4}-\d{2}-\d{2}$/), z.object({ at: isoDate, note: z.string().trim().max(1000).optional() })).refine((r) => Object.keys(r).length <= 26, 'keeps at most 26 weeks') },
+  /** Menu prices: the Balanced menu's limit, the least share of a dish's orders a price move may keep. */
+  'menu.lab': { scope: 'room', schema: z.object({ keepOrders: z.number().min(0.5).max(1) }) },
+  /** Menu prices: each approved price change's rollout steps, ticked with the time (toast, apps, print, staff, check). */
+  /** Menu prices: specials and deals (draft, live, ended) with the weekly redemption counts entered by hand. */
+  'menu.deals': { scope: 'room', schema: z.array(z.object({
+    id: id, kind: z.enum(['bundle', 'threshold', 'comeback']), status: z.enum(['draft', 'live', 'ended']),
+    dish: z.string().max(80).optional(), buy: z.number().int().min(1).max(12).optional(), free: z.string().max(80).optional(),
+    threshold: z.number().min(1).max(2000).optional(), checks: z.number().min(0).max(100_000).optional(), takeUp: z.number().min(0).max(1).optional(),
+    cards: z.number().min(0).max(100_000).optional(), days: z.number().int().min(1).max(365).optional(), at: isoDate, liveAt: isoDate.optional(),
+    counts: z.array(z.object({ week: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), redeemed: z.number().int().min(0).max(100_000), given: z.number().int().min(0).max(100_000).optional() })).max(104).optional(),
+  })).max(40) },
+  'menu.rollout': { scope: 'room', schema: z.record(z.string().regex(/^price:[\w-]+:[\d.]+$/).max(120), z.partialRecord(z.enum(['toast', 'apps', 'print', 'staff', 'check']), isoDate)).refine((r) => Object.keys(r).length <= 300, 'too many changes') },
 } as const;
 
 export type ActionKey = keyof typeof ACTION_KEYS;

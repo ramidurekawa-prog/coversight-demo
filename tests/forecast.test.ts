@@ -320,7 +320,10 @@ describe('Covercast on the server', () => {
     expect(r).toMatchObject({ roomId: 'berkeley', source: 'sample', sample: true, today: '2026-10-26' });
     expect(r.forecast.covers!.days).toHaveLength(14);
     expect(r.forecast.accuracy!.covers.days!.horizons[1].covercast!.wape).toBeLessThan(r.forecast.accuracy!.covers.days!.horizons[1].current!.wape);
-    expect(r.feeds.map((f) => f.status)).toEqual(['off', 'off', 'off']);
+    expect(r.feeds.map((f) => f.status)).toEqual(['off', 'off', 'off', 'off']);
+    // The per-task pick runs on the server, and the sample keeps V1 wherever a challenger didn't hold up.
+    expect((r.forecast.models as any).ready).toBe(true);
+    expect(r.forecast.covers!.model).toBe((r.forecast.models as any).uses.day);
   });
   it('keeps a GM to their own rooms', async () => {
     await expect(loadForecast(db, gm(), 'berkeley')).rejects.toThrow(/not one of yours/);
@@ -331,7 +334,7 @@ describe('Covercast on the server', () => {
     const after = (await loadForecast(db, gm(), 'oakland')).forecast.covers!.days[2]!;
     expect(after).toMatchObject({ iso: first.iso, value: 0 });
     await expect(saveAction(db, gm(), { roomId: 'oakland', key: 'forecast.signals', value: { closures: ['tomorrow'] } })).rejects.toThrow();
-  });
+  }, 20_000); // two full Covercast runs: over 5 s when the whole suite runs in parallel
   it('switches to the room’s own Toast days once they are stored', async () => {
     const days = Array.from({ length: 42 }, (_, i) => addDays('2026-10-06', i));
     for (const day of days) await db.insert(posDays).values({ orgId, roomId: 'walnut', day, items: [], orders: mapToastDay({ orders: ordersFor(day) as never[], tz: 'America/Los_Angeles' }).orders, time: [], payments: [] });
@@ -339,5 +342,18 @@ describe('Covercast on the server', () => {
     expect(r).toMatchObject({ source: 'toast', today: '2026-11-17' });
     expect(r.forecast.covers!.ready).toBe(true);
     expect(r.forecast.covers!.history!.sources).toEqual(['pos']);
+  });
+  it('forecasts the rest of tonight from the host’s counts once a check is logged, and sizes by the room’s costs', async () => {
+    const plan = { planSoFar: 40, planRest: 80 };
+    await saveAction(db, owner(), { roomId: 'walnut', key: 'forecast.live', value: { services: [{ date: '2026-11-17', service: 'dinner', booked: 70, cuts: [{ at: '19:00', seated: 50, walkIns: 20, bookedBefore: 32, bookedRest: 40, ...plan }] }] } });
+    await saveAction(db, owner(), { roomId: 'walnut', key: 'forecast.decisions', value: { costs: { shortHour: 60 }, entries: [] } });
+    const r = await loadForecast(db, owner(), 'walnut', { now: new Date('2026-11-18T03:00:00Z') });
+    expect(r.today).toBe('2026-11-17');
+    expect(r.arrivals).toMatchObject({ from: 'arrivals', service: 'dinner', at: '19:00', soFar: 50 });
+    expect(r.arrivals!.parts.booked!.onBooks).toBe(40);
+    expect(r.forecast.live!.validation.validated).toBe(false);
+    expect(r.forecast.decisions!.costs).toMatchObject({ shortHour: 60 });
+    expect(r.feeds.find((f) => f.key === 'arrivals')!.status).toBe('off');
+    await expect(saveAction(db, owner(), { roomId: 'walnut', key: 'forecast.live', value: { services: [{ date: 'tonight', service: 'dinner', booked: 1, cuts: [] }] } })).rejects.toThrow();
   });
 });

@@ -33,9 +33,9 @@ const fin = (v) => Number.isFinite(v);
  * Guests through closing: served so far (ink), the expected finish (persimmon
  * dashes), a usual night (grey dashes) and the likely finish range (soft band).
  * Hover or arrow-key to read a time; click to pick it.
- * @param {{ L: any, sel: number | null, onSel: (min: number) => void, staffAt?: (min: number) => string | null, usual: string }} p
+ * @param {{ L: any, sel: number | null, onSel: (min: number) => void, staffAt?: (min: number) => string | null, usual: string, refWord?: string }} p
  */
-export function GuestsChart({ L, sel, onSel, staffAt, usual }) {
+export function GuestsChart({ L, sel, onSel, staffAt, usual, refWord = 'usual' }) {
   const [ref, W] = useWidth();
   const [hover, setHover] = React.useState(null);
   const n = L.comp.length;
@@ -61,7 +61,7 @@ export function GuestsChart({ L, sel, onSel, staffAt, usual }) {
   const isDone = i < L.now;
   const tip = [
     `By ${clockLabel(at)}`,
-    isDone ? `${served[i]} served · usual ${Math.round(usualC[i])}` : `About ${Math.round(exp[i] ?? 0)} expected · usual ${Math.round(usualC[i])}`,
+    isDone ? `${served[i]} served · ${refWord} ${Math.round(usualC[i])}` : `About ${Math.round(exp[i] ?? 0)} expected · ${refWord} ${Math.round(usualC[i])}`,
     !isDone && fin(lo[i]) ? `Likely ${Math.round(lo[i])}–${Math.round(hi[i])}` : null,
     staffAt?.(at) ?? null,
   ].filter(Boolean);
