@@ -146,6 +146,7 @@ describe('job runs and cleanup', () => {
     expect(st.jobs.map((j) => j.job).slice(0, 10)).toEqual(['sync', 'links', 'agents', 'detection', 'proof', 'reverify', 'billing', 'cleanup', 'live', 'meeting']);
     expect(st.jobs.map((j) => j.job)).toContain('week');
     expect(st.jobs.map((j) => j.job)).toContain('portfolio');
+    expect(st.jobs.map((j) => j.job)).toContain('trends');
     expect(st.jobs.find((j) => j.job === 'proof')!.last!.ok).toBe(true);
     expect(st.jobs.find((j) => j.job === 'proof')!.last!.trigger).toBe('manual');
     expect(st.jobs.find((j) => j.job === 'detection')!.last).toBeNull();

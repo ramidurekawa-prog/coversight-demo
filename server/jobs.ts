@@ -19,6 +19,7 @@ import { pullLinks } from './links';
 import { runAgents } from './agents/service';
 import { runMeetingReminders } from './page/meeting';
 import { runLive } from './live';
+import { runTrendsWatch } from './page/trends';
 import { runWeekDigest } from './page/week';
 import { runPortfolio } from './page/portfolio';
 import { runSous } from './ai/sous';
@@ -34,6 +35,7 @@ export const JOBS = {
   cleanup: { schedule: 'Daily, 5:00 am Pacific', what: 'Deletes “try the sample” guests older than 30 days and their sample copies', cron: '0 13 * * *' },
   live: { schedule: 'Off until Vercel Pro (then every 5 minutes: add */5 * * * * for /api/cron/live). Today pulls the same data every 5 minutes while it’s open', what: 'Pulls tonight’s Toast covers and 7shifts shifts for every connected room during dinner', cron: null },
   meeting: { schedule: 'Daily, 7:00 am Pacific', what: 'Reminds each room about weekly-meeting actions due tomorrow or overdue, and about the meeting on its day', cron: '0 15 * * *' },
+  trends: { schedule: 'Daily, 2:10 am Pacific', what: 'Judges every room’s latest weeks against its control limits and tells the room about a new, unexplained signal', cron: '10 10 * * *' },
   week: { schedule: 'Mondays, 7:00 am Pacific', what: 'Sends each room of every real group its week in review (This week), once per week of data', cron: '0 15 * * 1' },
   portfolio: { schedule: 'Daily, 5:30 am Pacific', what: 'Ranks every real group’s rooms, tells each room’s people about an urgent issue once, raises it to the group if it stays open 2 days, and sends the owner a weekly summary on Mondays', cron: '30 13 * * *' },
   sous: { schedule: 'Daily, 2:50 am Pacific', what: 'Sous, the AI teammate, re-reads every room of every real group: tells its people what it noticed (once per finding per week of data) and writes the morning briefs', cron: '50 10 * * *' },
@@ -101,10 +103,10 @@ export async function runJob(db: Db, job: JobName, { orgId, trigger = 'schedule'
   }
   // The sync and linked sheets run only for groups that have them, the crew only for real groups
   // (a sample visitor runs it from System); every other job, for every group.
-  const ids = orgId ? [orgId] : job === 'sync' ? (await db.select({ id: toastConnections.orgId }).from(toastConnections)).map((o) => o.id) : job === 'links' ? [...new Set((await db.select({ id: linkedSources.orgId }).from(linkedSources)).map((o) => o.id))] : (job === 'agents' || job === 'week' || job === 'portfolio' || job === 'sous') ? (await db.select({ id: orgs.id }).from(orgs).where(eq(orgs.sample, false))).map((o) => o.id) : (await db.select({ id: orgs.id }).from(orgs)).map((o) => o.id);
+  const ids = orgId ? [orgId] : job === 'sync' ? (await db.select({ id: toastConnections.orgId }).from(toastConnections)).map((o) => o.id) : job === 'links' ? [...new Set((await db.select({ id: linkedSources.orgId }).from(linkedSources)).map((o) => o.id))] : (job === 'agents' || job === 'week' || job === 'trends' || job === 'portfolio' || job === 'sous') ? (await db.select({ id: orgs.id }).from(orgs).where(eq(orgs.sample, false))).map((o) => o.id) : (await db.select({ id: orgs.id }).from(orgs)).map((o) => o.id);
   const results = [];
   for (const id of ids) {
-    results.push(await record(db, job, id, trigger, () => (job === 'sync' ? syncToast(db, id, { now, ...(fetchImpl ? { fetchImpl } : {}) }) : job === 'links' ? pullLinks(db, id, fetchImpl ? { fetchImpl } : {}) : job === 'agents' ? runAgents(db, id, { trigger, now, ...(fetchImpl ? { fetchImpl } : {}) }) : job === 'detection' ? runDetection(db, id) : job === 'proof' ? runProofLoop(db, id, now) : job === 'billing' ? runBilling(db, id, previousPeriod(now)) : job === 'week' ? runWeekDigest(db, id, now) : job === 'portfolio' ? runPortfolio(db, id, now) : job === 'sous' ? runSous(db, id, { now, ...(fetchImpl ? { fetchImpl } : {}) }) : runReverify(db, id))));
+    results.push(await record(db, job, id, trigger, () => (job === 'sync' ? syncToast(db, id, { now, ...(fetchImpl ? { fetchImpl } : {}) }) : job === 'links' ? pullLinks(db, id, fetchImpl ? { fetchImpl } : {}) : job === 'agents' ? runAgents(db, id, { trigger, now, ...(fetchImpl ? { fetchImpl } : {}) }) : job === 'detection' ? runDetection(db, id) : job === 'proof' ? runProofLoop(db, id, now) : job === 'billing' ? runBilling(db, id, previousPeriod(now)) : job === 'week' ? runWeekDigest(db, id, now) : job === 'trends' ? runTrendsWatch(db, id) : job === 'portfolio' ? runPortfolio(db, id, now) : job === 'sous' ? runSous(db, id, { now, ...(fetchImpl ? { fetchImpl } : {}) }) : runReverify(db, id))));
   }
   await deliverOutbox(db, { now }).catch(() => null);
   // Stripe deliveries that are due (retries with backoff) ride on every job run.
