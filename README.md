@@ -57,7 +57,7 @@ Vercel runs `pnpm vercel-build`, which applies migrations and then builds.
 |---|---|
 | Every day | Today, Service, Data inputs |
 | Every week | This week (home), Trends (52 weeks), All rooms, Weekly meeting, The plan → Finding |
-| Levers | Coverage map (all 12 operating areas), Labour, Menu, Purchasing, Inventory & waste, Kitchen, Throughput, Controls, Delivery & channels |
+| Levers | Lever Check (every lever at a glance: on track, leaking, the one thing to do first), Labour, Menu, Purchasing, Inventory & waste, Kitchen, Throughput, Controls, Delivery & channels |
 | Proof | Proof → Verification packet, Savings ledger, Accountant, Billing |
 | Setup | First six weeks, Comparison, Sources, Fences & alerts, System |
 | Build plan | `/build`: the platform gaps behind each screen, graded, in build order |

@@ -29,6 +29,14 @@ export const toastSummary = z.object({
     covers: z.number().int().min(0).max(200_000).optional(),
     ot: z.object({ boh: z.array(n(100_000)).length(4), foh: z.array(n(100_000)).length(4), bar: z.array(n(100_000)).length(4) }).optional(),
     serviceHours: z.array(z.object({ week: z.number().int().min(0).max(3), day: DAY, hour: z.number().int().min(0).max(23), covers: n(5_000), parties: n(2_000), servers: n(200) })).max(2000).optional(),
+    /** The Staff page: per person, by week and service slot (lib/data/page/staff-pos.js). */
+    staffShifts: z.object({
+      weeks: z.number().int().min(1).max(13),
+      slots: z.array(z.string().max(12)).max(4),
+      cols: z.array(z.string().max(16)).max(30),
+      names: z.array(z.tuple([name, z.string().max(80)])).max(400),
+      rows: z.array(z.array(z.number().min(-1e7).max(1e7).nullable()).max(30)).max(20000),
+    }).optional(),
     voidWeeks: z.array(z.object({ week: z.number().int().min(0).max(11), server: name, checks: n(100_000), sales: n(5_000_000), exceptions: n(1_000_000) })).max(5000).optional(),
     priceHistory: z.record(name, z.array(z.object({ price: n(500), units: n(100_000) })).min(4).max(8)).optional(),
     turns: z.array(z.object({ fri: z.boolean(), min: n(360) })).max(400).optional(),

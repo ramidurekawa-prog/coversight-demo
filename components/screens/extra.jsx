@@ -47,7 +47,7 @@ const CV_PAGE_DEPS = {
   today: [3, 4], service: [4, 5, 8, 14], week: [1, 3, 8], portfolio: [1, 3, 8], meeting: [1, 8, 11], plan: [2, 7],
   finding: [2, 6, 7], menu: [7], labour: [4, 5], throughput: [12], purchasing: [6], proof: [1, 2], packet: [1, 2, 10],
   ledger: [1, 9, 10], accountant: [9], billing: [9, 13], comparison: [2], sources: [3], start: [3, 4, 6], fences: [11, 14], system: [11],
-  coverage: [3, 16, 17, 18, 19, 20], inventory: [6, 17], kitchen: [12, 16], controls: [8, 18], channels: [19],
+  summary: [3, 16, 17, 18, 19, 20], inventory: [6, 17], kitchen: [12, 16], controls: [8, 18], channels: [19],
   trends: [3, 8], inputs: [3, 21],
   windows: [1, 2, 10],
 };
