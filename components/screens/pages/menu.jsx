@@ -229,7 +229,7 @@ function Tester({ v, sel, setSel, onAll }) {
             {r.kept > 0 && !done && <span><small>Waiting {WAIT_WEEKS} weeks</small><b className={s.green}>{money(Math.round(r.kept) * WAIT_WEEKS)}</b><small>left on the table</small></span>}
           </div>
           {wide && <p className={s.note}><Icon name="TriangleAlert" size={16} />Guests’ reaction to this dish is loosely measured, so expect a wide result and a longer test.</p>}
-          <p className={s.cardSub}>Tested at {CV_ROOM.short} first, for 6 weeks before anything counts. Your other rooms only change once it proves out.</p>
+          <p className={s.cardSub}>Tested for 6 weeks before anything counts.</p>
         </div>
       )}
     </section>
