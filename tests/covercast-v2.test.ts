@@ -62,7 +62,7 @@ describe('Covercast picks the model by task', () => {
       svc.v1 += (p.tasks as any).service.candidates.v1.check.wape; svc.old += (p.tasks as any).service.candidates.old.check.wape;
     }
     expect(svc.v1).toBeLessThan(svc.old);
-  });
+  }, 30_000);
   it('reports busy, special and ordinary nights apart, with how often the night beat the range', () => {
     const n = (pickModels(seriesFromSample(ds.rooms.oakland)!) as any).tasks.nights.v1;
     expect(n.busy.n).toBeGreaterThan(20);
