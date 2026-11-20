@@ -288,3 +288,120 @@
 .rowList { gap: 12px; }
 .testRow { padding: 14px 0; }
 @media (max-width: 640px) { .guide { display: none; } }
+
+/* What changed (replaces the waterfall): words on the left, a bar from the middle, the amount. */
+.whyText { margin: 2px 0 0; max-width: 62ch; padding: 10px 12px; border-radius: 8px; background: var(--surface-sunken); font-size: 14.5px; line-height: 1.5; color: var(--fg-1); }
+.safety { display: flex; gap: 6px; align-items: flex-start; margin-top: 6px; color: var(--fg-2); }
+.safety svg { flex: none; margin-top: 3px; }
+.unit { font-size: 14px; font-weight: 500; letter-spacing: 0; color: var(--fg-2); margin-left: 1px; }
+.planNum { font-size: 22px; padding-top: 1px; }
+.blockedNote { font-size: 14px; }
+.planBlocked .planTitle { color: var(--fg-2); }
+.assign { margin-top: 2px; }
+.who { font-size: 14px; }
+
+.commitBar { margin-top: 4px; padding-top: 20px; }
+.total { display: flex; flex-direction: column; gap: 2px; }
+.totalLbl { font-size: 14px; font-weight: 500; color: var(--fg-2); }
+.totalNum { font-size: 28px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--fg-1); }
+.total > :last-child { align-self: flex-start; margin-top: 4px; }
+
+.hero { gap: 20px; }
+.heroNum { font-size: 44px; }
+.resultFigs { gap: 16px; }
+.resultFigs > :first-child { align-self: flex-start; }
+.links { gap: 4px 20px; }
+.rowList { gap: 12px; }
+.testRow { padding: 14px 0; }
+@media (max-width: 640px) { .guide { display: none; } }
+
+/* What changed (replaces the waterfall): words on the left, a bar from the middle, the amount. */
+.bd { display: flex; flex-direction: column; border-radius: 10px; box-shadow: inset 0 0 0 1px var(--border); overflow: hidden; }
+.bdHead, .bdRow { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(120px, 1fr) 96px; gap: 20px; align-items: center; padding: 14px 18px; }
+.bdHead { padding-top: 10px; padding-bottom: 10px; background: var(--surface-sunken); font-size: 13.5px; font-weight: 600; color: var(--fg-2); }
+.bdAxis { display: flex; justify-content: space-between; font-weight: 500; }
+.bdRow + .bdRow { border-top: 1px solid var(--border); }
+.bdText { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.bdText b { font-size: 16px; font-weight: 600; color: var(--fg-1); }
+.bdText span { font-size: 14px; color: var(--fg-2); }
+.bdTrack { position: relative; height: 14px; border-radius: 4px; background: var(--surface-sunken); }
+.bdTrack::after { content: ''; position: absolute; left: 50%; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; background: var(--fg-3); }
+.bdBar { position: absolute; top: 0; bottom: 0; }
+.bdUp { left: 50%; border-radius: 0 4px 4px 0; background: var(--success-600); }
+.bdDown { right: 50%; border-radius: 4px 0 0 4px; background: var(--error-600); }
+.bdAmt { text-align: right; font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--fg-1); }
+.bdHead .bdAmt { font-size: 13.5px; }
+.bdAmtUp { color: var(--success-700, var(--success-600)); }
+.bdAmtDown { color: var(--error-600); }
+.bdTotal { background: color-mix(in srgb, var(--surface-sunken) 55%, transparent); }
+.bdTotal .bdAmt { font-size: 20px; }
+@media (max-width: 640px) {
+  .bdHead { display: none; }
+  .bdRow { grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; padding: 12px 14px; }
+  .bdTrack { grid-column: 1 / -1; grid-row: 2; }
+  .bdTotal > :nth-child(2) { display: none; }
+}
+.whyText { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; font-size: 15px; line-height: 1.55; }
+.whyText p { margin: 0; }
+
+.moreToggle { display: flex; margin-top: 12px; }
+
+/* Keep next week green: the line, the record against it, and what's protecting it. */
+.green { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px 28px; padding: 18px 20px; border-radius: 12px; background: var(--surface-sunken); }
+.greenRecord { display: flex; flex-direction: column; gap: 6px; }
+.greenLbl { font-size: 14px; font-weight: 500; color: var(--fg-2); }
+.greenNum { font-size: 32px; font-weight: 600; line-height: 1.1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--fg-1); }
+.greenSub { font-size: 14px; color: var(--fg-2); }
+.greenSub b { color: var(--fg-1); font-weight: 600; }
+.dots { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 6px; }
+.dot { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 6px; color: #fff; }
+.dotGood { background: var(--success-600); }
+.dotBad { background: var(--error-600); }
+.dotNow { outline: 2px solid var(--fg-1); outline-offset: 2px; }
+.guards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.guards li { display: flex; }
+.guardBtn { display: flex; gap: 12px; align-items: flex-start; padding: 0; border: 0; background: none; text-align: left; cursor: pointer; font: inherit; color: inherit; }
+.guardBtn:hover b { text-decoration: underline; }
+.guards li > .guardIcon { margin-right: 12px; }
+.guardIcon { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 9px; background: var(--surface-raised, #fff); color: var(--fg-2); box-shadow: inset 0 0 0 1px var(--border); }
+.guardGood { color: var(--success-600); }
+.guardText { display: flex; flex-direction: column; gap: 1px; }
+.guardText b { font-size: 16px; font-weight: 600; color: var(--fg-1); }
+.guardText span { font-size: 14px; color: var(--fg-2); }
+@media (max-width: 720px) {
+  .green { grid-template-columns: minmax(0, 1fr); padding: 14px 16px; }
+  .dots { gap: 4px; }
+  .dot { width: 18px; height: 18px; border-radius: 5px; }
+}
+
+/* The scorecard: sales, food and labor, each with its fix. */
+.score { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.scoreTile { display: flex; flex-direction: column; gap: 4px; padding: 16px 16px 14px; border-radius: 12px; background: var(--surface-raised, #fff); box-shadow: inset 0 0 0 1px var(--border); border-top: 4px solid; min-width: 0; }
+.scoreGood { border-top-color: var(--success-600); }
+.scoreBad { border-top-color: var(--error-600); }
+.scoreHead { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.scoreName { font-size: 17px; font-weight: 600; color: var(--fg-1); }
+.scoreState { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 600; }
+.scoreGood .scoreState, .scoreGood .scoreNum { color: var(--success-700, var(--success-600)); }
+.scoreBad .scoreState, .scoreBad .scoreNum { color: var(--error-600); }
+.scoreNum { font-size: 32px; font-weight: 600; line-height: 1.15; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; margin-top: 4px; }
+.scoreSub { font-size: 14px; color: var(--fg-2); }
+.scoreFix { margin-top: auto; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; align-items: center; padding: 10px 12px; border: 0; border-radius: 9px; background: var(--surface-sunken); text-align: left; font: inherit; color: var(--fg-1); cursor: pointer; }
+.score .scoreFix, .score .scoreNone { margin-top: 12px; }
+.scoreFix:hover { box-shadow: inset 0 0 0 1px var(--fg-3); }
+.scoreFix:focus-visible { outline: 2px solid var(--fg-1); outline-offset: 2px; }
+.scoreFix > svg { grid-row: 1 / span 2; grid-column: 2; color: var(--fg-2); }
+.scoreFixLbl { font-size: 13px; color: var(--fg-2); }
+.scoreFixLbl b { color: var(--fg-1); font-weight: 600; }
+.scoreFixTitle { font-size: 15px; font-weight: 600; line-height: 1.3; }
+.scoreNone { font-size: 14px; color: var(--fg-3); padding: 10px 0; }
+.result { display: flex; align-items: center; gap: 8px 14px; flex-wrap: wrap; padding: 12px 16px; border-radius: 10px; font-size: 15px; color: var(--fg-2); background: var(--surface-sunken); }
+.result b { color: var(--fg-1); font-weight: 600; }
+.resultNum { font-weight: 600; font-variant-numeric: tabular-nums; }
+.resultGood .resultNum { color: var(--success-700, var(--success-600)); }
+.resultBad .resultNum { color: var(--error-600); }
+.flash { animation: weekFlash 1.6s ease-out; }
+@keyframes weekFlash { 0%, 40% { background: color-mix(in srgb, var(--accent, #FF8050) 16%, transparent); } 100% { background: transparent; } }
+@media (max-width: 860px) {
+  .score { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+}
