@@ -17,7 +17,7 @@ const PAST = Array.from({ length: 21 }, (_, i) => add(TUE, -(i + 1)));
 const HOURS = [[16, 6, 3], [17, 20, 4], [18, 36, 4], [19, 40, 4], [20, 24, 4], [21, 12, 4]];
 const SERVICES = PAST.flatMap((d) => HOURS.map(([h, covers, servers]) => ({ date: d, hour: `${h}:00`, covers, servers })));
 const sh = (name, start, end, extra = {}) => ({ date: TUE, role: 'Server', name, start, end, rate: 24, ...extra });
-const SHIFTS = [sh('Ana', '16:00', '22:00'), sh('Ben', '16:00', '22:00'), sh('Cy', '16:00', '22:00'), sh('Di', '4:30 pm', '22:00')];
+const SHIFTS = [sh('Ana', '16:00', '22:00'), sh('Ben', '16:00', '22:00'), sh('Carlos', '16:00', '22:00'), sh('Diana', '4:30 pm', '22:00')];
 const ENTRIES = { shifts: { at: '2026-11-23T18:00:00Z', date: '2026-11-23' }, services: { at: '2026-11-23T18:00:00Z', date: '2026-11-23' } };
 
 const rows = (kind, r) => { const v = validate(kind, r); expect(v.errors ?? v.issues.filter((i) => i.level === 'error').length).toBeFalsy(); return v.rows; };
@@ -100,9 +100,9 @@ describe('Staffing: the call before the shift', () => {
     const d = at(roomWith());
     expect(d.state).toBe('act');
     expect(d.kind).toBe('start');
-    expect(d.title).toBe('Start Di at 5 pm, not 4:30 pm');
+    expect(d.title).toBe('Start Diana at 5 pm, not 4:30 pm');
     expect(d.estimate).toMatchObject({ minutes: 30, rateCents: 2400, cents: 1200, claim: 'est', rateFrom: 'shift' });
-    expect(d.approvalId).toBe('shift:2026-11-24:dinner:start:server-di-1630:1700');
+    expect(d.approvalId).toBe('shift:2026-11-24:dinner:start:server-diana-1630:1700');
     expect(parseShiftId(d.approvalId)).toMatchObject({ date: TUE, meal: 'dinner', kind: 'start' });
     expect(expectFor(d.approvalId)).toEqual({ type: 'shift', date: TUE, meal: 'dinner', kind: 'start' });
     expect(d.hoursRows.every((h) => h.after >= h.need)).toBe(true);
@@ -112,7 +112,7 @@ describe('Staffing: the call before the shift', () => {
   });
 
   it('adds a server before it cuts one when an hour is short', () => {
-    const d = at(roomWith({ shifts: [sh('Ana', '16:00', '22:00'), sh('Ben', '16:00', '22:00'), sh('Cy', '16:00', '22:00')] }));
+    const d = at(roomWith({ shifts: [sh('Ana', '16:00', '22:00'), sh('Ben', '16:00', '22:00'), sh('Carlos', '16:00', '22:00')] }));
     expect(d.state).toBe('act');
     expect(d.kind).toBe('add');
     expect(d.estimate.cost).toBe(true);
@@ -120,7 +120,7 @@ describe('Staffing: the call before the shift', () => {
   });
 
   it('holds when the schedule already fits', () => {
-    const d = at(roomWith({ shifts: [sh('Ana', '16:00', '22:00'), sh('Ben', '16:00', '22:00'), sh('Cy', '16:00', '22:00'), sh('Di', '17:00', '22:00')] }));
+    const d = at(roomWith({ shifts: [sh('Ana', '16:00', '22:00'), sh('Ben', '16:00', '22:00'), sh('Carlos', '16:00', '22:00'), sh('Diana', '17:00', '22:00')] }));
     expect(d.state).toBe('hold');
     expect(d.approvalId).toBeUndefined();
   });
@@ -139,17 +139,17 @@ describe('Staffing: the call before the shift', () => {
   });
 
   it('a change already approved for the service is the call, until it’s undone', () => {
-    const d = at(roomWith(), { tasks: [{ roomId: 'oakland', approvalId: 'shift:2026-11-24:dinner:start:server-di-1630:1700', status: 'open', title: 'Start Di at 5 pm, not 4:30 pm' }] });
+    const d = at(roomWith(), { tasks: [{ roomId: 'oakland', approvalId: 'shift:2026-11-24:dinner:start:server-diana-1630:1700', status: 'open', title: 'Start Diana at 5 pm, not 4:30 pm' }] });
     expect(d.state).toBe('decided');
-    expect(at(roomWith(), { tasks: [{ roomId: 'berkeley', approvalId: 'shift:2026-11-24:dinner:start:server-di-1630:1700', status: 'open' }] }).state).toBe('act');
-    expect(at(roomWith(), { tasks: [{ roomId: 'oakland', approvalId: 'shift:2026-11-24:dinner:start:server-di-1630:1700', status: 'cancelled' }] }).state).toBe('act');
+    expect(at(roomWith(), { tasks: [{ roomId: 'berkeley', approvalId: 'shift:2026-11-24:dinner:start:server-diana-1630:1700', status: 'open' }] }).state).toBe('act');
+    expect(at(roomWith(), { tasks: [{ roomId: 'oakland', approvalId: 'shift:2026-11-24:dinner:start:server-diana-1630:1700', status: 'cancelled' }] }).state).toBe('act');
   });
 
   it('one card per service on Today, with one data card at a time', () => {
     const room = roomWith();
     const cards = staffingCards(room, { today: TUE, nowMin: 12 * 60, entries: ENTRIES });
     expect(cards.map((c) => c.id)).toEqual(['staff:2026-11-24:dinner']);
-    expect(cards[0]).toMatchObject({ area: 'labor', claim: 'est', value: 'about $12 before offsets', approval: 'shift:2026-11-24:dinner:start:server-di-1630:1700', refuse: true });
+    expect(cards[0]).toMatchObject({ area: 'labor', claim: 'est', value: 'about $12 before offsets', approval: 'shift:2026-11-24:dinner:start:server-diana-1630:1700', refuse: true });
     const d = deriveRoom(applyInputs(SEED, { oakland: { services: { rows: rows('services', SERVICES) }, shifts: { rows: rows('shifts', SHIFTS) } } }), 'oakland');
     const today = todayCards(d, { today: TUE, staffing: cards });
     expect(today.filter((c) => c.id.startsWith('staff:'))).toHaveLength(1);
@@ -185,7 +185,7 @@ describe('Staffing: what happened after', () => {
   });
 
   it('a 15-minute-late start at $24 is $6 observed, and the check says it fell short', () => {
-    const shifts = SHIFTS.map((s) => (s.name === 'Di' ? { ...s, clock_in: '16:45', clock_out: '22:00' } : { ...s, clock_in: s.start, clock_out: s.end }));
+    const shifts = SHIFTS.map((s) => (s.name === 'Diana' ? { ...s, clock_in: '16:45', clock_out: '22:00' } : { ...s, clock_in: s.start, clock_out: s.end }));
     const o = staffingOutcome(approved(), roomWith({ shifts }));
     expect(o.observed).toMatchObject({ minutes: 15, rateCents: 2400, cents: 600, claim: 'obs', offsetMinutes: 0 });
     expect(o.clock.state).toBe('partial');
@@ -194,7 +194,7 @@ describe('Staffing: what happened after', () => {
   });
 
   it('the full 30 minutes matches the plan; another server clocking in early is an offset', () => {
-    const shifts = SHIFTS.map((s) => (s.name === 'Di' ? { ...s, clock_in: '17:00', clock_out: '22:00' } : s.name === 'Ana' ? { ...s, clock_in: '15:45', clock_out: '22:00' } : { ...s, clock_in: s.start, clock_out: s.end }));
+    const shifts = SHIFTS.map((s) => (s.name === 'Diana' ? { ...s, clock_in: '17:00', clock_out: '22:00' } : s.name === 'Ana' ? { ...s, clock_in: '15:45', clock_out: '22:00' } : { ...s, clock_in: s.start, clock_out: s.end }));
     const o = staffingOutcome(approved(), roomWith({ shifts }));
     expect(o.clock.state).toBe('matched');
     expect(o.observed).toMatchObject({ minutes: 30, cents: 1200, offsetMinutes: 15, offsetCents: 600, netCents: 600 });
@@ -202,7 +202,7 @@ describe('Staffing: what happened after', () => {
   });
 
   it('flags a night busier than the range it was sized for', () => {
-    const shifts = SHIFTS.map((s) => ({ ...s, clock_in: s.name === 'Di' ? '17:00' : s.start, clock_out: s.end }));
+    const shifts = SHIFTS.map((s) => ({ ...s, clock_in: s.name === 'Diana' ? '17:00' : s.start, clock_out: s.end }));
     const busy = [...SERVICES, ...HOURS.map(([h]) => ({ date: TUE, hour: `${h}:00`, covers: 60, servers: 4 }))];
     const o = staffingOutcome(approved(), roomWith({ shifts, services: busy }));
     expect(o.guard.state).toBe('failed');

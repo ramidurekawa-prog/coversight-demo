@@ -22,13 +22,13 @@ const gm = (rooms: string[] | null = ['oakland']) => ({ orgId, userId: 'u2', rol
 const floor = () => ({ orgId, userId: 'u3', role: 'floor' as const, rooms: ['oakland'] });
 const NOW = new Date('2026-11-24T20:00:00Z');
 const TUE = '2026-11-24';
-const ID = 'shift:2026-11-24:dinner:start:server-di-1630:1700';
+const ID = 'shift:2026-11-24:dinner:start:server-diana-1630:1700';
 
 const add = (iso: string, n: number) => new Date(Date.parse(`${iso}T12:00:00Z`) + n * 864e5).toISOString().slice(0, 10);
 const HOURS = [[16, 6, 3], [17, 20, 4], [18, 36, 4], [19, 40, 4], [20, 24, 4], [21, 12, 4]];
 const SERVICES = Array.from({ length: 21 }, (_, i) => add(TUE, -(i + 1))).flatMap((d) => HOURS.map(([h, covers, servers]) => ({ date: d, hour: `${h}:00`, covers, servers })));
 const sh = (name: string, start: string, end: string, extra: Record<string, unknown> = {}) => ({ date: TUE, role: 'Server', name, start, end, rate: 24, ...extra });
-const SHIFTS = [sh('Ana', '16:00', '22:00'), sh('Ben', '16:00', '22:00'), sh('Cy', '16:00', '22:00'), sh('Di', '16:30', '22:00')];
+const SHIFTS = [sh('Ana', '16:00', '22:00'), sh('Ben', '16:00', '22:00'), sh('Carlos', '16:00', '22:00'), sh('Diana', '16:30', '22:00')];
 const rowsOf = (kind: string, r: unknown[]) => validate(kind, r).rows;
 const commit = (kind: string, r: unknown[]) => commitInput(db, { orgId, userId: 'u1', roomId: 'oakland', kind, rows: rowsOf(kind, r) });
 const approve = (v: V = owner(), approvalId = ID, extra: Record<string, unknown> = {}) =>
@@ -54,7 +54,7 @@ describe('Staffing on the server', () => {
 
   it('approving re-checks the call and keeps the server’s own evidence, not the browser’s words', async () => {
     const t = await approve();
-    expect(t.title).toBe('Start Di at 5 pm, not 4:30 pm');
+    expect(t.title).toBe('Start Diana at 5 pm, not 4:30 pm');
     expect(t.system).toBe('Your schedule');
     expect(t.expect).toEqual({ type: 'shift', date: TUE, meal: 'dinner', kind: 'start' });
     const ev = t.evidence as Record<string, any>;
@@ -78,8 +78,8 @@ describe('Staffing on the server', () => {
   });
 
   it('refuses when the facts moved since the card was shown, or the time to decide has passed', async () => {
-    // Di is now on at 5 already: the schedule fits, so the 4:30 change no longer stands.
-    await commit('shifts', SHIFTS.map((s) => (s.name === 'Di' ? { ...s, start: '17:00' } : s)));
+    // Diana is now on at 5 already: the schedule fits, so the 4:30 change no longer stands.
+    await commit('shifts', SHIFTS.map((s) => (s.name === 'Diana' ? { ...s, start: '17:00' } : s)));
     await expect(approve()).rejects.toThrow(/changed since it was shown|numbers moved/);
     await commit('shifts', SHIFTS);
     await expect(createTask(db, owner(), { roomId: 'oakland', approvalId: ID, title: 't', system: 's', diff: [] }, { now: new Date('2026-11-24T23:45:00Z') })).rejects.toThrow(/changed since it was shown/);
@@ -104,13 +104,13 @@ describe('Staffing on the server', () => {
     const t = await approve();
     await updateTask(db, owner(), t.id, 'done');
     // A 15-minute-late start: $6 observed against the $12 estimated, so the task says it doesn't match yet.
-    await commit('shifts', SHIFTS.map((s) => ({ ...s, clock_in: s.name === 'Di' ? '16:45' : s.start, clock_out: s.end })));
+    await commit('shifts', SHIFTS.map((s) => ({ ...s, clock_in: s.name === 'Diana' ? '16:45' : s.start, clock_out: s.end })));
     await verifyTasks(db, orgId);
     let [row] = await db.select().from(tasks).where(eq(tasks.id, t.id));
     expect(row!.status).toBe('mismatch');
     expect((row!.outcome as Record<string, any>).observed).toMatchObject({ minutes: 15, cents: 600, claim: 'obs' });
     expect((row!.outcome as Record<string, any>).qualified.state).toBe('not-eligible');
-    await commit('shifts', SHIFTS.map((s) => ({ ...s, clock_in: s.name === 'Di' ? '17:00' : s.start, clock_out: s.end })));
+    await commit('shifts', SHIFTS.map((s) => ({ ...s, clock_in: s.name === 'Diana' ? '17:00' : s.start, clock_out: s.end })));
     await verifyTasks(db, orgId);
     [row] = await db.select().from(tasks).where(eq(tasks.id, t.id));
     expect(row!.status).toBe('verified');

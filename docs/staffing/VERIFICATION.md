@@ -52,7 +52,7 @@ again on the server by `server/page/staffing.ts` before a change is approved.
 | "Labor not paid" after service | Observed | clock-in difference × the same rate (straight time; payroll not checked). Other servers clocking in early or out late are offsets. |
 | Counted as savings | none | Always **not eligible**. The spec's labor-hours method needs 8 comparable services before and 4 after, with service checks. It is not built, so nothing here is Bookable or reaches billing. |
 
-Fixture (tested): 30 minutes at $24 is a **$12 estimate**. Di clocking in
+Fixture (tested): 30 minutes at $24 is a **$12 estimate**. Diana clocking in
 15 minutes late is **$6 observed**, and the task becomes `mismatch` because
 it fell short of 30 minutes.
 
