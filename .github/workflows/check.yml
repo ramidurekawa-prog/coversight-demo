@@ -23,5 +23,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
-      - run: pnpm test
+      # The Covercast and Sous tests fit forecast models and are CPU-bound: on the 2-core
+      # runner several run past vitest's 5 s default (live, sous, covercast-v2 on 2026-11-23).
+      # Same tests, more time; locally the default still applies.
+      - run: pnpm exec vitest run --testTimeout=60000
       - run: pnpm build
