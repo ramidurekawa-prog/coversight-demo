@@ -112,7 +112,7 @@ here ships to customers.
   is a summary to confirm with payroll. A new skill for an agent is a new
   check, which also becomes a fact and can become its move.
   The *day loop* (`lib/ai/loop.js`, `dayLoop()`) gives Day Captain (Today),
-  Shift Pulse (Service) and Data Steward (Data pages) their checkups: last
+  Floor Captain (Service) and Data Steward (Data pages) their checkups: last
   night against Covercast's day-before call and its last-7-day record, today's
   covers and each service's floor (Service's own `servicePlan`), every decision
   still open (approved but not made, made but not in the data, hand-offs not
