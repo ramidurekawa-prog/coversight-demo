@@ -39,6 +39,15 @@ function hoursFromSlots(slots: number[]) {
   return by;
 }
 
+/** A room's days for reading back (last night, missing days): its Toast pull when it has one, else the sample's. */
+export async function loadSeries(db: Db, orgId: string, roomId: string, room: { fromToast?: unknown; tz?: string }, now = new Date()) {
+  const local = localDay(now, room.tz || DEFAULT_TZ);
+  const stored = await db.select({ day: posDays.day, orders: posDays.orders }).from(posDays)
+    .where(and(eq(posDays.orgId, orgId), eq(posDays.roomId, roomId), gte(posDays.day, addDays(local, -HISTORY_DAYS))));
+  const fromPos = stored.length ? seriesFromOrders(stored) : null;
+  return fromPos?.days.length ? fromPos : room.fromToast ? null : seriesFromSample(room);
+}
+
 export async function loadForecast(db: Db, v: V, room: unknown, { now = new Date(), fetchImpl = fetch, days = 14 }: { now?: Date; fetchImpl?: Fetch; days?: number } = {}) {
   const p = roomId.safeParse(room);
   if (!p.success) throw new InputError('room is required');

@@ -29,6 +29,14 @@ export const toastSummary = z.object({
     covers: z.number().int().min(0).max(200_000).optional(),
     ot: z.object({ boh: z.array(n(100_000)).length(4), foh: z.array(n(100_000)).length(4), bar: z.array(n(100_000)).length(4) }).optional(),
     serviceHours: z.array(z.object({ week: z.number().int().min(0).max(3), day: DAY, hour: z.number().int().min(0).max(23), covers: n(5_000), parties: n(2_000), servers: n(200) })).max(2000).optional(),
+    /** The Staff page: per person, by week and service slot (lib/data/page/staff-pos.js). */
+    staffShifts: z.object({
+      weeks: z.number().int().min(1).max(13),
+      slots: z.array(z.string().max(12)).max(4),
+      cols: z.array(z.string().max(16)).max(30),
+      names: z.array(z.tuple([name, z.string().max(80)])).max(400),
+      rows: z.array(z.array(z.number().min(-1e7).max(1e7).nullable()).max(30)).max(20000),
+    }).optional(),
     voidWeeks: z.array(z.object({ week: z.number().int().min(0).max(11), server: name, checks: n(100_000), sales: n(5_000_000), exceptions: n(1_000_000) })).max(5000).optional(),
     priceHistory: z.record(name, z.array(z.object({ price: n(500), units: n(100_000) })).min(4).max(8)).optional(),
     turns: z.array(z.object({ fri: z.boolean(), min: n(360) })).max(400).optional(),
@@ -37,6 +45,10 @@ export const toastSummary = z.object({
     tickets: z.object({
       stations: z.array(z.tuple([z.string().max(60), n(100)])).max(8),
       fri: z.array(n(120).nullable()).length(6), sat: z.array(n(120).nullable()).length(6),
+      // Kitchen page detail: per night and hour [tickets, average minutes, checks], 2-minute histograms by station and weekday-hour.
+      nights: z.array(z.object({ iso: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), recent: z.literal(true).optional(), hours: z.record(z.string().regex(/^([01]?\d|2[0-3])$/), z.tuple([n(100_000), n(120), n(100_000)])) })).max(100).optional(),
+      byStation: z.array(z.object({ name: z.string().max(60), sum: n(10_000_000), h: z.array(n(100_000)).length(21) })).max(8).optional(),
+      hist: z.record(z.string().regex(/^(Sun|Mon|Tue|Wed|Thu|Fri|Sat)\|([01]?\d|2[0-3])$/), z.array(n(100_000)).length(21)).optional(),
     }).optional(),
   }),
 });

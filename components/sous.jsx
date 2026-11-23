@@ -39,10 +39,12 @@ function useLocalSous(role, page) {
     // What the room has taught Sous: its notebook, and which kinds of change have worked or been set aside.
     const notes = saved['sous.notes'] || [];
     const learned = sousLearned(CV_D, { mem: mem || {}, acts: saved['sous.learn'] || [] });
-    const facts = sousFacts(CV_D, { role, windows: eng.windows || [], card: today.card, open: today.open, noticed, group: CV_GROUP, notes, learned });
+    // The day loop: last night, today's plan and every decision still open, read by Day Captain, Shift Pulse and Data Steward.
+    const day = { tasks: (eng.tasks || []).filter((t) => t.roomId === CV_D.id), assigned: today.view?.assigned || {}, open: today.open, fences: saved.fences ?? null };
+    const facts = sousFacts(CV_D, { role, windows: eng.windows || [], card: today.card, open: today.open, noticed, group: CV_GROUP, notes, learned, day });
     const brief = sousBrief(CV_D, { role, facts, noticed, card: today.card, open: today.open });
-    const moves = respectNotes(rankMoves(sousMoves(CV_D, { noticed, card: today.card, role, quietIds: memory.quietIds }), learned), notes);
-    return { facts, brief, noticed, memory, moves, notes, learned, me: eng.actions?.[ME]?.['sous.me'] || { asked: {} }, record: agentRecord(CV_D), suggest: sousSuggest(facts, role), agent: agentRead(page, facts, noticed, { role, moves }) };
+    const moves = respectNotes(rankMoves(sousMoves(CV_D, { noticed, card: today.card, role, quietIds: memory.quietIds, day }), learned), notes);
+    return { facts, brief, noticed, memory, moves, day, notes, learned, me: eng.actions?.[ME]?.['sous.me'] || { asked: {} }, record: agentRecord(CV_D), suggest: sousSuggest(facts, role), agent: agentRead(page, facts, noticed, { role, moves }) };
     // eng.version changes whenever the room or its data does.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [role, page, mem, eng.version, eng.room, eng.actions, eng.windows, eng.tasks]);
@@ -234,9 +236,47 @@ const CHECK_WORD = { found: 'To fix', needs: 'Needs data', clear: 'Clear' };
  * needs data stay behind one click each. Opening a check shows what was found,
  * the fix, and the rule it rests on.
  */
+/** The day loop's steps, in the order a manager walks them before opening. */
+const LOOP_STEPS = [['spot', 'Last night', 'Moon'], ['plan', 'Today', 'CalendarClock'], ['decide', 'Before you act', 'ShieldCheck'], ['check', 'Follow-through', 'RefreshCcw'], ['data', 'Data', 'Database']];
+
+/** The loop at a glance: each step with what it found, so the person sees where the day stands before reading a word. */
+function LoopStrip({ checks, step, onStep }) {
+  const steps = LOOP_STEPS.map(([k, label, icon]) => {
+    const cs = checks.filter((c) => c.stage === k);
+    if (!cs.length) return null;
+    const found = cs.filter((c) => c.status === 'found').length;
+    const needs = cs.filter((c) => c.status === 'needs').length;
+    const st = found ? 'found' : needs ? 'needs' : 'clear';
+    return { k, label, icon, st, n: found || needs, word: found ? `${found} to fix` : needs ? `${needs} need data` : 'clear' };
+  }).filter(Boolean);
+  if (steps.length < 2) return null;
+  const clear = steps.filter((x) => x.st === 'clear').length;
+  return (
+    <>
+    <div className="cv-loop-meter" role="img" aria-label={`${clear} of ${steps.length} steps clear`}>
+      <span className="bar" aria-hidden="true"><i style={{ width: `${Math.max(6, (clear / steps.length) * 100)}%` }} /></span>
+      <b><Icon name="CircleCheck" size={14} />{clear} of {steps.length} clear</b>
+      <span>{clear === steps.length ? 'Ready to open.' : `${steps.length - clear} to go before you open.`}</span>
+    </div>
+    <ol className="cv-loop" aria-label="Where the day stands">
+      {steps.map((x) => (
+        <li key={x.k} className={`${x.st}${step === x.k ? ' on' : ''}`}>
+          <button type="button" onClick={() => onStep(step === x.k ? '' : x.k)} aria-pressed={step === x.k}>
+            <span className="ic" aria-hidden="true"><Icon name={x.icon} size={15} /></span>
+            <span className="lb">{x.label}</span>
+            <span className="st"><Icon name={CHECK_ICON[x.st]} size={13} />{x.word}</span>
+          </button>
+        </li>
+      ))}
+    </ol>
+    </>
+  );
+}
+
 function LineCheck({ book, name, openId, setOpenId, onGo, boxRef }) {
   const [all, setAll] = React.useState(false);
-  const shown = all ? book.checks : book.checks.filter((c) => c.status === 'found' || c.id === openId);
+  const [step, setStep] = React.useState('');
+  const shown = step ? book.checks.filter((c) => c.stage === step) : all ? book.checks : book.checks.filter((c) => c.status === 'found' || c.id === openId);
   const hidden = book.checks.length - shown.length;
   return (
     <section className="cv-check" ref={boxRef} aria-label={`${book.title.split(' ')[0]} checkup by ${name}`}>
@@ -249,6 +289,7 @@ function LineCheck({ book, name, openId, setOpenId, onGo, boxRef }) {
           {book.clear > 0 && <i className="clear"><Icon name="CircleCheck" size={13} />{book.clear} clear</i>}
         </span>
       </header>
+      <LoopStrip checks={book.checks} step={step} onStep={setStep} />
       <ul>
         {shown.map((c) => {
           const open = openId === c.id;
@@ -257,7 +298,7 @@ function LineCheck({ book, name, openId, setOpenId, onGo, boxRef }) {
               <button type="button" className="cv-check-row" onClick={() => setOpenId(open ? '' : c.id)} aria-expanded={open}>
                 <span className="st" title={CHECK_WORD[c.status]}><Icon name={CHECK_ICON[c.status]} size={16} /><span className="sr">{CHECK_WORD[c.status]}: </span></span>
                 <span className="nm">{c.name}{c.kind === 'law' && <i className="law"><Icon name="Scale" size={12} />Rule</i>}</span>
-                {c.value && <span className="cv-stake sm"><b>{c.value}</b>{c.claim && <Claim k={c.claim} />}</span>}
+                {c.value && <span className={`cv-stake sm${/potential|avoided/.test(c.unit || '') ? ' pos' : ''}`}><b>{c.value}</b>{c.claim && <Claim k={c.claim} />}</span>}
                 <Icon name={open ? 'ChevronDown' : 'ChevronRight'} size={15} />
               </button>
               {open && (
@@ -273,7 +314,7 @@ function LineCheck({ book, name, openId, setOpenId, onGo, boxRef }) {
           );
         })}
       </ul>
-      {(hidden > 0 || all) && <button type="button" className="cv-sous-more" onClick={() => setAll((x) => !x)} aria-expanded={all}>{all ? 'Show only what to fix' : `Show all ${book.checks.length} checks`}</button>}
+      {!step && (hidden > 0 || all) && <button type="button" className="cv-sous-more" onClick={() => setAll((x) => !x)} aria-expanded={all}>{all ? 'Show only what to fix' : `Show all ${book.checks.length} checks`}</button>}
     </section>
   );
 }
@@ -377,7 +418,7 @@ export function SousPanel({ onClose, go, role: shellRole = 'owner', tools = fals
   const opened = open || (move && board.now[0]?.id === move.id && special ? move.id : '');
   const turn = turns.length ? turns[shown < 0 ? turns.length - 1 : shown] : null;
   const lanes = [['now', 'Do now', board.now.length], ['watching', 'Watching', board.watching.length], ['proven', 'Proven', board.proven.length]];
-  const book = lineCheck(bookPage || me.agent.id, CV_D);
+  const book = lineCheck(bookPage || me.agent.id, CV_D, local.day);
   const forget = (id) => setMem((m) => Object.fromEntries(Object.entries(m || {}).filter(([k]) => k !== id)), 'Sous: brought back');
 
 
