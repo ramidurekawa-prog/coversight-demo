@@ -6,7 +6,8 @@ import { Button, Icon } from '../kit';
 import { CV_D, CV_ROOM, useCv } from './core';
 import s from './tasks.module.css';
 import { engine, useEngine } from '../engine';
-import { StaffingOutcome } from './staffing';
+import { StaffingOutcome, useSticky } from './staffing';
+import { Editor } from './pages/inputs-editor';
 
 /* Approved changes waiting to be made in another system. Each one: the exact
  * steps, Done when it's made, and, for a price, a check against the next Toast
@@ -29,6 +30,7 @@ function TaskRow({ t }) {
   const st = STATUS[t.status] || STATUS.open;
   const manual = t.expect?.type !== 'price';
   const shift = String(t.approvalId || '').startsWith('shift:');
+  const [clocking, setClocking] = useSticky(`clock:${t.id}`, false);
   const act = (action, msg) => engine.taskAction(t.id, action).then((r) => r && cv.toast(msg));
   const id = `task-${t.id}`;
   const done = Object.values(ticked).filter(Boolean).length;
@@ -56,9 +58,16 @@ function TaskRow({ t }) {
             ))}
           </ol>
           {shift && <StaffingOutcome task={t} />}
+          {/* Clock-ins entered right here, on that shift's rows: no trip to another page. */}
+          {clocking && t.expect?.date && (
+            <div className={s.clockIn}>
+              <Editor key={`clock-${t.id}`} kind="shifts" seed={null} startMode="grid"
+                context={{ date: t.expect.date, meal: t.expect.meal, back: null, today: t.expect.date }} onBack={() => setClocking(false)} />
+            </div>
+          )}
           <div className={s.acts}>
             {live && <Button size="sm" icon="Check" onClick={() => act('done', shift ? 'Marked made, with your name and the time. Clock-ins entered after the shift confirm it.' : manual ? 'Marked done. Logged with your name and the time.' : 'Marked done. The next Toast upload confirms the new price.')}>Done, it’s made</Button>}
-            {shift && t.status !== 'verified' && <Button size="sm" variant="secondary" icon="Clock" onClick={() => cv.go('inputs', { kind: 'shifts', date: t.expect?.date, meal: t.expect?.meal, back: window.location.pathname.replace(/^\//, '') || 'today' })}>Add clock-ins</Button>}
+            {shift && t.status !== 'verified' && !clocking && <Button size="sm" variant="secondary" icon="Clock" onClick={() => setClocking(true)}>Add clock-ins</Button>}
             {t.status === 'done' && <Button size="sm" variant="secondary" icon="Undo2" onClick={() => act('reopen', 'Reopened.')}>Not done after all</Button>}
             {live && <Button size="sm" variant="ghost" onClick={() => act('cancel', 'Cancelled. Nothing was changed.')}>Cancel</Button>}
           </div>

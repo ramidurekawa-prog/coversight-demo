@@ -560,3 +560,6 @@ button.mRow.on { background: var(--accent-subtle); }
 .linkCtx { display: flex; gap: 10px; align-items: flex-start; margin: 0 0 12px; padding: 10px 12px; border-radius: 8px; background: color-mix(in srgb, var(--accent) 8%, transparent); font-size: 15px; color: var(--fg-1); }
 .linkCtx svg { flex: none; margin-top: 2px; color: var(--accent-700, var(--accent)); }
 .linkBack { display: flex; margin: 0 0 12px; }
+
+/* Filter the grid to the rows that need a fix (borrowed from Flatfile's review). */
+.fixOnly { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; color: var(--fg-1); margin: 4px 0; cursor: pointer; }

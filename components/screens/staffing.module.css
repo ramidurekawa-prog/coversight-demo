@@ -90,3 +90,11 @@
 .msgOk { background: color-mix(in srgb, var(--success-600, #16a34a) 10%, transparent); color: var(--fg-1); }
 .msgBad { background: color-mix(in srgb, var(--error-600, #dc2626) 10%, transparent); color: var(--fg-1); }
 @media (max-width: 640px) { .callTitle { font-size: 22px; } .callHead .fix { margin-left: 0; } }
+
+.inlineFix { display: flex; flex-direction: column; gap: 8px; }
+
+/* The gap per hour, after the change (borrowed from 7shifts' labor budget view). */
+.gap { font-size: 13px; font-weight: 600; color: var(--fg-2); font-variant-numeric: tabular-nums; }
+.gapSpare { color: var(--success-700, var(--success-600, #15803d)); }
+.gapShort { color: var(--error-600, #dc2626); }
+.tightKey { display: inline-flex; align-items: center; gap: 4px; color: var(--warning-700, #b45309); font-weight: 600; }

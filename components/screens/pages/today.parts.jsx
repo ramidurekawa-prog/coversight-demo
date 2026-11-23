@@ -457,7 +457,18 @@ export function ActionCard({ q, cards, frame, trust, label, busy, due, onPrimary
 }
 
 /** A compact card: icon, title, the money; the whole thing opens its details. */
-export function IssueRow({ q, cards, onOpen }) {
+/** Who can act on a row, in two or three words. */
+function actorOf(q) {
+  if (q.blocked) return null;
+  if (q.approval) return 'GM or owner';
+  if (q.task) return `In ${q.task.system}`;
+  if (q.kind === 'data' || q.go === 'inputs') return 'Anyone';
+  return null;
+}
+
+export function IssueRow({ q, cards, onOpen, waitingOn = null }) {
+  const due = q.due || (q.deadline === 'today' ? 'Today' : q.deadline ? `Due ${q.deadline}` : null);
+  const who = actorOf(q);
   return (
     <li>
       <button type="button" className={`${s.row} ${q.blocked ? s.rowBlocked : ''}`} onClick={onOpen} aria-haspopup="dialog">
@@ -465,7 +476,8 @@ export function IssueRow({ q, cards, onOpen }) {
         <span className={s.rowText}>
           <span className={s.rowTitle}>{q.title}</span>
           {q.affects && !q.blocked && <span className={s.rowSub}>{q.affects}</span>}
-          {q.blocked ? <StateChip k="waiting" /> : q.deadline === 'today' ? <span className={s.rowDue}><Icon name="Clock" size={12} />Today</span> : null}
+          {q.blocked ? (waitingOn ? <span className={s.rowSub}>Waiting on: {waitingOn}</span> : <StateChip k="waiting" />)
+            : (due || who) ? <span className={s.rowMeta}>{due && <span className={s.rowDue}><Icon name="Clock" size={12} />{due}</span>}{who && <span className={s.rowWho}><Icon name="UserCheck" size={12} />{who}</span>}</span> : null}
         </span>
         <span className={s.rowEnd}>
           <Worth q={q} cards={cards} />

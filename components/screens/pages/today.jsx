@@ -14,14 +14,15 @@ import { useDense } from '../dense-ui';
 import { reportTodayView } from './today.badge';
 import { useClock } from '../../clock';
 import { useCovercast } from '../covercast';
-import { approveStaffing, useStaffingCards } from '../staffing';
+import { approveStaffing, useStaffingCards, useSticky } from '../staffing';
 import { Yesterday } from './today.last';
 import { applyScenario, useLayout } from './today.layout';
 import {
   ActionCard, ActivityStrip, comingSoon, ComparePanel, CustomizePanel, dueFor, FeedsPanel, frameFor, handledOf, HandledPanel, IssueRow, Locations, Receipt, ResultsPanel,
   FontPicker, ScenarioBar, Status, ThemePicker, TilePanel, Tiles, tileData,
 } from './today.parts';
-import { ReviewPanel } from './today.review';
+import { Panel, ReviewPanel } from './today.review';
+import { Editor } from './inputs-editor';
 import { useTodayFont, useTodayTheme } from './today.themes';
 import s from './today.module.css';
 
@@ -247,6 +248,7 @@ function CvToday() {
   const [scenario, setScenario] = React.useState('live');
   const [dismissed, setDismissed] = useSaved('findings', {});
   const [review, setReview] = React.useState(null); // card id
+  const [fixing, setFixing] = useSticky(`today-fix:${CV_D.id}`); // { kind, date, meal }: data the staffing call needs, entered right here
   const [resOpen, setResOpen] = React.useState(null); // 'confirmed' | 'checking' | 'could'
   const [tileOpen, setTileOpen] = React.useState(null);
   const [feedsOpen, setFeedsOpen] = React.useState(false);
@@ -254,7 +256,7 @@ function CvToday() {
   const [customizing, setCustomizing] = React.useState(false);
   const [said, setSaid] = React.useState('');
   const [receipt, setReceipt] = React.useState(null); // what just happened, and what's next
-  const [handledOpen, setHandledOpen] = React.useState(false);
+  const [handledOpen, setHandledOpen] = useSticky(`today-handled:${CV_D.id}`, false); // stays open while clock-ins are saved in it
   const [comparing, setComparing] = React.useState(false);
   const { theme, pick: pickTheme } = useTodayTheme(tools);
   const { font, pick: pickFont } = useTodayFont(tools);
@@ -319,8 +321,9 @@ function CvToday() {
 
   const perform = (q) => {
     if (q.staffing?.state === 'blocked' && !q.blocked) {
+      // Fixed in place: the schedule (or the history) opens here, on that service's rows, not on another page.
       const fx = q.staffing.blocker?.fix;
-      return cv.go('inputs', { kind: fx?.kind || q.input, date: q.staffing.date, meal: q.staffing.meal, back: 'today' });
+      return setFixing({ kind: fx?.kind || q.input, date: q.staffing.date, meal: q.staffing.meal });
     }
     if (q.staffing?.state === 'act' && !q.blocked) return approveShift(q);
     if (q.blocked) {
@@ -383,7 +386,10 @@ function CvToday() {
   const leadAt = Math.max(0, ready.findIndex((q) => !isFix(q)));
   const lead = ready[leadAt];
   const rest = ready.filter((_, i) => i !== leadAt);
-  const next = [...upNextOrder(rest, cards), ...waiting];
+  // Handed to someone else (not me): shown with who has it, like an inbox that knows who can act.
+  const withOthers = cards.map((q) => ({ q, a: view.assigned?.[q.id] })).filter(({ a }) => a && a.to !== meId);
+  // Ready work first; what's waiting on data or someone else goes in its own compact group below.
+  const next = upNextOrder(rest, cards);
   const opps = next.filter((q) => !isFix(q));
   const fixes = next.filter(isFix);
   const top = opps.slice(0, FIRST_SCREEN - 1);
@@ -446,6 +452,15 @@ function CvToday() {
           )}
         </section>
       )}
+      {(waiting.length > 0 || withOthers.length > 0) && (
+        <section className={s.rows} aria-labelledby="wait-head">
+          <h3 id="wait-head" className={s.rowGroupHead}>Waiting on something else</h3>
+          <ul className={s.rowList}>
+            {waiting.map((q) => <IssueRow key={q.id} q={q} cards={cards} waitingOn={byId(q.blockedBy)?.title || null} onOpen={() => setReview(q.id)} />)}
+            {withOthers.map(({ q, a }) => <IssueRow key={q.id} q={{ ...q, blocked: true }} cards={cards} waitingOn={assigneeLabel(a.to, d.profile, a.name)} onOpen={() => setReview(q.id)} />)}
+          </ul>
+        </section>
+      )}
       {fixes.length > 0 && (
         <section className={s.rows} aria-labelledby="fix-head">
           <h3 id="fix-head" className={s.rowGroupHead}>Data to fix</h3>
@@ -467,7 +482,18 @@ function CvToday() {
           label={panelLabel(reviewing, reviewing.blockedBy ? byId(reviewing.blockedBy) : null)} onClose={close} act={panelActs(reviewing)}
           people={people} held={view.assigned?.[reviewing.id] || null} meId={meId}
           caution={cautionFor(reviewing, d, now)}
-          onService={reviewing.staffing ? () => { close(); cv.go('service', { date: reviewing.staffing.date, meal: reviewing.staffing.meal, back: 'today' }); } : undefined} />
+          onService={reviewing.staffing ? () => { close(); cv.go('service', { date: reviewing.staffing.date, meal: reviewing.staffing.meal, back: 'today' }); } : undefined}
+          onFixData={reviewing.staffing ? (f) => setFixing({ kind: f.kind, date: f.date, meal: f.meal }) : undefined} />
+      )}
+      {fixing && (
+        <Panel label="Add the data the staffing check needs" wide onClose={() => setFixing(null)}>
+          <div className={s.fixPanel}>
+            <button type="button" className={s.iconBtn} aria-label="Close" onClick={() => setFixing(null)}><Icon name="X" size={18} /></button>
+            <Editor key={`${CV_D.id}-${fixing.kind}-${fixing.date}`} kind={fixing.kind} seed={null} startMode="grid"
+              context={{ date: fixing.date, meal: fixing.meal, back: null, today }}
+              onBack={() => { const id = `staff:${fixing.date}:${fixing.meal}`; setFixing(null); setReview(id); }} />
+          </div>
+        </Panel>
       )}
       {handledOpen && (
         <HandledPanel h={handled} view={view} d={d} busy={busy} onClose={() => setHandledOpen(false)} meId={meId}

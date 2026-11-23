@@ -83,7 +83,7 @@ function whoDecides(q) {
  *   people?: { id: string, name: string, roleLabel: string }[], held?: any, meId?: string|null,
  *   act: { primary: () => void, snooze: () => void, decline: (r: string) => void, assign: (to: string, name?: string) => void, ack: () => void, done: () => void, open?: () => void } }} p
  */
-export function ReviewPanel({ q, cards, history, fix, busy, label, onClose, act, caution, people = [], held = null, meId = null, onService }) {
+export function ReviewPanel({ q, cards, history, fix, busy, label, onClose, act, caution, people = [], held = null, meId = null, onService, onFixData }) {
   const cv = useCv();
   const st = q.staffing || null;
   const forMe = !!(held && meId && held.to === meId);
@@ -133,7 +133,7 @@ export function ReviewPanel({ q, cards, history, fix, busy, label, onClose, act,
 
         {st?.state === 'blocked' && (
           <Block title="What the staffing check needs">
-            <StaffingReadiness readiness={st.readiness} onFix={(f) => { onClose(); cv.go('inputs', { kind: f.kind, date: f.date, meal: f.meal, back: 'today' }); }} />
+            <StaffingReadiness readiness={st.readiness} onFix={(f) => { onClose(); if (onFixData) onFixData(f); else cv.go('inputs', { kind: f.kind, date: f.date, meal: f.meal, back: 'today' }); }} />
           </Block>
         )}
 

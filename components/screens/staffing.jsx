@@ -14,7 +14,18 @@ import { applyOp, cardState, queueView } from '../../lib/data/page/today.js';
 import { engine, useEngine, useSaved } from '../engine';
 import { CV_D, Claim, useCv } from './core';
 import { useCovercast } from './covercast';
+import { Editor } from './pages/inputs-editor';
 import s from './staffing.module.css';
+
+/* Pages remount when the data changes (shell.jsx keys them by version), so an editor opened in
+   place would close the moment its rows are saved. This keeps that one bit of view state. */
+const sticky = new Map();
+/** useState that survives the page remount after a save. */
+export function useSticky(key, initial = null) {
+  const [v, setV] = React.useState(() => (sticky.has(key) ? sticky.get(key) : initial));
+  const set = React.useCallback((next) => { if (next == null) sticky.delete(key); else sticky.set(key, next); setV(next); }, [key]);
+  return [v, set];
+}
 
 const usd = (c) => `$${(c / 100).toFixed(2).replace(/\.00$/, '')}`;
 
@@ -125,6 +136,9 @@ export function StaffingHours({ dec, compact = false }) {
   const unit = compact ? 14 : 20;
   const seg = (now, after, need, k) => (k < Math.min(after, now) ? s.segOn : k < now ? s.segRemoved : k < after ? s.segAdded : k < need ? s.segShort : s.segEmpty);
   const any = (f) => halves.some(f) || rows.some((r) => f(r));
+  // Where the floor first runs short after the change: the moment to watch (only shown when it happens).
+  const firstShort = rows.find((r) => Math.min(...(r.halves || [{ after: r.after }]).map((h) => h.after ?? 0)) < r.need);
+  const tight = firstShort ? `Short from ${firstShort.label}` : null;
   return (
     <figure className={`${s.hours} ${compact ? s.compact : ''}`} aria-label={`Servers by half hour for ${dec.label.toLowerCase()}`}>
       <div className={s.cols}>
@@ -143,6 +157,11 @@ export function StaffingHours({ dec, compact = false }) {
               </div>
               <span className={s.hourLabel}>{r.label.replace(':00', '')}</span>
               {!compact && <span className={s.cov}>{r.covers}{r.high !== r.covers ? <small>–{r.high}</small> : null}</span>}
+              {!compact && (() => {
+                // The gap for this hour after the change, at its thinnest half hour: spare, exact, or short.
+                const g = Math.min(...hs.map((h) => (h.after ?? h.scheduled ?? 0))) - r.need;
+                return <span className={`${s.gap} ${g > 0 ? s.gapSpare : g < 0 ? s.gapShort : ''}`} title={g > 0 ? `${g} more than needed` : g < 0 ? `${-g} short` : 'Exactly what’s needed'}>{g > 0 ? `+${g}` : g < 0 ? `−${-g}` : '0'}</span>;
+              })()}
             </div>
           );
         })}
@@ -153,7 +172,8 @@ export function StaffingHours({ dec, compact = false }) {
         {any((h) => h.after > h.scheduled) && <span><i className={s.segAdded} />Added</span>}
         {rows.some((r) => (r.halves || []).some((h) => h.after < r.need)) && <span><i className={s.segShort} />Short</span>}
         <span><i className={s.needKey} />Needed at the top of the range</span>
-        {!compact && <span className={s.covKey}>{rows.some((r) => r.high !== r.covers) ? 'Guests: likely–top' : 'Guests'}</span>}
+        {!compact && <span className={s.covKey}>{rows.some((r) => r.high !== r.covers) ? 'Guests: likely–top' : 'Guests'} · then servers spare (+) or short (−)</span>}
+        {!compact && tight && <span className={s.tightKey}><Icon name="TriangleAlert" size={12} />{tight}</span>}
       </figcaption>
       <table className={s.srOnly}>
         <caption>Servers by hour</caption>
@@ -224,7 +244,7 @@ export function StaffingReadiness({ readiness, onFix }) {
       {readiness.items.map((it) => (
         <li key={it.key} className={s[`r_${it.state}`]}>
           <Icon name={ICON[it.state]} size={16} />
-          <span className={s.rMain}><b>{it.label}</b> <span className={s.rState}>{WORD[it.state]}{it.need === 'dollars' ? ' · for the dollar figure' : it.need === 'proof' ? ' · to prove it' : ''}</span><small>{it.detail}</small></span>
+          <span className={s.rMain}><b>{it.label}</b> <span className={s.rState}>{WORD[it.state]}{it.state === 'ready' ? '' : it.need === 'required' ? ' · blocks the staffing check' : it.need === 'dollars' ? ' · needed for the dollar figure' : it.need === 'proof' ? ' · needed to prove it worked' : ''}</span><small>{it.detail}</small></span>
           {it.fix && it.state !== 'ready' && onFix && <button type="button" className={s.fix} onClick={() => onFix(it.fix)}>{it.fix.label}<Icon name="ArrowRight" size={13} /></button>}
         </li>
       ))}
@@ -257,6 +277,8 @@ export function ShiftCall({ date, meal, back = null }) {
   const [busy, setBusy] = React.useState(false);
   const [why, setWhy] = React.useState(false);
   const [msg, setMsg] = React.useState(/** @type {{ tone: string, text: string }|null} */ (null));
+  // Fixed in place: the missing schedule or history opens right here, on that service's rows.
+  const [fixing, setFixing] = useSticky(`service-fix:${CV_D.id}:${date}:${meal}`);
   React.useEffect(() => { setMsg(null); setWhy(false); }, [date, meal]);
   const eligible = !!(room.fromToast || room.serviceOwn || (room.shifts || []).length);
   // Once the service is under way (or over) Service's live call and the outcome below it take over.
@@ -264,7 +286,7 @@ export function ShiftCall({ date, meal, back = null }) {
   const qs = q.stateOf(date, meal);
   const kept = qs === 'declined';
   const chip = kept ? { icon: 'CircleMinus', label: 'You kept the schedule', cls: 'chipMuted' } : STATE_CHIP[dec.state] || STATE_CHIP.hold;
-  const fix = (f) => cv.go('inputs', { kind: f.kind, date: f.date, meal: f.meal, back: 'service' });
+  const fix = (f) => setFixing(f);
   const approve = async () => {
     if (busy) return;
     setBusy(true);
@@ -314,6 +336,13 @@ export function ShiftCall({ date, meal, back = null }) {
       {(why || dec.state === 'hold') && dec.forecast && <StaffingEvidence dec={dec} />}
       {dec.state === 'hold' && dec.readiness?.items?.some((i) => i.state !== 'ready' && i.fix) && (
         <StaffingReadiness readiness={{ ...dec.readiness, items: dec.readiness.items.filter((i) => i.state !== 'ready') }} onFix={fix} />
+      )}
+      {fixing && (
+        <div className={s.inlineFix}>
+          <Editor key={`${CV_D.id}-${fixing.kind}-${fixing.date}`} kind={fixing.kind} seed={null} startMode="grid"
+            context={{ date: fixing.date, meal: fixing.meal, back: null, today: x.today }} onBack={() => setFixing(null)} />
+          <button type="button" className={s.fix} onClick={() => setFixing(null)}>Close</button>
+        </div>
       )}
       {msg && <p className={`${s.callMsg} ${msg.tone === 'bad' ? s.msgBad : s.msgOk}`} role="status"><Icon name={msg.tone === 'bad' ? 'CircleX' : 'CircleCheck'} size={15} />{msg.text}</p>}
     </section>

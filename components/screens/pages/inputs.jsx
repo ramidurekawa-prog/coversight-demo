@@ -216,13 +216,13 @@ function StaffingCheck({ ctx, onFix }) {
   if (!dec?.readiness) return null;
   const r = dec.readiness;
   const need = r.items.filter((i) => i.need === 'required' && i.state !== 'ready').length;
-  const label = `${next.meal === 'lunch' ? 'Lunch' : 'Dinner'} · ${shortDate(next.date)}`;
+  const label = `${next.meal === 'lunch' ? 'lunch' : 'dinner'} · ${shortDate(next.date)}`;
   return (
     <section className={`cv-card ${s.staffCheck}`} aria-labelledby="staff-check-h">
       <div className={s.staffCheckHead}>
         <span className="cv-q-ico"><Icon name="CalendarClock" size={20} /></span>
         <span className={s.staffCheckText}>
-          <b id="staff-check-h">{need ? `${need} thing${need === 1 ? '' : 's'} before the staffing check for ${label.toLowerCase()}` : `Ready for the staffing check: ${label.toLowerCase()}`}</b>
+          <b id="staff-check-h">{need ? `${need} thing${need === 1 ? '' : 's'} before the staffing check for ${label}` : `Ready for the staffing check: ${label}`}</b>
           <span>{need ? 'Coversight compares the schedule with what each hour needs. It holds back until these are in.' : dec.state === 'act' ? `There’s a change to look at: ${dec.short}.` : dec.state === 'hold' ? 'No change needed. The schedule fits the forecast.' : dec.title}</span>
         </span>
         {ctx?.back && !need && <Button size="sm" icon="ArrowLeft" onClick={() => cv.go(ctx.back, { date: next.date, meal: next.meal, ...(ctx.back === 'today' ? { card: dec.id } : {}) })}>Back to the decision</Button>}

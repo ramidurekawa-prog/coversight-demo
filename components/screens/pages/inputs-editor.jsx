@@ -42,11 +42,12 @@ const STARTERS = {
   role: ['Server', 'Bartender', 'Host', 'Busser', 'Food runner', 'Line cook', 'Prep cook', 'Dishwasher', 'Shift lead', 'Manager'],
 };
 
-function Grid({ kind, rows, setRows, issues, find = '', onRemove, only = null, cards = false, picks = {}, unitOf = null }) {
+function Grid({ kind, rows, setRows, issues, find = '', onRemove, only = null, cards = false, picks = {}, unitOf = null, fixOnly = false }) {
   const cols = SCHEMAS[kind].columns;
   const bad = (i, k) => issues.find((x) => x.row === i + 1 && (x.col === k || x.col == null) && x.level === 'error') || issues.find((x) => x.row === i + 1 && x.col === k);
   const q = find.trim().toLowerCase();
-  const shows = (r, i) => (only != null ? i === only : true) && (!q || Object.values(r).some((v) => String(v ?? '').toLowerCase().includes(q)));
+  const needsFix = (i) => issues.some((x) => x.row === i + 1 && x.level === 'error');
+  const shows = (r, i) => (only != null ? i === only : true) && (!fixOnly || needsFix(i)) && (!q || Object.values(r).some((v) => String(v ?? '').toLowerCase().includes(q)));
   const set = (i, k, v) => setRows(rows.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
   return (
     <div className="cv-tablewrap" tabIndex={0} role="group" aria-label={`${SCHEMAS[kind].title} rows`} style={cards ? undefined : { maxHeight: 460, overflowY: 'auto' }}>
@@ -277,9 +278,9 @@ function Verified({ r, onClose }) {
 
 /**
  * @param {{ kind: string, seed?: any, startMode?: string|null, lastEntry?: any, onUndo?: any, onHistory?: any, quick?: boolean,
- *   context?: { date: string, meal: 'lunch'|'dinner', back?: string|null, today: string } | null }} p
+ *   context?: { date: string, meal: 'lunch'|'dinner', back?: string|null, today: string } | null, onBack?: (() => void) | null }} p
  */
-export function Editor({ kind, seed, startMode, lastEntry = null, onUndo, onHistory, quick = false, context = null }) {
+export function Editor({ kind, seed, startMode, lastEntry = null, onUndo, onHistory, quick = false, context = null, onBack = null }) {
   const cv = useCv();
   const eng = useEngine();
   const server = eng.mode === 'server';
@@ -328,6 +329,7 @@ export function Editor({ kind, seed, startMode, lastEntry = null, onUndo, onHist
   const opts = cleanOpts(kind, { replace });
   const fileRef = React.useRef(null);
   const [find, setFind] = React.useState('');
+  const [fixOnly, setFixOnly] = React.useState(false);
 
   const parsed = React.useMemo(() => (mode === 'csv' && csv.trim() ? parseCSV(csv) : null), [mode, csv]);
   const autoMap = React.useMemo(() => (parsed ? mapColumns(parsed.headers, kind).map : {}), [parsed, kind]);
@@ -368,7 +370,7 @@ export function Editor({ kind, seed, startMode, lastEntry = null, onUndo, onHist
     if (!parsed) return;
     const from = (k) => Object.keys(curMap).find((h) => curMap[h] === k);
     setRowsState(parsed.rows.map((r) => Object.fromEntries(schema.columns.map((c) => [c.k, from(c.k) ? String(r[from(c.k)] ?? '') : '']))));
-    setMode('grid'); stale();
+    setMode('grid'); setFixOnly(true); stale();
   };
 
   // Arrived from "Bring data in": check it straight away so the issues and the preview show.
@@ -435,9 +437,9 @@ export function Editor({ kind, seed, startMode, lastEntry = null, onUndo, onHist
         </div>
       )}
       {last && <Verified r={last} onClose={() => { done.key = null; setLast(null); }} />}
-      {last && backTo && last.verify?.ok && (
+      {last && (backTo || onBack) && last.verify?.ok && (
         <div className={s.linkBack}>
-          <Button icon="ArrowLeft" onClick={() => cv.go(backTo, { date: context.date, meal: context.meal, ...(backTo === 'today' ? { card: `staff:${context.date}:${context.meal}` } : {}) })}>Back to the {mealWord} decision</Button>
+          <Button icon="ArrowLeft" onClick={() => onBack ? onBack() : cv.go(backTo, { date: context.date, meal: context.meal, ...(backTo === 'today' ? { card: `staff:${context.date}:${context.meal}` } : {}) })}>Back to the {mealWord} decision</Button>
         </div>
       )}
       {!seed && !quick && (
@@ -462,7 +464,10 @@ export function Editor({ kind, seed, startMode, lastEntry = null, onUndo, onHist
       {mode === 'grid' ? (
         <>
           {!quick && <span className="cv-xs cv-faint">{kind === 'waste' ? `Each row adds to the log${eng.inputs[CV_D.id]?.waste?.rows?.length ? ` (${plural(eng.inputs[CV_D.id].waste.rows.length, 'entry', 'entries')} logged so far)` : ''}. A row already logged isn’t added twice.` : 'Click any value to change it. Nothing is saved until you press Save.'}</span>}
-          <Grid kind={kind} rows={rows} setRows={setRows} issues={result?.issues || []} find={find} picks={picks} unitOf={unitOf} only={quick ? rows.length - 1 : null} cards={quick} onRemove={() => { if (schema.replace && !replace) setReplace(true); }} />
+          {mode === 'grid' && result?.rejected > 0 && (
+            <label className={s.fixOnly}><input type="checkbox" checked={fixOnly} onChange={(e) => setFixOnly(e.target.checked)} /> Show only the {plural(result.rejected, 'row')} to fix</label>
+          )}
+          <Grid fixOnly={fixOnly && !!result?.rejected} kind={kind} rows={rows} setRows={setRows} issues={result?.issues || []} find={find} picks={picks} unitOf={unitOf} only={quick ? rows.length - 1 : null} cards={quick} onRemove={() => { if (schema.replace && !replace) setReplace(true); }} />
         </>
       ) : (
         <div className="cv-col" style={{ gap: 8 }}>
