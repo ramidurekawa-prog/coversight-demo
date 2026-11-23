@@ -4,7 +4,7 @@
 // writes from those facts and every figure it writes is checked against them.
 // With the engine off, busy or over its daily allowance, the built-in brief
 // and answers are returned instead, so Sous always answers.
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { numbersOk, sousBrief, sousCites, sousFacts, sousHash, sousNoticed, sousRole, sousSheet, sousSuggest, sousToday } from '../../lib/ai/sous.js';
@@ -16,11 +16,13 @@ import { CV_PAGES } from '../../lib/pages.js';
 import { loadActions } from '../actions';
 import { loadDataset } from '../dataset';
 import type { Db } from '../db/client';
-import { auditLog, snapshots, testWindows } from '../db/schema';
+import { auditLog, meetingActions, snapshots, testWindows } from '../db/schema';
 import { notify } from '../notify';
 import { InputError } from '../org';
 import type { Viewer } from '../session';
 import { listTasks } from '../tasks';
+import { loadSeries } from '../forecast';
+import { covercastFor } from '../page/service';
 import { aiAllowance, aiConfigured, askClaude } from './claude';
 
 type V = Pick<Viewer, 'orgId' | 'role' | 'rooms'> & { userId: string | null };
@@ -81,23 +83,31 @@ async function context(db: Db, v: V, roomRaw: unknown, now: Date) {
   const roomId = typeof roomRaw === 'string' && roomRaw ? roomRaw : ids[0];
   if (!roomId || !ids.includes(roomId)) throw new InputError('That room is not one of yours.');
   const d = deriveRoom(loaded.ds, roomId);
-  const [acts, wins, tasks] = await Promise.all([
+  const raw = loaded.ds.rooms[roomId] as { fromToast?: unknown; tz?: string };
+  const [acts, wins, tasks, meeting, series] = await Promise.all([
     loadActions(db, v.orgId, v.rooms, v.userId),
     db.select({ roomId: testWindows.roomId, lever: testWindows.lever, title: testWindows.title, status: testWindows.status }).from(testWindows).where(and(eq(testWindows.orgId, v.orgId), eq(testWindows.roomId, roomId))),
     listTasks(db, v.orgId, v.rooms),
+    db.select({ id: meetingActions.id, title: meetingActions.title, owner: meetingActions.owner, due: meetingActions.due, status: meetingActions.status }).from(meetingActions)
+      .where(and(eq(meetingActions.orgId, v.orgId), eq(meetingActions.roomId, roomId), inArray(meetingActions.status, ['open', 'deferred']))).limit(50),
+    raw?.fromToast ? loadSeries(db, v.orgId, roomId, raw, now).catch(() => null) : Promise.resolve(null),
   ]);
-  const saved = (acts[roomId] ?? {}) as { queue?: unknown; findings?: unknown; sous?: Record<string, { at: string; how: 'handled' | 'dismissed'; sig: string; title?: string }>; 'sous.notes'?: { id: string; text: string; at: string }[]; 'sous.learn'?: { topic: string; id: string; at: string }[] };
+  const saved = (acts[roomId] ?? {}) as { queue?: unknown; findings?: unknown; fences?: unknown; sous?: Record<string, { at: string; how: 'handled' | 'dismissed'; sig: string; title?: string }>; 'sous.notes'?: { id: string; text: string; at: string }[]; 'sous.learn'?: { topic: string; id: string; at: string }[] };
   const role = sousRole(v.role);
   const today = sousToday(d, { stored: saved.queue ?? null, dismissed: saved.findings ?? {}, windows: wins, tasks, now: now.getTime() });
   // What the room already answered stays quiet until it is due again or its numbers change.
   const memory = sousRemember(sousNoticed(d), saved.sous ?? {}, now.getTime());
   const noticed = memory.active;
+  // The day loop: last night against the forecast, today's plan, and every decision still open.
+  // An own room reads its Toast days and the same cached Covercast as Service; a sample room computes both from its data.
+  const cc = raw?.fromToast && series ? await covercastFor(db, { ...v, userId: v.userId ?? '' }, roomId, today.today, now, fetch).catch(() => null) : null;
+  const day = { tasks: tasks.filter((t) => t.roomId === roomId), assigned: today.view?.assigned ?? {}, open: today.open, meeting, fences: saved.fences ?? null, series, cc, now: now.getTime(), ...(raw?.fromToast ? { today: today.today } : {}) };
   // The group is the viewer's own rooms only (the dataset is already scoped), so a manager never reads another room.
   // What the room has taught Sous: its notebook and which kinds of change have worked or been set aside.
   const learned = sousLearned(d, { mem: saved.sous ?? {}, acts: saved['sous.learn'] ?? [] });
-  const facts = sousFacts(d, { role, windows: wins, card: today.card, open: today.open, noticed, group: deriveGroup(loaded.ds), notes: saved['sous.notes'] ?? [], learned }) as Fact[];
+  const facts = sousFacts(d, { role, windows: wins, card: today.card, open: today.open, noticed, group: deriveGroup(loaded.ds), notes: saved['sous.notes'] ?? [], learned, day }) as Fact[];
   const brief = sousBrief(d, { role, facts, noticed, card: today.card, open: today.open }) as Brief;
-  const moves = respectNotes(rankMoves(sousMoves(d, { noticed, card: today.card, role, quietIds: memory.quietIds }), learned), saved['sous.notes'] ?? []);
+  const moves = respectNotes(rankMoves(sousMoves(d, { noticed, card: today.card, role, quietIds: memory.quietIds, day }), learned), saved['sous.notes'] ?? []);
   return { org: loaded.org as { sample?: boolean }, roomId, d, role, noticed, facts, brief, moves, memory };
 }
 
