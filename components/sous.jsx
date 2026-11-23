@@ -110,6 +110,16 @@ export function PageAgent({ page, role: shellRole = 'owner', onOpen }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
+  // Fix it here, not on another page: when this page carries the thing a move would open
+  // (marked data-agent-here="<page>"), the button says so and the shell acts in place.
+  const target = read.move?.act?.kind === 'go' ? read.move.act.page : null;
+  const [here, setHere] = React.useState(/** @type {string | null} */ (null));
+  React.useEffect(() => {
+    if (!target) { setHere(null); return; }
+    const el = document.querySelector(`[data-agent-here="${target}"]`);
+    setHere(el ? el.getAttribute('data-agent-label') || 'Show me here' : null);
+  }, [target, page]);
+
   if (!read.lead && !read.move) return null;
   const { move } = read;
   const warn = move?.source === 'noticed' || read.noticed.some((n) => n.tone === 'warn');
@@ -141,7 +151,7 @@ export function PageAgent({ page, role: shellRole = 'owner', onOpen }) {
         </button>
         <Stake move={move} />
         <span className="cv-agent-acts">
-          <Button variant="secondary" icon={ACT[move.act.kind]?.icon} iconRight={ACT[move.act.kind] ? undefined : 'ArrowRight'} onClick={() => onOpen('', move)}>{ctaFor(move)}</Button>
+          <Button variant="secondary" icon={here ? 'ArrowDown' : ACT[move.act.kind]?.icon} iconRight={here || ACT[move.act.kind] ? undefined : 'ArrowRight'} onClick={() => onOpen('', move)}>{here || ctaFor(move)}</Button>
           <button type="button" className="cv-agent-why" onClick={() => onOpen()}>Why<Icon name="ChevronRight" size={14} /></button>
         </span>
       </section>

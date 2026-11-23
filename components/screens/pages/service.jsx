@@ -668,7 +668,7 @@ function CvService() {
         {both && <MealCard id="day" active={view.meal === 'day'} onPick={(id) => { setView({ meal: id }); setSel(null); }} title="Full day" big={dayTotal} unit={[lc, dc].some((c) => ['Done', 'Sample', 'Live', 'Typed', 'Overstaffed', 'Busier than forecast', 'Busier than usual'].includes(c.state)) ? 'guests' : 'covers forecast'} foot={null} state={null} />}
       </div>
 
-      <section className={`${s.hero} ${s[`h_${answer.tone}`] || ''} ${pf ? s.heroPf : ''}`} aria-labelledby="svc-hero">
+      <section className={`${s.hero} ${s[`h_${answer.tone}`] || ''} ${pf ? s.heroPf : ''}`} aria-labelledby="svc-hero" data-agent-here="today" data-agent-label="Go to the decision">
         <div className={s.heroMain}>
           <span className={s.heroKicker}><Icon name={TONE_ICON[answer.tone] || 'Activity'} size={16} />{view.meal === 'day' ? `Full day · ${M.label} now · ` : ''}{answer.kicker}</span>
           {promise && <p className={s.heroOutcome}><Icon name={role === 'floor' ? 'Users' : role === 'owner' ? 'TrendingUp' : 'Gauge'} size={18} /><span>{promise.text}</span>{promise.money && <Claim k="est" />}</p>}

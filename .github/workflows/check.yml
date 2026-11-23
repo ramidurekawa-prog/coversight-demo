@@ -1,0 +1,27 @@
+# Runs `pnpm check` (typecheck + tests + build) on every pull request and on main.
+# Added in the UX and reliability pass (2026-11-23): main stopped compiling after
+# three PRs merged on top of each other (a duplicate icon import in kit.jsx), and
+# nothing ran the tests before the merge.
+name: check
+on:
+  pull_request:
+  push:
+    branches: [main]
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
