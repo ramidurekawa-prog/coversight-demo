@@ -62,7 +62,7 @@ describe('Covercast picks the model by task', () => {
       svc.v1 += (p.tasks as any).service.candidates.v1.check.wape; svc.old += (p.tasks as any).service.candidates.old.check.wape;
     }
     expect(svc.v1).toBeLessThan(svc.old);
-  });
+  }, 60_000); // fits every model on three rooms: well past vitest's 5 s default on a 2-core CI runner
   it('reports busy, special and ordinary nights apart, with how often the night beat the range', () => {
     const n = (pickModels(seriesFromSample(ds.rooms.oakland)!) as any).tasks.nights.v1;
     expect(n.busy.n).toBeGreaterThan(20);
