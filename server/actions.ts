@@ -8,6 +8,7 @@ import { and, desc, eq, inArray, notLike, or } from 'drizzle-orm';
 import { z } from 'zod';
 
 import type { Db } from './db/client';
+import { kitchenSchemas } from './page/kitchen';
 import { meetingSchemas } from './page/meeting';
 import { actions, auditLog, rooms } from './db/schema';
 import { InputError } from './org';
@@ -137,6 +138,8 @@ export const ACTION_KEYS = {
   'service.manual': { scope: 'room', schema: z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), entries: z.array(z.object({ meal: z.enum(['lunch', 'dinner']), at: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/), covers: z.number().int().min(0).max(5000), servers: z.number().int().min(0).max(200).nullable(), saved: z.string().max(40) })).max(24) }) },
   /** This week: weeks marked reviewed, keyed by the data week's first day, with an optional note. Who reviewed comes from the row's user. */
   'week.review': { scope: 'room', schema: z.record(z.string().regex(/^\d{4}-\d{2}-\d{2}$/), z.object({ at: isoDate, note: z.string().trim().max(1000).optional() })).refine((r) => Object.keys(r).length <= 26, 'keeps at most 26 weeks') },
+  /** Kitchen: Line Trials, one change on the line at a time, measured on matched nights. Recording one never changes a kitchen screen. */
+  'kitchen.trials': { scope: 'room', schema: kitchenSchemas.trials },
   /**
    * Staff: a manager's own notes on a person (a note, praise, training done, a
    * talk held, or "I disagree with this read"), newest first, keyed by the
