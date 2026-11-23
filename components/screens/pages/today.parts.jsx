@@ -12,6 +12,7 @@ import { dayLabel, shortMoney } from './today.last';
 import { MAX_METRICS, METRICS, SCENARIOS, WIDGETS } from './today.layout';
 import { FONTS, THEMES, tokensFor } from './today.themes';
 import { AgeBar, HoursBar, MarkBar, PaceCurve, RefundBars, Spark, StaffBar } from './today.viz';
+import { StaffingHours } from '../staffing';
 import s from './today.module.css';
 
 const money = (v) => cvMoney(Math.round(v));
@@ -382,6 +383,10 @@ export function evidenceFor(q, d, sv) {
  * schedule against what's needed, and says so when the schedule is behind.
  */
 export function frameFor(q, d, sv, trust = {}) {
+  // A pre-shift staffing call: its own hours chart, from the schedule against the forecast's need.
+  if (q.staffing && q.staffing.hoursRows && q.staffing.state === 'act') {
+    return { problem: q.title, why: q.staffing.why, fix: q.staffing.short, viz: <StaffingHours dec={q.staffing} compact /> };
+  }
   const plan = d.room?.labour?.tue;
   const first = (q.body || '').split(/(?<=\.)\s/)[0];
   if (sv && plan && q.approval && q.approval === sv.approval) {
@@ -414,6 +419,7 @@ export function frameFor(q, d, sv, trust = {}) {
 
 /** When to act, as plainly as the data allows: "Review before 8 pm · 45 min left". */
 export function dueFor(q, trust) {
+  if (q.due) return q.due;
   if (trust?.before && trust.minsLeft != null) {
     return trust.minsLeft > 0 ? `Review before ${trust.before} · ${trust.minsLeft} min left` : `Past ${trust.before}`;
   }

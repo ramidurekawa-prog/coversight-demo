@@ -223,7 +223,7 @@ export async function approveCut(db: Db, v: V, raw: unknown, opts: { now?: Date;
   const approvalId = cutApprovalId(date, h * 60 + m);
   const label = `${ok.live.day} ${clockLabel(h * 60 + m)} to close`;
   const a = { roomId, approvalId, title: ok.title, system: '7shifts', diff: [[label, `${ok.servers} servers`, `${ok.servers - 1} servers`]] as [string, string, string][] };
-  const task = await createTask(db, v, a);
+  const task = await createTask(db, v, a, { ...opts, checked: true });
   for (const m of Object.keys(MEALS)) cache.delete(`${v.orgId}:${roomId}:${m}`);
   pulls.delete(`${v.orgId}:${roomId}`);
   return { task, approval: a };

@@ -5,7 +5,8 @@ import * as React from 'react';
 import { Button, Icon } from '../../kit';
 import { ASSIGNEES, assigneeLabel, DECLINE, worthOf, unlocksOf } from '../../../lib/data/page/today';
 import { AREAS, areaOf, carriedOut } from '../../../lib/data/page/today-brief';
-import { CV_CLAIM, CV_D, Claim } from '../core';
+import { CV_CLAIM, CV_D, Claim, useCv } from '../core';
+import { StaffingEvidence, StaffingHours, StaffingReadiness } from '../staffing';
 import s from './today.module.css';
 
 /* The review panel: one recommendation, opened in place. A side panel on a
@@ -70,6 +71,7 @@ function Block({ title, children }) {
 
 /** Who can act on a card, by its kind. */
 function whoDecides(q) {
+  if (q.staffing) return 'The GM or the owner approves a schedule change. A floor manager can review it, mark it made and add clock-ins.';
   if (q.approval) return 'The owner or the room’s GM approves. Anyone can be asked to review it first.';
   if (q.task) return `Whoever runs ${q.task.system} for this room makes the change.`;
   if (q.kind === 'data') return 'Anyone with access to the data can do this.';
@@ -81,7 +83,9 @@ function whoDecides(q) {
  *   people?: { id: string, name: string, roleLabel: string }[], held?: any, meId?: string|null,
  *   act: { primary: () => void, snooze: () => void, decline: (r: string) => void, assign: (to: string, name?: string) => void, ack: () => void, done: () => void, open?: () => void } }} p
  */
-export function ReviewPanel({ q, cards, history, fix, busy, label, onClose, act, caution, people = [], held = null, meId = null }) {
+export function ReviewPanel({ q, cards, history, fix, busy, label, onClose, act, caution, people = [], held = null, meId = null, onService }) {
+  const cv = useCv();
+  const st = q.staffing || null;
   const forMe = !!(held && meId && held.to === meId);
   const [asking, setAsking] = React.useState(null); // 'decline' | 'assign' | null
   const w = worthOf(q);
@@ -121,21 +125,40 @@ export function ReviewPanel({ q, cards, history, fix, busy, label, onClose, act,
           {/prevent|avoid/i.test(`${q.value} ${q.means}`) && <p className={s.blockNote}>Money that’s avoided is never counted as saved.</p>}
         </Block>
 
+        {st?.hoursRows && (
+          <Block title={`${st.label}, hour by hour`}>
+            <StaffingHours dec={st} />
+          </Block>
+        )}
+
+        {st?.state === 'blocked' && (
+          <Block title="What the staffing check needs">
+            <StaffingReadiness readiness={st.readiness} onFix={(f) => { onClose(); cv.go('inputs', { kind: f.kind, date: f.date, meal: f.meal, back: 'today' }); }} />
+          </Block>
+        )}
+
+        {st?.forecast ? (
+          <Block title="Evidence">
+            <StaffingEvidence dec={st} />
+            {onService && <button type="button" className={s.textLink} onClick={onService}>Open {st.label.toLowerCase()} in Service<Icon name="ArrowRight" size={13} /></button>}
+          </Block>
+        ) : (
         <Block title="Evidence">
           <dl className={s.facts}>
             <dt>Why it’s here</dt><dd>{q.why}</dd>
-            <dt>Data</dt><dd>{q.source?.kind === 'toast' ? 'Your Toast data' : 'Sample restaurant data'}{through ? `, through ${through}` : ''}</dd>
+            <dt>Data</dt><dd>{st ? ({ hand: 'Your entries on Data', toast: 'Your Toast data', sample: 'Sample restaurant data' }[st.readiness?.source] || 'Your data') : q.source?.kind === 'toast' ? 'Your Toast data' : 'Sample restaurant data'}{through && !st ? `, through ${through}` : ''}</dd>
             {q.blocked && <><dt>Waiting on</dt><dd>{fix ? `${fix.title}. ` : ''}{q.blocked}</dd></>}
           </dl>
           {act.open && <button type="button" className={s.textLink} onClick={act.open}>See the full numbers<Icon name="ArrowRight" size={13} /></button>}
         </Block>
+        )}
 
         <Block title="If you go ahead">
-          <p className={s.blockText}>{how.text}</p>
-          {q.task?.diff && (
+          <p className={s.blockText}>{st?.state === 'act' ? `${st.short}. Approving records the decision; someone still changes ${st.system.toLowerCase()} and tells the person. After the shift, clock-ins show whether it happened.` : how.text}</p>
+          {(q.task?.diff || (st?.state === 'act' && st.diff)) && (
             <table className={s.diff}>
               <thead><tr><th scope="col">What</th><th scope="col">Now</th><th scope="col">After</th></tr></thead>
-              <tbody>{q.task.diff.map((r, i) => <tr key={i}><td>{r[0]}</td><td>{r[1]}</td><td>{r[2]}</td></tr>)}</tbody>
+              <tbody>{(q.task?.diff || st.diff).map((r, i) => <tr key={i}><td>{r[0]}</td><td>{r[1]}</td><td>{r[2]}</td></tr>)}</tbody>
             </table>
           )}
         </Block>
@@ -172,7 +195,7 @@ export function ReviewPanel({ q, cards, history, fix, busy, label, onClose, act,
             <div className={s.panelMore}>
               <Button size="sm" variant="secondary" icon="UserPlus" disabled={busy} onClick={() => setAsking('assign')}>Assign</Button>
               {canSnooze && <Button size="sm" variant="secondary" disabled={busy} onClick={act.snooze}>Not now</Button>}
-              {canDecline && <Button size="sm" variant="secondary" disabled={busy} onClick={() => setAsking('decline')}>Not for us</Button>}
+              {canDecline && <Button size="sm" variant="secondary" disabled={busy} onClick={() => setAsking('decline')}>{st ? 'Keep the schedule' : 'Not for us'}</Button>}
               {q.go && !q.blocked && !q.approval && <Button size="sm" variant="ghost" disabled={busy} onClick={act.done}>Already done</Button>}
             </div>
           </>

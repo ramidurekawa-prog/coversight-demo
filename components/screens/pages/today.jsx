@@ -14,6 +14,7 @@ import { useDense } from '../dense-ui';
 import { reportTodayView } from './today.badge';
 import { useClock } from '../../clock';
 import { useCovercast } from '../covercast';
+import { approveStaffing, useStaffingCards } from '../staffing';
 import { Yesterday } from './today.last';
 import { applyScenario, useLayout } from './today.layout';
 import {
@@ -167,13 +168,14 @@ const whoLabel = (by) => (by?.you ? 'You' : by?.name || 'A guest');
 /** The button's words: what it actually does. */
 function actLabel(q, fix) {
   if (q.blocked && fix) return `First: ${fix.primary}`;
+  if (q.staffing?.state === 'blocked') return q.primary;
   if (q.approval) return 'Review the change';
   if (q.task) return `Get the ${q.task.system} steps`;
   if (q.start) return 'Start the test';
   return q.primary;
 }
 /** In the review panel, the primary says the decision itself. */
-const panelLabel = (q, fix) => (q.approval ? 'Approve…' : actLabel(q, fix));
+const panelLabel = (q, fix) => (q.staffing?.state === 'act' ? 'Approve this change' : q.approval ? 'Approve…' : actLabel(q, fix));
 
 /** Before acting on a card whose data is behind: what to check, in one sentence. */
 function cautionFor(q, d, now) {
@@ -261,7 +263,8 @@ function CvToday() {
 
   const roomTasks = (eng.tasks || []).filter((t) => t.roomId === CV_D.id);
   const windows = (eng.windows || []).filter((w) => w.roomId === CV_D.id && (w.status === 'running' || w.status === 'waiting'));
-  const liveCards = todayCards(CV_D, { today, testing: windows.map((w) => w.lever), dismissed, tasks: roomTasks });
+  const staffing = useStaffingCards();
+  const liveCards = todayCards(CV_D, { today, testing: windows.map((w) => w.lever), dismissed, tasks: roomTasks, staffing });
   const sc = applyScenario(scenario, CV_D, liveCards);
   const d = sc.d;
   const cards = sc.cards;
@@ -304,7 +307,22 @@ function CvToday() {
   const showReceipt = (rc, msg) => { setReceipt({ ...rc, at: Date.now() }); setSaid(msg); };
   const findingId = (q) => (q?.id?.startsWith('find:') ? q.id.slice(5) : null);
 
+  /** A staffing change: one task, re-checked by the server; a refusal is shown in place with the latest call. */
+  const approveShift = (q) => approveStaffing(q.staffing).then((r) => {
+    if (!r.ok) { tell(`Not approved. ${r.error}`); return; }
+    const dec = q.staffing;
+    showReceipt(
+      rcpt(`Approved: ${dec.title}`, ['Approved, with your name and the time', `Make it in ${dec.system}, then mark it made`, 'Clock-ins after the shift show it happened'], { icon: 'CircleCheck' }),
+      `Approved. ${dec.title}. Nothing changes until someone makes the change; it’s under Being handled.`,
+    );
+  });
+
   const perform = (q) => {
+    if (q.staffing?.state === 'blocked' && !q.blocked) {
+      const fx = q.staffing.blocker?.fix;
+      return cv.go('inputs', { kind: fx?.kind || q.input, date: q.staffing.date, meal: q.staffing.meal, back: 'today' });
+    }
+    if (q.staffing?.state === 'act' && !q.blocked) return approveShift(q);
     if (q.blocked) {
       const fix = byId(q.blockedBy);
       if (fix) return perform(fix);
@@ -448,7 +466,8 @@ function CvToday() {
         <ReviewPanel q={reviewing} cards={cards} history={history} fix={reviewing.blockedBy ? byId(reviewing.blockedBy) : null} busy={busy === reviewing.id}
           label={panelLabel(reviewing, reviewing.blockedBy ? byId(reviewing.blockedBy) : null)} onClose={close} act={panelActs(reviewing)}
           people={people} held={view.assigned?.[reviewing.id] || null} meId={meId}
-          caution={cautionFor(reviewing, d, now)} />
+          caution={cautionFor(reviewing, d, now)}
+          onService={reviewing.staffing ? () => { close(); cv.go('service', { date: reviewing.staffing.date, meal: reviewing.staffing.meal, back: 'today' }); } : undefined} />
       )}
       {handledOpen && (
         <HandledPanel h={handled} view={view} d={d} busy={busy} onClose={() => setHandledOpen(false)} meId={meId}

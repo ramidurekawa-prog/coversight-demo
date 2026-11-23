@@ -22,6 +22,7 @@ import { auditLog, inputs, testWindows, users } from '../db/schema';
 import { notify } from '../notify';
 import { InputError, commitInput, loadBase, loadInputs, undoInput } from '../org';
 import { AuthError, roomLevel, type Viewer } from '../session';
+import { verifyTasks } from '../tasks';
 
 type V = Pick<Viewer, 'orgId' | 'userId' | 'role' | 'rooms'>;
 type Json = Record<string, unknown>;
@@ -124,6 +125,8 @@ export async function commitChecked(db: Db, v: V, raw: unknown): Promise<CommitR
       prior: priorEntry?.id ?? null, verify,
     },
   });
+  // A schedule with clock-ins, or the guests of a service, can confirm a staffing change already approved.
+  if (kind === 'shifts' || kind === 'services') await verifyTasks(db, v.orgId).catch(() => null);
   for (const t of a.tests) {
     await notify(db, { orgId: v.orgId, roomId, kind: 'inputs.test-data', severity: 'warn', title: `New ${kind === 'exceptions' ? 'register' : kind} data under a running test`, body: `“${t.title}” reads data that just changed on Data inputs. Its readout uses the new data from here on; check it on Windows.`, link: '/windows', dedupe: `inputs-test:${t.id}:${id}` }).catch(() => null);
   }

@@ -61,7 +61,7 @@ export async function loadInputs(db: Db, orgId: string) {
   for (const r of [...rows].reverse()) {
     if (r.undone) continue;
     current[r.roomId] ??= {};
-    current[r.roomId]![r.kind] = { rows: r.rows, date: dateLabel(r.createdAt), label: KIND_LABEL[r.kind as keyof typeof KIND_LABEL], n: (r.rows as unknown[]).length, ...(r.opts ? { opts: r.opts } : {}) };
+    current[r.roomId]![r.kind] = { rows: r.rows, date: dateLabel(r.createdAt), at: r.createdAt.toISOString(), label: KIND_LABEL[r.kind as keyof typeof KIND_LABEL], n: (r.rows as unknown[]).length, ...(r.opts ? { opts: r.opts } : {}) };
   }
   const log = rows.slice(0, 50).map((r) => ({ id: r.id, kind: r.kind, room: r.roomId, at: stampLabel(r.createdAt), rows: (r.rows as unknown[]).length, summary: r.summary, undone: r.undone }));
   return { inputs: current, log };

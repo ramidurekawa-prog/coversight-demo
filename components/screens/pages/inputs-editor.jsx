@@ -15,6 +15,7 @@ import { engine, useEngine } from '../../engine';
 import { SCHEMAS, mapColumns, parseCSV, templateRows } from '../../../lib/data/ingest';
 import { analyze, checkRows, cleanOpts, fingerprint, mappingReview, safeCSV } from '../../../lib/data/page/inputs';
 import { jfetch } from './inputs-data';
+import { linkRows, shortDate } from '../../../lib/data/page/staffing';
 import s from './inputs.module.css';
 
 function download(name, text) {
@@ -274,14 +275,22 @@ function Verified({ r, onClose }) {
   );
 }
 
-export function Editor({ kind, seed, startMode, lastEntry = null, onUndo, onHistory, quick = false }) {
+/**
+ * @param {{ kind: string, seed?: any, startMode?: string|null, lastEntry?: any, onUndo?: any, onHistory?: any, quick?: boolean,
+ *   context?: { date: string, meal: 'lunch'|'dinner', back?: string|null, today: string } | null }} p
+ */
+export function Editor({ kind, seed, startMode, lastEntry = null, onUndo, onHistory, quick = false, context = null }) {
   const cv = useCv();
   const eng = useEngine();
   const server = eng.mode === 'server';
   const room = CV_DS.rooms[CV_D.id];
   const schema = SCHEMAS[kind];
   const blankRow = () => Object.fromEntries(schema.columns.map((c) => [c.k, '']));
-  const initialRows = () => templateRows(kind, room).map((r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, v == null ? '' : String(v)])));
+  // From a staffing link: just that service's rows (saving them leaves every other date as it is).
+  const linked = context && !seed && (kind === 'shifts' || kind === 'services') ? linkRows(kind, room, context) : null;
+  const initialRows = () => linked || templateRows(kind, room).map((r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, v == null ? '' : String(v)])));
+  const mealWord = context ? (context.meal === 'lunch' ? 'lunch' : 'dinner') : null;
+  const backTo = context?.back === 'today' || context?.back === 'service' ? context.back : null;
   const doneKey = `${CV_D.id}/${kind}`;
   const [last, setLast] = React.useState(done.key === doneKey ? done.result : null);
   const [mode, setMode] = React.useState(seed ? 'csv' : startMode || 'grid');
@@ -419,7 +428,18 @@ export function Editor({ kind, seed, startMode, lastEntry = null, onUndo, onHist
           </div>
         </div>
       </div>
+      {linked && (
+        <div className={s.linkCtx} role="note">
+          <Icon name="CalendarClock" size={16} />
+          <span><b>For the {mealWord} staffing check on {shortDate(context.date)}</b> · {CV_ROOM.name}. {kind === 'shifts' ? 'One row per shift. Times like 4:30 pm or 16:30.' : 'Guests seated and servers on, each hour. Leave a row out if you weren’t open.'} Other dates stay as they are.</span>
+        </div>
+      )}
       {last && <Verified r={last} onClose={() => { done.key = null; setLast(null); }} />}
+      {last && backTo && last.verify?.ok && (
+        <div className={s.linkBack}>
+          <Button icon="ArrowLeft" onClick={() => cv.go(backTo, { date: context.date, meal: context.meal, ...(backTo === 'today' ? { card: `staff:${context.date}:${context.meal}` } : {}) })}>Back to the {mealWord} decision</Button>
+        </div>
+      )}
       {!seed && !quick && (
         <div className={s.toolbar} role="toolbar" aria-label={`Manage ${schema.title.toLowerCase()}`}>
           {mode === 'grid' ? (

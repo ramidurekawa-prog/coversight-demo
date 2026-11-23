@@ -1,0 +1,92 @@
+/* The pre-shift staffing call: hours chart, evidence, outcome stages, readiness. Kit tokens only. */
+.hours { margin: 0; display: flex; flex-direction: column; gap: 10px; }
+.cols { display: flex; gap: 6px; align-items: flex-end; overflow-x: auto; padding-bottom: 2px; }
+.col { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 40px; flex: 1 1 0; border-radius: 6px; padding: 4px 2px; }
+.colChanged { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.pair { position: relative; display: flex; gap: 2px; }
+.stack { position: relative; display: flex; flex-direction: column; gap: 3px; width: 14px; }
+.stack > span:not(.needLine) { flex: 1 1 0; border-radius: 3px; }
+.segOn { background: var(--navy-700, #1f2d4a); }
+.segRemoved { box-shadow: inset 0 0 0 1.5px var(--success-600, #16a34a); background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--success-600, #16a34a) 35%, transparent) 0 2px, transparent 2px 5px); }
+.segAdded { background: var(--accent); }
+.segShort { box-shadow: inset 0 0 0 1.5px var(--error-600, #dc2626); background: transparent; }
+.segEmpty { background: transparent; }
+.needLine { position: absolute; left: -4px; right: -4px; height: 0; border-top: 2px dashed var(--fg-1); }
+.hourLabel { font-size: 13px; color: var(--fg-2); font-variant-numeric: tabular-nums; }
+.cov { font-size: 13px; font-weight: 600; color: var(--fg-1); font-variant-numeric: tabular-nums; }
+.cov small { font-weight: 400; color: var(--fg-3, var(--fg-2)); }
+.key { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--fg-2); }
+.key span { display: inline-flex; align-items: center; gap: 6px; }
+.key i { width: 12px; height: 10px; border-radius: 2px; display: inline-block; }
+.key .needKey { height: 0; border-top: 2px dashed var(--fg-1); border-radius: 0; }
+.covKey { color: var(--fg-3, var(--fg-2)); }
+.compact .col { min-width: 30px; }
+.compact .stack { width: 10px; }
+
+.evidence { display: flex; flex-direction: column; gap: 12px; }
+.facts { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 0; font-size: 15px; }
+.facts dt { color: var(--fg-2); }
+.facts dd { margin: 0; color: var(--fg-1); }
+.money b { font-size: 17px; font-variant-numeric: tabular-nums; }
+.guards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 15px; }
+.guards li { display: flex; gap: 8px; align-items: flex-start; }
+.guards small { color: var(--fg-2); font-size: 13px; }
+.ok svg { color: var(--success-600, #16a34a); flex: none; margin-top: 2px; }
+.bad svg { color: var(--error-600, #dc2626); flex: none; margin-top: 2px; }
+.yours svg { color: var(--warning-600, #d97706); flex: none; margin-top: 2px; }
+.risk { display: flex; gap: 8px; align-items: flex-start; margin: 0; font-size: 14px; color: var(--fg-2); }
+.risk svg { flex: none; margin-top: 2px; color: var(--warning-600, #d97706); }
+
+.stages { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.stages li { display: grid; grid-template-columns: 18px 1fr; gap: 2px 8px; align-items: start; font-size: 15px; }
+.stages li svg { margin-top: 2px; color: var(--fg-2); }
+.stLabel { font-weight: 600; color: var(--fg-1); }
+.stText { grid-column: 2; color: var(--fg-2); font-size: 14px; }
+.st_done svg { color: var(--success-600, #16a34a); }
+.st_warn svg { color: var(--warning-600, #d97706); }
+.st_no svg { color: var(--fg-3, var(--fg-2)); }
+
+.ready { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.ready li { display: grid; grid-template-columns: 20px 1fr auto; gap: 8px; align-items: start; }
+.ready li > svg { margin-top: 2px; }
+.rMain { display: flex; flex-direction: column; gap: 2px; font-size: 15px; }
+.rMain b { color: var(--fg-1); font-weight: 600; }
+.rMain small { color: var(--fg-2); font-size: 14px; }
+.rState { font-size: 13px; color: var(--fg-2); }
+.r_ready > svg { color: var(--success-600, #16a34a); }
+.r_limited > svg, .r_stale > svg { color: var(--warning-600, #d97706); }
+.r_missing > svg { color: var(--error-600, #dc2626); }
+.r_later > svg { color: var(--fg-2); }
+.fix { display: inline-flex; align-items: center; gap: 4px; border: 0; background: none; color: var(--accent-700, var(--accent)); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; padding: 2px 0; white-space: nowrap; }
+.fix:hover { text-decoration: underline; }
+.fix:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+
+.srOnly { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+@media (max-width: 640px) {
+  .ready li { grid-template-columns: 20px 1fr; }
+  .ready .fix { grid-column: 2; justify-self: start; }
+  .facts { grid-template-columns: 1fr; gap: 2px; }
+  .facts dd { margin-bottom: 6px; }
+}
+
+/* Service: the before-the-shift call */
+.call { display: flex; flex-direction: column; gap: 14px; margin-bottom: 16px; }
+.callHead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.callOver { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; color: var(--fg-2); }
+.callHead .fix { margin-left: auto; }
+.chip { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 600; padding: 3px 9px; border-radius: 999px; }
+.chipAct { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent-700, var(--fg-1)); }
+.chipOk { background: color-mix(in srgb, var(--success-600, #16a34a) 14%, transparent); color: var(--success-700, var(--success-600, #15803d)); }
+.chipWarn { background: color-mix(in srgb, var(--warning-600, #d97706) 14%, transparent); color: var(--warning-700, #b45309); }
+.chipMuted { background: var(--bg-2, rgba(0,0,0,.05)); color: var(--fg-2); }
+.callTitle { margin: 0; font-size: 26px; line-height: 1.2; font-weight: 700; color: var(--fg-1); }
+.callWhy { margin: 0; font-size: 17px; color: var(--fg-2); max-width: 70ch; }
+.callActs { display: flex; flex-wrap: wrap; gap: 8px; }
+.callMoney { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 15px; color: var(--fg-2); }
+.callMoney b { font-size: 22px; color: var(--success-700, var(--success-600, #15803d)); font-variant-numeric: tabular-nums; }
+.callMsg { margin: 0; display: flex; gap: 8px; align-items: flex-start; font-size: 15px; padding: 10px 12px; border-radius: 8px; }
+.callMsg svg { flex: none; margin-top: 2px; }
+.msgOk { background: color-mix(in srgb, var(--success-600, #16a34a) 10%, transparent); color: var(--fg-1); }
+.msgBad { background: color-mix(in srgb, var(--error-600, #dc2626) 10%, transparent); color: var(--fg-1); }
+@media (max-width: 640px) { .callTitle { font-size: 22px; } .callHead .fix { margin-left: 0; } }

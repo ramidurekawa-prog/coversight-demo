@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { findingBlocked } from '../lib/data/findings.js';
 import { deriveRoom } from '../lib/data/model.js';
 import { checkExpect, expectFor, stepsFor } from '../lib/data/writebacks.js';
+import { shiftCheck, staffingOutcome } from '../lib/data/page/staffing.js';
 import type { Db } from './db/client';
 import { actions, auditLog, rooms, tasks } from './db/schema';
 import { loadDataset } from './dataset';
@@ -52,13 +53,42 @@ async function refusePrice(db: Db, orgId: string, roomId: string, approvalId: st
   if (last && Date.now() - last.at.getTime() < gap * 7 * 864e5) throw new InputError(`This dish was repriced ${Math.round((Date.now() - last.at.getTime()) / 864e5)} days ago; the fence allows one move every ${gap} weeks.`);
 }
 
-export async function createTask(db: Db, v: V, input: unknown) {
+type CreateOpts = { now?: Date; fetchImpl?: typeof fetch; checked?: boolean };
+
+/**
+ * One approval becomes one task. Every path that creates one comes here, so
+ * the server's checks can't be skipped by calling /api/tasks directly:
+ *  - price:<dish>:<price>  refusePrice (estimated cost, the room's price fence)
+ *  - cut:<date>:<hh:mm>    refuseCut (tonight's live call or plan, the fences)
+ *  - shift:<date>:<meal>:… refuseShift (the staffing call as the data has it
+ *    now, who may approve). The title, steps and evidence come from the
+ *    server's own decision; what the browser sent is ignored.
+ * `checked` is for a caller that has just run the same check (approveCut).
+ */
+export async function createTask(db: Db, v: V, input: unknown, opts: CreateOpts = {}) {
   const p = body.safeParse(input);
   if (!p.success) throw new InputError(`invalid task: ${p.error.issues[0]?.path.join('.')} ${p.error.issues[0]?.message}`);
-  const { roomId, approvalId, title, system, diff } = p.data;
+  const { roomId, approvalId } = p.data;
+  let { title, system, diff } = p.data;
   if (v.rooms && !v.rooms.includes(roomId)) throw new AuthError(403, 'That room is not one of yours.');
   const [room] = await db.select({ id: rooms.id }).from(rooms).where(and(eq(rooms.orgId, v.orgId), eq(rooms.id, roomId)));
   if (!room) throw new InputError(`no room '${roomId}' in this org`);
+  const live = () => db.select().from(tasks).where(and(eq(tasks.orgId, v.orgId), eq(tasks.roomId, roomId), eq(tasks.approvalId, approvalId), inArray(tasks.status, ['open', 'done'])));
+  // A retry, a double tap or a second manager on the same change resolves to the task already there.
+  const [early] = await live();
+  if (early) return early;
+  let evidence: unknown = null;
+  if (/^shift:/.test(approvalId)) {
+    const { refuseShift } = await import('./page/staffing');
+    const ok = await refuseShift(db, v, { roomId, approvalId }, opts);
+    ({ title, system, diff } = ok);
+    evidence = ok.evidence;
+  } else if (/^cut:/.test(approvalId) && !opts.checked) {
+    const m = /^cut:(\d{4}-\d{2}-\d{2}):(\d{2}:\d{2})$/.exec(approvalId);
+    if (!m) throw new InputError('That isn’t a send-home approval.');
+    const { refuseCut } = await import('./page/service');
+    await refuseCut(db, v, { roomId, date: m[1]!, at: m[2]! }, opts);
+  }
   // One open task per approval per room: approving twice, or from two screens at once
   // (the approval sheet and Today both ask), doesn't duplicate the work.
   return db.transaction(async (tx) => {
@@ -66,9 +96,17 @@ export async function createTask(db: Db, v: V, input: unknown) {
     await t.execute(sql`select pg_advisory_xact_lock(hashtext(${`task:${v.orgId}:${roomId}:${approvalId}`}))`);
     const [dup] = await t.select().from(tasks).where(and(eq(tasks.orgId, v.orgId), eq(tasks.roomId, roomId), eq(tasks.approvalId, approvalId), inArray(tasks.status, ['open', 'done'])));
     if (dup) return dup;
+    // One staffing change per service: a second manager approving a different change at the same moment waits here and is refused.
+    const sh = /^shift:(\d{4}-\d{2}-\d{2}):(lunch|dinner):/.exec(approvalId);
+    if (sh) {
+      await t.execute(sql`select pg_advisory_xact_lock(hashtext(${`shift:${v.orgId}:${roomId}:${sh[1]}:${sh[2]}`}))`);
+      const other = (await t.select({ approvalId: tasks.approvalId, title: tasks.title }).from(tasks).where(and(eq(tasks.orgId, v.orgId), eq(tasks.roomId, roomId), inArray(tasks.status, ['open', 'done', 'verified', 'mismatch']))))
+        .find((x) => x.approvalId.startsWith(sh[0]) && x.approvalId !== approvalId);
+      if (other) throw new InputError(`This service already has an approved staffing change: “${other.title}”.`);
+    }
     await refusePrice(t, v.orgId, roomId, approvalId);
-    const [row] = await t.insert(tasks).values({ orgId: v.orgId, roomId, approvalId, title, system, steps: stepsFor(system, diff), expect: expectFor(approvalId), createdBy: v.userId }).returning();
-    await t.insert(auditLog).values({ orgId: v.orgId, userId: v.userId, action: 'task.created', detail: { id: row!.id, roomId, approvalId } });
+    const [row] = await t.insert(tasks).values({ orgId: v.orgId, roomId, approvalId, title, system, steps: stepsFor(system, diff), expect: expectFor(approvalId), createdBy: v.userId, evidence }).returning();
+    await t.insert(auditLog).values({ orgId: v.orgId, userId: v.userId, action: 'task.created', detail: { id: row!.id, roomId, approvalId, ...(evidence ? { evidence: true, version: (evidence as { version?: string }).version } : {}) } });
     return row!;
   });
 }
@@ -104,12 +142,29 @@ const GRACE_DAYS = 7;
  * still doesn't. A verified price change opens a test window on that dish.
  */
 export async function verifyTasks(db: Db, orgId: string) {
-  const open = await db.select().from(tasks).where(and(eq(tasks.orgId, orgId), inArray(tasks.status, ['done', 'mismatch'])));
+  // Open staffing changes are read too: clock-ins can show a change was made before anyone ticks it off.
+  const open = (await db.select().from(tasks).where(and(eq(tasks.orgId, orgId), inArray(tasks.status, ['open', 'done', 'mismatch']))))
+    .filter((t) => t.status !== 'open' || (t.expect as { type?: string } | null)?.type === 'shift');
   if (!open.length) return { checked: 0, verified: [], mismatched: [] };
   const loaded = await loadDataset(db, orgId);
   const verified: string[] = [], mismatched: string[] = [];
   for (const t of open) {
     const room = loaded?.ds.rooms[t.roomId];
+    if ((t.expect as { type?: string } | null)?.type === 'shift') {
+      // A staffing change is confirmed from the clock-ins entered for that shift, as soon as they're in.
+      const outcome = staffingOutcome(t, room);
+      const chk = shiftCheck(t, room);
+      const brief = outcome ? { result: outcome.result, clock: outcome.clock, observed: outcome.observed, guard: outcome.guard, qualified: outcome.qualified, at: new Date().toISOString() } : null;
+      if (!chk) { if (brief) await db.update(tasks).set({ outcome: brief }).where(eq(tasks.id, t.id)); continue; }
+      const status = chk.ok ? 'verified' as const : 'mismatch' as const;
+      if (status === t.status) { await db.update(tasks).set({ outcome: brief, note: chk.note }).where(eq(tasks.id, t.id)); continue; }
+      (chk.ok ? verified : mismatched).push(t.id);
+      await db.update(tasks).set({ status, checkedAt: new Date(), note: chk.note, outcome: brief }).where(eq(tasks.id, t.id));
+      await db.insert(auditLog).values({ orgId, userId: null, action: `task.${chk.ok ? 'verified' : 'mismatch'}`, detail: { id: t.id, from: 'clock-ins' } });
+      await notify(db, { orgId, roomId: t.roomId, kind: chk.ok ? 'task.verified' : 'task.mismatch', severity: chk.ok ? 'good' : 'warn', link: '/today/', dedupe: `task.${status}:${t.id}`,
+        title: chk.ok ? `Clock-ins match: ${t.title}` : `Clock-ins don’t match yet: ${t.title}`, body: chk.note });
+      continue;
+    }
     const ok = checkExpect(t.expect, room);
     if (ok === null) continue;
     const dataEnd = room?.fromToast?.end ? Date.parse(`${room.fromToast.end}T23:59:59Z`) : 0;

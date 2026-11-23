@@ -550,3 +550,13 @@ button.mRow.on { background: var(--accent-subtle); }
 .todayBar .todaySub { font-size: 14px; color: var(--fg-2); }
 .todayGo { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; color: var(--fg-1); white-space: nowrap; }
 @media (max-width: 700px) { .todayBar { grid-template-columns: 40px minmax(0, 1fr); padding: 14px 16px; } .todayGo { display: none; } }
+
+/* The staffing check readiness card, and a staffing link's context in the editor */
+.staffCheck { display: flex; flex-direction: column; gap: 14px; }
+.staffCheckHead { display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.staffCheckText { display: flex; flex-direction: column; gap: 2px; flex: 1 1 260px; }
+.staffCheckText b { font-size: 17px; color: var(--fg-1); }
+.staffCheckText span { font-size: 15px; color: var(--fg-2); }
+.linkCtx { display: flex; gap: 10px; align-items: flex-start; margin: 0 0 12px; padding: 10px 12px; border-radius: 8px; background: color-mix(in srgb, var(--accent) 8%, transparent); font-size: 15px; color: var(--fg-1); }
+.linkCtx svg { flex: none; margin-top: 2px; color: var(--accent-700, var(--accent)); }
+.linkBack { display: flex; margin: 0 0 12px; }

@@ -62,7 +62,7 @@ export function sanitizeSaved(saved, base = SEED) {
       Object.entries(kinds).forEach(([kind, entry]) => {
         if (!KINDS.includes(kind) || !isObj(entry) || !Array.isArray(entry.rows) || !entry.rows.every(isObj)) return;
         inputs[roomId] ??= {};
-        inputs[roomId][kind] = { rows: entry.rows, date: String(entry.date || ''), label: KIND_LABEL[kind], n: entry.rows.length, ...(isObj(entry.opts) ? { opts: entry.opts } : {}) };
+        inputs[roomId][kind] = { rows: entry.rows, date: String(entry.date || ''), ...(typeof entry.at === 'string' && !Number.isNaN(Date.parse(entry.at)) ? { at: entry.at } : {}), label: KIND_LABEL[kind], n: entry.rows.length, ...(isObj(entry.opts) ? { opts: entry.opts } : {}) };
       });
     });
   }
@@ -165,7 +165,7 @@ export const engine = {
   /** Save validated rows for one kind in one room. Replaces that kind's previous entry. */
   commit(kind, roomId, rows, summary, opts) {
     const prev = state.inputs[roomId]?.[kind] || null;
-    const entry = { rows, date: today(), label: KIND_LABEL[kind], n: rows.length, ...(opts ? { opts } : {}) };
+    const entry = { rows, date: today(), at: new Date().toISOString(), label: KIND_LABEL[kind], n: rows.length, ...(opts ? { opts } : {}) };
     const id = `${Date.now().toString(36)}-${kind}`;
     const before = { inputs: state.inputs, log: state.log };
     // Applied at once; on the server the saved copy replaces it, or it's rolled back.
@@ -253,11 +253,16 @@ export const engine = {
     if (state.mode === 'server') {
       return api('/api/tasks', { method: 'POST', body: JSON.stringify(payload) })
         .then((b) => { state = { ...state, tasks: b.tasks }; emit(); return b.task; })
-        .catch((err) => { state = { ...state, notice: `Task not saved: ${err.message}` }; emit(); return null; });
+        .catch((err) => {
+          // A caller that shows the refusal in place (a staffing approval) takes the message; others get the notice.
+          if (typeof a.onError === 'function') a.onError(err.message); else state = { ...state, notice: `Task not saved: ${err.message}` };
+          emit(); return null;
+        });
     }
     const dup = state.tasks.find((t) => t.roomId === roomId && t.approvalId === approvalId && (t.status === 'open' || t.status === 'done'));
     if (dup) return Promise.resolve(dup);
-    const task = { id: `local-${Date.now().toString(36)}`, roomId, approvalId, title: a.title, system: a.system, steps: stepsFor(a.system, payload.diff), expect: expectFor(approvalId), status: 'open', createdAt: new Date().toISOString() };
+    // In this browser only: the evidence a staffing call rested on travels with its task (on the server it's built there, never sent).
+    const task = { id: `local-${Date.now().toString(36)}`, roomId, approvalId, title: a.title, system: a.system, steps: stepsFor(a.system, payload.diff), expect: expectFor(approvalId), status: 'open', createdAt: new Date().toISOString(), ...(a.evidence && typeof a.evidence === 'object' ? { evidence: a.evidence } : {}) };
     state = { ...state, tasks: [task, ...state.tasks] };
     persist(); emit();
     return Promise.resolve(task);
