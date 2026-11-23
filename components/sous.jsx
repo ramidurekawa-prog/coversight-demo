@@ -39,7 +39,7 @@ function useLocalSous(role, page) {
     // What the room has taught Sous: its notebook, and which kinds of change have worked or been set aside.
     const notes = saved['sous.notes'] || [];
     const learned = sousLearned(CV_D, { mem: mem || {}, acts: saved['sous.learn'] || [] });
-    // The day loop: last night, today's plan and every decision still open, read by Day Captain, Shift Pulse and Data Steward.
+    // The day loop: last night, today's plan and every decision still open, read by Day Captain, Floor Captain and Data Steward.
     const day = { tasks: (eng.tasks || []).filter((t) => t.roomId === CV_D.id), assigned: today.view?.assigned || {}, open: today.open, fences: saved.fences ?? null };
     const facts = sousFacts(CV_D, { role, windows: eng.windows || [], card: today.card, open: today.open, noticed, group: CV_GROUP, notes, learned, day });
     const brief = sousBrief(CV_D, { role, facts, noticed, card: today.card, open: today.open });
