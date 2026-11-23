@@ -69,7 +69,7 @@ function Sidebar({ page, role, onNavigate }) {
             </div>
             {g.items.map((id) => {
               const p = CV_PAGES[id];
-              const active = page === id || (id === 'proof' && page === 'packet') || (id === 'plan' && page === 'finding');
+              const active = page === id || (id === 'proof' && page === 'packet') || (id === 'plan' && page === 'finding') || (id === 'portfolio' && page === 'daily');
               return (
                 <Link
                   key={id}
@@ -458,7 +458,8 @@ function AppShell({ children }) {
       return;
     }
     pickRoom(id);
-    if (page === 'portfolio') go('week');
+    // On the Scoreboard, picking one room opens its Day by day tab.
+    if (page === 'portfolio') go('daily');
   };
 
   if (page === 'build') {

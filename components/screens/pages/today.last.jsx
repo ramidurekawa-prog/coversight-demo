@@ -140,7 +140,7 @@ export function Yesterday({ todayIso }) {
           </div>
         </figure>
       </div>
-      <button type="button" className={s.textLink} onClick={() => cv.go('daily')}>Every day and hour in Daily detail<Icon name="ArrowRight" size={13} /></button>
+      <button type="button" className={s.textLink} onClick={() => cv.go('daily')}>Every day and hour on the Scoreboard<Icon name="ArrowRight" size={13} /></button>
     </section>
   );
 }
