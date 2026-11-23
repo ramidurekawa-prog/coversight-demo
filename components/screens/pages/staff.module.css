@@ -1,0 +1,81 @@
+/* Staff: page-only layout. Type, boxes and colors come from Today's style
+   (app/page-style.css) through the screen wrapper. */
+
+.top { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 18px; align-items: stretch; }
+.action { display: flex; flex-direction: column; gap: 12px; }
+.eyebrow { font-size: 13.5px; font-weight: 700; letter-spacing: 0.02em; color: var(--primary); text-transform: uppercase; }
+.actTitle { font-size: 25px; font-weight: 650; line-height: 1.2; letter-spacing: -0.02em; }
+.money { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.btns { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: auto; }
+
+.tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.tile { all: unset; box-sizing: border-box; display: flex; flex-direction: column; gap: 4px; padding: 16px 18px; border-radius: 12px; background: var(--surface); box-shadow: var(--cv-box); cursor: pointer; transition: box-shadow 160ms; }
+.tile:hover { box-shadow: var(--cv-box-hover); }
+.tile:focus-visible { box-shadow: var(--ring); }
+.tile.on { box-shadow: inset 0 0 0 2px var(--cv-selected, var(--primary)), var(--cv-box); }
+.tileNum { font-size: 36px; font-weight: 650; letter-spacing: -0.03em; line-height: 1; display: flex; align-items: center; gap: 10px; font-variant-numeric: tabular-nums; }
+.tileLbl { font-size: 15px; font-weight: 600; }
+.tileSub { font-size: 13.5px; color: var(--fg-2); }
+
+.good { color: var(--money-up); }
+.warn { color: var(--exposure); }
+.bad { color: var(--money-down); }
+.quiet { color: var(--fg-3); }
+
+/* the picture: who sells the most per hour on the same shifts */
+.bars { display: flex; flex-direction: column; gap: 4px; }
+.bar { all: unset; box-sizing: border-box; display: grid; grid-template-columns: 150px minmax(0, 1fr) 92px; align-items: center; gap: 12px; padding: 7px 8px; border-radius: 8px; cursor: pointer; }
+.bar:hover { background: var(--surface-hover); }
+.bar:focus-visible { box-shadow: var(--ring); }
+.barName { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.track { position: relative; height: 18px; }
+.fill { position: absolute; left: 0; top: 2px; bottom: 2px; border-radius: 5px; }
+.fill.star { background: var(--money-up); }
+.fill.solid { background: var(--fg-1); opacity: 0.7; }
+.fill.coach { background: var(--exposure); }
+.fill.closer { background: var(--money-down); }
+.norm { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--fg-1); border-radius: 1px; }
+.normLbl { position: absolute; top: -20px; transform: translateX(-50%); font-size: 12.5px; font-weight: 600; color: var(--fg-2); white-space: nowrap; }
+.barVal { text-align: right; font-weight: 650; font-variant-numeric: tabular-nums; font-size: 15px; }
+
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.notes { display: flex; flex-direction: column; gap: 8px; }
+.note { all: unset; box-sizing: border-box; display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 10px; padding: 10px 10px; border-radius: 10px; cursor: pointer; }
+.note:hover { background: var(--surface-hover); }
+.note:focus-visible { box-shadow: var(--ring); }
+.note b { display: block; font-size: 15.5px; margin-bottom: 2px; }
+.note span { font-size: 14.5px; color: var(--fg-2); line-height: 1.45; }
+.coachBox { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; border-radius: 12px; background: var(--surface-sunken); font-size: 16px; line-height: 1.5; }
+
+/* the matrix */
+.matrixHead { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 14px 18px; }
+.th { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.th:focus-visible { box-shadow: var(--ring); border-radius: 4px; }
+.cell { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cellTop { color: var(--money-up); font-weight: 650; }
+.cellBottom { color: var(--money-down); font-weight: 650; }
+.mark { font-size: 11px; margin-left: 3px; }
+
+/* profile drawer */
+.mrow { display: grid; grid-template-columns: minmax(0, 1fr) 84px; gap: 4px 12px; align-items: center; }
+.mlabel { font-size: 15px; font-weight: 600; }
+.mval { text-align: right; font-weight: 650; font-variant-numeric: tabular-nums; }
+.pct { grid-column: 1 / -1; position: relative; height: 10px; border-radius: 5px; background: linear-gradient(90deg, color-mix(in srgb, var(--money-down) 14%, transparent) 0 33%, var(--surface-sunken) 33% 67%, color-mix(in srgb, var(--money-up) 16%, transparent) 67% 100%); }
+.dot { position: absolute; top: 50%; width: 14px; height: 14px; border-radius: 50%; transform: translate(-50%, -50%); background: var(--fg-1); box-shadow: 0 0 0 2px var(--surface); }
+.msub { grid-column: 1 / -1; font-size: 13px; color: var(--fg-2); margin-top: -2px; }
+.mix { display: flex; height: 26px; border-radius: 8px; overflow: hidden; }
+.mix span { display: flex; align-items: center; justify-content: center; font-size: 12.5px; font-weight: 600; color: var(--surface); white-space: nowrap; overflow: hidden; }
+.list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 15px; line-height: 1.45; }
+.entry { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: 8px; background: var(--surface-sunken); font-size: 14.5px; }
+.form { display: flex; flex-direction: column; gap: 8px; }
+.kinds { display: flex; gap: 6px; flex-wrap: wrap; }
+
+@media (max-width: 1100px) {
+  .top, .two { grid-template-columns: 1fr; }
+}
+@media (max-width: 760px) {
+  .bar { grid-template-columns: 104px minmax(0, 1fr) 62px; gap: 8px; }
+  .barName { font-size: 14px; }
+  .tileNum { font-size: 30px; }
+  .actTitle { font-size: 22px; }
+}
