@@ -33,6 +33,7 @@ import { CvService } from './screens/pages/service';
 import { CvSources } from './screens/pages/sources';
 import { CvStaff } from './screens/pages/staff';
 import { CvStart } from './screens/pages/start';
+import { CvMessages } from './screens/pages/messages';
 import { CvSystem } from './screens/pages/system';
 import { CvTeam } from './screens/pages/team';
 import { CvThroughput } from './screens/pages/throughput';
@@ -73,6 +74,7 @@ export const SCREENS = {
   accountant: CvAccountant,
   billing: CvBilling,
   start: CvStart,
+  messages: CvMessages,
   comparison: CvComparison,
   sources: CvSources,
   connect: CvConnect,

@@ -51,7 +51,7 @@ describe('notifications', () => {
     await runProofLoop(db, orgId, new Date('2026-11-23T12:00:00Z'));
     const { items } = await listNotifications(db, { orgId, ...owner });
     expect(items[0]!.kind).toBe('window.verified');
-    expect(items[0]!.title).toMatch(/^Verified: Overtime/);
+    expect(items[0]!.title).toMatch(/^It worked: Overtime/);
     const mail = await db.select().from(outbox).where(eq(outbox.orgId, orgId));
     expect(mail).toHaveLength(1);
     expect(mail[0]!.toAddress).toBe('owner@example.com');

@@ -180,9 +180,9 @@ export async function runProofLoop(db: Db, orgId: string, now = new Date()) {
       const dollars = `$${Math.round(st.bookedCents / 100).toLocaleString('en-US')}`;
       await notify(db, {
         orgId, roomId: w.roomId, kind: `window.${st.status}`, severity: st.status === 'verified' ? 'good' : 'warn', link: '/windows/', dedupe: `window.${st.status}:${w.id}`,
-        title: st.status === 'verified' ? `Verified: ${w.title}, ${dollars} a week` : `Not proven: ${w.title}`,
+        title: st.status === 'verified' ? `It worked: ${w.title}, ${dollars} a week, verified` : `Not proven: ${w.title}`,
         body: st.status === 'verified'
-          ? `The 28-day test closed. Coversight books ${dollars} a week, the cautious end of what the data shows, and keeps checking the guardrails every week.`
+          ? `The 28-day test closed and the change held. Coversight books ${dollars} a week, the low end of what it measured${st.effect.method === 'diff_in_diff' ? ', after taking out what your other locations moved' : ''}. It keeps checking the guardrails every week and tells you if it slips.`
           : 'The 28-day test closed without a move big and steady enough to count. Nothing is booked. You can keep the change or undo it.',
       });
     } else if (st.status === 'waiting' && w.status !== 'waiting' && !st.waitingOn.includes('feed')) {
