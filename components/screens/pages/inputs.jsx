@@ -20,6 +20,10 @@ import { AddPanel, CapabilityPanel, KindPanel, LinkPanel, ReadinessPanel, Sample
 import { undoEntry, useHistory, useLinks } from './inputs-data';
 import { templateRows } from '../../../lib/data/ingest';
 import { useTodayTheme } from './today.themes';
+import { StaffingReadiness, useStaffingInputs } from '../staffing';
+import { shortDate, staffingDecision, staffingSources } from '../../../lib/data/page/staffing';
+import { readAttempts } from '../attempts';
+import { localNow } from '../../../lib/data/page/service';
 import s from './inputs.module.css';
 
 /* Add & Manage Data. Outcome and action first: is the data working, what
@@ -48,6 +52,14 @@ function CvInputs() {
   // Coverage needs who made each room's current entry; Recent activity keeps its own filtered list.
   const roomHistory = useHistory({ server, roomId: CV_D.id, kind: null });
 
+  // A staffing link (?date=&meal=&back=) opens the schedule or history editor for that service, and shows the way back.
+  const [ctx, setCtx] = React.useState(/** @type {{ date: string, meal: 'lunch'|'dinner', back: string|null, today: string }|null} */ (null));
+  const staffToday = () => localNow(new Date(), CV_D.room.tz).date;
+  React.useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    const d = p.get('date'); const m = p.get('meal'); const b = p.get('back');
+    if (/^\d{4}-\d{2}-\d{2}$/.test(d || '') && (m === 'lunch' || m === 'dinner')) setCtx({ date: d, meal: m, back: b === 'today' || b === 'service' ? b : null, today: staffToday() });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   React.useEffect(() => {
     const read = () => { const h = window.location.hash.slice(1); if (KINDS.includes(h)) { setKind(h); setEditing(true); } };
     read();
@@ -127,6 +139,8 @@ function CvInputs() {
         <span className={s.todayGo}>Enter<Icon name="ChevronRight" size={16} /></span>
       </button>
 
+      <StaffingCheck ctx={ctx} onFix={(f) => { setCtx((c) => ({ date: f.date, meal: f.meal, back: c?.back ?? null, today: staffToday() })); open(f.kind, 'grid'); }} />
+
       <AddWays over={dragging} onFiles={(f) => add('file', f)} onPhoto={(f) => add('scan', f)}
         onWay={(id) => (id === 'connect' ? router.push('/connect') : add(id === 'link' ? 'connect' : id === 'type' ? 'manual' : 'paste'))} />
 
@@ -162,7 +176,8 @@ function CvInputs() {
       )}
       {editing && !quick && (
         <SidePanel workspace over={CV_ROOM.short} title={seed ? 'Import a file' : 'Manage data'} onClose={closeEditor}>
-          <Editor key={`${CV_D.id}-${kind}-${seed?.id ?? ''}-${startMode ?? ''}`} kind={kind} seed={seed?.kind === kind ? seed : null} startMode={startMode}
+          <Editor key={`${CV_D.id}-${kind}-${seed?.id ?? ''}-${startMode ?? ''}-${ctx?.date ?? ''}`} kind={kind} seed={seed?.kind === kind ? seed : null} startMode={startMode}
+            context={ctx && (kind === 'shifts' || kind === 'services') ? ctx : null}
             lastEntry={lastFor(kind)} onUndo={undoLast} onHistory={(k) => { closeEditor(); setHistKind(k); setPanel({ type: 'hist' }); }} />
         </SidePanel>
       )}
@@ -184,5 +199,61 @@ function CvInputs() {
     </div>
   );
 }
+
+/**
+ * "Ready for the staffing check?": what the next service's pre-shift call
+ * needs (the same list Today and Service evaluate), each item with the
+ * input that fixes it. A link names the service; otherwise it's the next one
+ * still ahead today, else tomorrow's dinner.
+ */
+function StaffingCheck({ ctx, onFix }) {
+  const cv = useCv();
+  const x = useStaffingInputs();
+  const next = ctx ? { date: ctx.date, meal: ctx.meal }
+    : x.nowMin < 11 * 60 - 30 ? { date: x.today, meal: 'lunch' }
+      : x.nowMin < 17 * 60 - 30 ? { date: x.today, meal: 'dinner' }
+        : { date: new Date(Date.parse(`${x.today}T12:00:00Z`) + 864e5).toISOString().slice(0, 10), meal: 'dinner' };
+  const dec = React.useMemo(() => staffingDecision(x.room, { ...x, date: next.date, meal: next.meal }), [x.room, x.fences, x.cc, x.tasks, x.entries, x.adjust, x.today, x.nowMin, next.date, next.meal]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Attempts live in this browser: read after the first paint, so the server's HTML matches.
+  const [attempts, setAttempts] = React.useState(/** @type {any} */ (undefined));
+  React.useEffect(() => { setAttempts(readAttempts(CV_D.id)); }, [x.entries]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!dec?.readiness) return null;
+  const r = dec.readiness;
+  const sources = staffingSources(x.room, { date: next.date, meal: next.meal, entries: x.entries, readiness: r, attempts });
+  const need = r.items.filter((i) => i.need === 'required' && i.state !== 'ready').length;
+  const label = `${next.meal === 'lunch' ? 'lunch' : 'dinner'} · ${shortDate(next.date)}`;
+  return (
+    <section className={`cv-card ${s.staffCheck}`} aria-labelledby="staff-check-h">
+      <div className={s.staffCheckHead}>
+        <span className="cv-q-ico"><Icon name="CalendarClock" size={20} /></span>
+        <span className={s.staffCheckText}>
+          <b id="staff-check-h">{need ? `${need} thing${need === 1 ? '' : 's'} before the staffing check for ${label}` : `Ready for the staffing check: ${label}`}</b>
+          <span>{need ? 'Coversight compares the schedule with what each hour needs. It holds back until these are in.' : dec.state === 'act' ? `There’s a change to look at: ${dec.short}.` : dec.state === 'hold' ? 'No change needed. The schedule fits the forecast.' : dec.title}</span>
+        </span>
+        {ctx?.back && !need && <Button size="sm" icon="ArrowLeft" onClick={() => cv.go(ctx.back, { date: next.date, meal: next.meal, ...(ctx.back === 'today' ? { card: dec.id } : {}) })}>Back to the decision</Button>}
+        {!ctx?.back && !need && dec.state === 'act' && <Button size="sm" variant="secondary" iconRight="ArrowRight" onClick={() => cv.go('service', { date: next.date, meal: next.meal, back: 'inputs' })}>Open in Service</Button>}
+      </div>
+      <ul className={s.sources} aria-label="The data this check runs on">
+        {sources.map((src) => (
+          <li key={src.kind} className={`${s.source} ${src.failed ? s.sourceFailed : ''}`}>
+            <span className={s.sourceHead}>
+              <b>{src.title}</b>
+              <span className={`${s.sourceState} ${s[`ss_${src.failed ? 'failed' : src.state}`] || ''}`}>{src.failed ? 'Last save failed' : STATE_WORD[src.state] || src.state}</span>
+            </span>
+            <span className={s.sourceMeta}>
+              {src.source}{src.room ? ` · ${src.room}` : ''}{src.period ? ` · ${src.period}` : ''}
+              {src.lastGood ? ` · last good ${src.lastGood.when}, ${src.lastGood.rows} row${src.lastGood.rows === 1 ? '' : 's'}` : ''}
+            </span>
+            {src.attempt && <span className={s.sourceMeta}>Latest attempt {src.attempt.when}: {src.attempt.ok ? 'saved' : `didn’t save${src.attempt.error ? ` (${src.attempt.error})` : ''}. ${src.lastGood ? 'The last good data is still the one in use.' : 'Nothing was changed.'}`}</span>}
+            {src.blocks && <span className={s.sourceBlocks}><Icon name="Lock" size={12} />{src.blocks}</span>}
+            {src.fix && <button type="button" className={s.sourceFix} onClick={() => onFix(src.fix)}>{src.fix.label}<Icon name="ArrowRight" size={13} /></button>}
+          </li>
+        ))}
+      </ul>
+      <StaffingReadiness readiness={{ ...r, items: r.items.filter((i) => i.key !== 'schedule' && i.key !== 'history') }} onFix={onFix} />
+    </section>
+  );
+}
+const STATE_WORD = { ready: 'Ready', limited: 'Limited', stale: 'Out of date', missing: 'Missing', later: 'After the shift' };
 
 export { CvInputs };

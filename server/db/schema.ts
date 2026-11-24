@@ -278,6 +278,10 @@ export const tasks = pgTable(
     createdAt: at('created_at').notNull().defaultNow(),
     doneAt: at('done_at'),
     checkedAt: at('checked_at'),
+    /** What the recommendation rested on when it was approved (forecast, schedule, guardrails, estimate), built on the server. Null for tasks that predate it. */
+    evidence: jsonb('evidence'),
+    /** What the data later showed (clock-ins, observed difference, guardrail result). Null until there is something to show. */
+    outcome: jsonb('outcome'),
   },
   (t) => [index('tasks_org_status_idx').on(t.orgId, t.status)],
 );

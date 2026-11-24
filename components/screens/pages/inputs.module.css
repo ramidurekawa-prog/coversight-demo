@@ -550,3 +550,34 @@ button.mRow.on { background: var(--accent-subtle); }
 .todayBar .todaySub { font-size: 14px; color: var(--fg-2); }
 .todayGo { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; color: var(--fg-1); white-space: nowrap; }
 @media (max-width: 700px) { .todayBar { grid-template-columns: 40px minmax(0, 1fr); padding: 14px 16px; } .todayGo { display: none; } }
+
+/* The staffing check readiness card, and a staffing link's context in the editor */
+.staffCheck { display: flex; flex-direction: column; gap: 14px; }
+.staffCheckHead { display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.staffCheckText { display: flex; flex-direction: column; gap: 2px; flex: 1 1 260px; }
+.staffCheckText b { font-size: 17px; color: var(--fg-1); }
+.staffCheckText span { font-size: 15px; color: var(--fg-2); }
+.linkCtx { display: flex; gap: 10px; align-items: flex-start; margin: 0 0 12px; padding: 10px 12px; border-radius: 8px; background: color-mix(in srgb, var(--accent) 8%, transparent); font-size: 15px; color: var(--fg-1); }
+.linkCtx svg { flex: none; margin-top: 2px; color: var(--accent-700, var(--accent)); }
+.linkBack { display: flex; margin: 0 0 12px; }
+
+/* Filter the grid to the rows that need a fix (borrowed from Flatfile's review). */
+.fixOnly { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; color: var(--fg-1); margin: 4px 0; cursor: pointer; }
+
+/* The two inputs the staffing check runs on, as status rows (a pipeline's connection status, for hand entry). */
+.sources { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.source { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--border, rgba(0,0,0,.1)); background: var(--surface, #fff); }
+.sourceFailed { border-color: color-mix(in srgb, var(--error-600, #dc2626) 50%, transparent); }
+.sourceHead { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: 16px; }
+.sourceState { font-size: 13px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--surface-sunken, rgba(0,0,0,.05)); color: var(--fg-2); }
+.ss_ready { background: color-mix(in srgb, var(--success-600, #16a34a) 14%, transparent); color: var(--success-700, #15803d); }
+.ss_limited, .ss_stale { background: color-mix(in srgb, var(--warning-600, #d97706) 14%, transparent); color: var(--warning-700, #b45309); }
+.ss_missing, .ss_failed { background: color-mix(in srgb, var(--error-600, #dc2626) 12%, transparent); color: var(--error-600, #dc2626); }
+.sourceMeta { font-size: 14px; color: var(--fg-2); }
+.sourceBlocks { display: inline-flex; gap: 5px; align-items: center; font-size: 14px; font-weight: 600; color: var(--fg-1); }
+.sourceFix { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; border: 0; background: none; padding: 4px 0; font: inherit; font-size: 14px; font-weight: 600; color: var(--accent-700, var(--accent)); cursor: pointer; }
+/* A save that didn't go through: the rows stay, with a retry. */
+.saveFail { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; padding: 10px 12px; border-radius: 8px; background: color-mix(in srgb, var(--error-600, #dc2626) 8%, transparent); font-size: 15px; }
+.saveFail svg { flex: none; color: var(--error-600, #dc2626); }
+.draftNote { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; padding: 10px 12px; border-radius: 8px; background: var(--surface-sunken, rgba(0,0,0,.04)); font-size: 15px; }
+.progress { display: inline-flex; align-items: center; gap: 6px; }

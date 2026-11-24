@@ -12,6 +12,7 @@ import { dayLabel, shortMoney } from './today.last';
 import { MAX_METRICS, METRICS, SCENARIOS, WIDGETS } from './today.layout';
 import { FONTS, THEMES, tokensFor } from './today.themes';
 import { AgeBar, HoursBar, MarkBar, PaceCurve, RefundBars, Spark, StaffBar } from './today.viz';
+import { StaffingHours } from '../staffing';
 import s from './today.module.css';
 
 const money = (v) => cvMoney(Math.round(v));
@@ -382,6 +383,13 @@ export function evidenceFor(q, d, sv) {
  * schedule against what's needed, and says so when the schedule is behind.
  */
 export function frameFor(q, d, sv, trust = {}) {
+  // A pre-shift staffing call: its own hours chart, from the schedule against the forecast's need.
+  if (q.staffing && q.staffing.hoursRows && q.staffing.state === 'act') {
+    const st = q.staffing;
+    const day = new Date(`${st.date}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
+    const context = [st.room && { icon: 'MapPin', text: st.room }, { icon: 'CalendarClock', text: `${st.label}, ${day}` }, { icon: 'UserCheck', text: `${st.approvers || 'The GM or the owner'} approves` }].filter(Boolean);
+    return { problem: q.title, why: st.why, fix: st.short, viz: <StaffingHours dec={st} compact />, context };
+  }
   const plan = d.room?.labour?.tue;
   const first = (q.body || '').split(/(?<=\.)\s/)[0];
   if (sv && plan && q.approval && q.approval === sv.approval) {
@@ -414,6 +422,7 @@ export function frameFor(q, d, sv, trust = {}) {
 
 /** When to act, as plainly as the data allows: "Review before 8 pm · 45 min left". */
 export function dueFor(q, trust) {
+  if (q.due) return q.due;
   if (trust?.before && trust.minsLeft != null) {
     return trust.minsLeft > 0 ? `Review before ${trust.before} · ${trust.minsLeft} min left` : `Past ${trust.before}`;
   }
@@ -438,6 +447,7 @@ export function ActionCard({ q, cards, frame, trust, label, busy, due, onPrimary
         </div>
         <h3 id={`a-${q.id}`} className={s.actionTitle}>{frame.problem}</h3>
         {frame.why && <p className={s.actionWhy}>{frame.why}</p>}
+        {frame.context && <p className={s.actionContext}>{frame.context.map((c) => <span key={c.icon}><Icon name={c.icon} size={13} />{c.text}</span>)}</p>}
         {frame.viz && <div className={s.actionViz}>{frame.viz}</div>}
       </div>
       <div className={s.actionSide}>
@@ -451,7 +461,18 @@ export function ActionCard({ q, cards, frame, trust, label, busy, due, onPrimary
 }
 
 /** A compact card: icon, title, the money; the whole thing opens its details. */
-export function IssueRow({ q, cards, onOpen }) {
+/** Who can act on a row, in two or three words. */
+function actorOf(q) {
+  if (q.blocked) return null;
+  if (q.approval) return 'GM or owner approves';
+  if (q.task) return `In ${q.task.system}`;
+  if (q.kind === 'data' || q.go === 'inputs') return 'Anyone';
+  return null;
+}
+
+export function IssueRow({ q, cards, onOpen, waitingOn = null }) {
+  const due = q.due || (q.deadline === 'today' ? 'Today' : q.deadline ? `Due ${q.deadline}` : null);
+  const who = actorOf(q);
   return (
     <li>
       <button type="button" className={`${s.row} ${q.blocked ? s.rowBlocked : ''}`} onClick={onOpen} aria-haspopup="dialog">
@@ -459,7 +480,8 @@ export function IssueRow({ q, cards, onOpen }) {
         <span className={s.rowText}>
           <span className={s.rowTitle}>{q.title}</span>
           {q.affects && !q.blocked && <span className={s.rowSub}>{q.affects}</span>}
-          {q.blocked ? <StateChip k="waiting" /> : q.deadline === 'today' ? <span className={s.rowDue}><Icon name="Clock" size={12} />Today</span> : null}
+          {q.blocked ? (waitingOn ? <span className={s.rowSub}>Waiting on: {waitingOn}</span> : <StateChip k="waiting" />)
+            : (due || who) ? <span className={s.rowMeta}>{due && <span className={s.rowDue}><Icon name="Clock" size={12} />{due}</span>}{who && <span className={s.rowWho}><Icon name="UserCheck" size={12} />{who}</span>}</span> : null}
         </span>
         <span className={s.rowEnd}>
           <Worth q={q} cards={cards} />
