@@ -10,6 +10,7 @@ import { DenseWeek } from '../dense-sections';
 import { TestTrack, WeekBars } from './week-charts';
 import { useTodayTheme } from './today.themes';
 import './today.module.css';
+import { HowWeKnow } from '../touches';
 import s from './week.module.css';
 
 /* This week: your week in review, mostly as pictures. Big numbers first,
@@ -392,7 +393,41 @@ function StepWhy({ v, comparator, setComparator }) {
   return (
     <Step n={1} id="week-why" kicker="How the week went" title={title}
       sub={dec ? `Your three numbers against ${vsPhrase(v.comparator)}. Tap a fix to add it to your plan; amounts are potential until tested.` : 'This fills in once there’s an earlier week of your own data.'}>
+      {v.prime && (
+        <div className={`${s.prime} ${v.prime.good ? s.primeGood : s.primeBad}`}>
+          <span className={s.primeLbl}>Prime cost<small>food plus labor, out of every sales dollar</small></span>
+          <span className={s.primeNum}>{(v.prime.now * 100).toFixed(1)}%</span>
+          <span className={s.primeSub}>
+            <Icon name={v.prime.good ? 'TrendingDown' : 'TrendingUp'} size={16} />
+            {Math.abs(v.prime.points) < 0.05 ? `Same as ${vsPhrase(v.comparator)}` : `${Math.abs(v.prime.points).toFixed(1)} points ${v.prime.good ? 'better' : 'worse'} than ${vsPhrase(v.comparator)}`}
+          </span>
+          <span className={s.primeEq}>{usd(v.prime.food)} food + {usd(v.prime.labour)} labor, of {usd(v.prime.net)} in sales</span>
+          <Claim k={v.contribution.claim} />
+        </div>
+      )}
+      {v.calendar && !v.calendar.fair && (
+        <div className={s.calNote} role="note">
+          <Icon name="CalendarDays" size={16} />
+          <span>
+            {v.calendar.now.length ? `This week includes ${v.calendar.now.join(' and ')}. The weeks it is compared with are ordinary weeks.` : `The weeks this one is compared with include ${v.calendar.then.join(' and ')}. This week has no holiday.`} Read the comparison with care.
+          </span>
+          {v.calendar.suggest && <button type="button" className={s.linkBtn} onClick={() => setComparator(v.calendar.suggest)}>Compare with the same week last year</button>}
+        </div>
+      )}
       {v.score && <Scorecard score={v.score} vs={vsPhrase(v.comparator)} />}
+      {v.industry?.length > 0 && (
+        <div className={s.industry} aria-label="Industry numbers for this week">
+          {v.industry.map((n) => (
+            <div key={n.key} className={`${s.indTile} ${n.good === true ? s.indGood : n.good === false ? s.indBad : ''}`}>
+              <span className={s.indLbl}>{n.label}</span>
+              <span className={s.indNum}>{n.unit === 'pct' ? `${(n.value * 100).toFixed(1)}%` : cvMoney(n.value, { cents: true })}</span>
+              <span className={s.indPlain}>{n.plain}</span>
+              {n.then != null && <span className={s.indThen}>{(n.then * 100).toFixed(1)}% in {vsPhrase(v.comparator)}</span>}
+              <Claim k={n.claim} />
+            </div>
+          ))}
+        </div>
+      )}
       {dec && (
         <div className={`${s.result} ${ch >= 0 ? s.resultGood : s.resultBad}`}>
           <span>Together you kept <b><Money id="earned-week">{usd(c.value)}</Money></b> after food and labor</span>
@@ -533,6 +568,7 @@ function StepResults({ v }) {
           <Claim k="book" />
           <div><span className={s.heroLbl}>This week</span><span className={s.trioNum}>{m(b.accrued)}</span></div>
           <div><span className={s.heroLbl}>To date</span><span className={s.trioNum}><Fig id="to-date" show={sample}>{m(b.toDate)}</Fig></span></div>
+          {sample && lead && <HowWeKnow proof={CV_D.proofs.find((p) => p.id === lead.id)} />}
         </div>
         <div className={s.list}>
           {tests.length === 0 && <span className="cv-small cv-muted">No tests running. Commit an action in step 2, then test it.</span>}

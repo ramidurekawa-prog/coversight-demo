@@ -15,6 +15,7 @@ import {
 import { useCv, cvMoney, cvApproval, CV_D, CV_GROUP, CV_NOW, CV_ROOM, Claim } from '../core';
 import { useDense } from '../dense-ui';
 import { useTodayTheme } from './today.themes';
+import { ScheduleGrade } from '../touches';
 import s from './labour.module.css';
 
 /* ================================================================ Labor
@@ -687,6 +688,7 @@ function CvLabour() {
         </div>
         {!svc ? <Empty title={`No hour-by-hour staffing for ${dayName(sel.day)}`} text="Daily totals can’t show how many servers each hour needs. Add servers on the floor and covers by the hour." cta="Add labor data" on={() => setOpen({ kind: 'data' })} /> : (
           <>
+            <ScheduleGrade day={{ sched: svc.hours.map((h) => h.sched), need: svc.hours.map((h) => h.need) }} />
             <CoverageChart svc={svc} sel={hourSel} onSel={setHourSel} />
             <ChartKey />
             <div className={s.cardFoot}>

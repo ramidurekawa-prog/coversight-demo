@@ -13,6 +13,7 @@ import { MAX_METRICS, METRICS, SCENARIOS, WIDGETS } from './today.layout';
 import { FONTS, THEMES, tokensFor } from './today.themes';
 import { AgeBar, HoursBar, MarkBar, PaceCurve, RefundBars, Spark, StaffBar } from './today.viz';
 import { StaffingHours } from '../staffing';
+import { SpottedBy } from '../touches';
 import s from './today.module.css';
 
 const money = (v) => cvMoney(Math.round(v));
@@ -444,6 +445,7 @@ export function ActionCard({ q, cards, frame, trust, label, busy, due, onPrimary
         <div className={s.actionTop}>
           <StateChip k={one} label={one === 'delayed' ? 'Data delayed' : undefined} />
           {due && <span className={s.actionDue}><Icon name="Clock" size={13} />{due}</span>}
+          <SpottedBy style={{ marginLeft: 'auto' }} />
         </div>
         <h3 id={`a-${q.id}`} className={s.actionTitle}>{frame.problem}</h3>
         {frame.why && <p className={s.actionWhy}>{frame.why}</p>}

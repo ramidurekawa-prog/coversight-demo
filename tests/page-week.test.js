@@ -4,7 +4,7 @@ import { SEED } from '../lib/data/seed.js';
 import { deriveGroup, deriveRoom, choosePlan, money as cvMoney } from '../lib/data/model.js';
 import { densify } from '../lib/data/dense.js';
 import {
-  awaitingData, bankedFromWindows, blockedReason, buildCommit, comparators, decompose, planState, setItemStatus,
+  awaitingData, bankedFromWindows, blockedReason, buildCommit, calendarCheck, comparators, decompose, holidaysIn, industryNumbers, planState, primeCost, setItemStatus,
   trimReviews, weekDigest, weekOf, weekView, REVIEW_KEEP,
 } from '../lib/data/page/week.js';
 
@@ -239,6 +239,53 @@ describe('the digest and the review record', () => {
     expect(Object.keys(kept)).toHaveLength(REVIEW_KEEP);
     expect(Object.keys(kept)).toContain('2026-10-22');
     expect(Object.keys(kept)).not.toContain('2026-01-01');
+  });
+});
+
+describe('prime cost', () => {
+  it('is food plus labor over sales for both weeks, and lower is better', () => {
+    const p = primeCost(decompose({ net: 1000, covers: 40, food: 300, labour: 280, earned: 420 }, { net: 900, covers: 38, food: 290, labour: 270, earned: 340 }));
+    expect(p.now).toBeCloseTo(0.58, 10);
+    expect(p.then).toBeCloseTo(560 / 900, 10);
+    expect(p.points).toBeCloseTo((0.58 - 560 / 900) * 100, 10);
+    expect(p.good).toBe(true);
+  });
+  it('is left out when there is nothing to compare or no sales', () => {
+    expect(primeCost(null)).toBeNull();
+    expect(primeCost(decompose({ net: 0, covers: 0, food: 0, labour: 0, earned: 0 }, { net: 900, covers: 38, food: 290, labour: 270, earned: 340 }))).toBeNull();
+  });
+});
+
+describe('industry numbers', () => {
+  const d = { week: { net: 40000, food: 12000, labour: 11000, exceptions: 800 }, room: { staff: [{ hours: 300, rate: 20 }, { hours: 100, rate: 25 }] }, usage: { rows: [{ theo: 100, actual: 110, cost: 5 }, { theo: 0, actual: 3, cost: 2 }] } };
+  it('come from the week figures, with nothing guessed', () => {
+    const n = Object.fromEntries(industryNumbers(d, null).map((x) => [x.key, x]));
+    expect(n.food.value).toBeCloseTo(0.3, 10);
+    expect(n.labour.value).toBeCloseTo(0.275, 10);
+    expect(n.splh.value).toBeCloseTo(100, 10);
+    expect(n.exc.value).toBeCloseTo(0.02, 10);
+    expect(n.avt.value).toBeCloseTo(0.1, 10);
+    expect(n.avt.good).toBe(false);
+  });
+  it('leave out what a real room has not measured', () => {
+    const keys = industryNumbers(d, null, { real: true, labourMeasured: false, ownExceptions: false }).map((x) => x.key);
+    expect(keys).not.toContain('splh');
+    expect(keys).not.toContain('exc');
+    expect(industryNumbers({ week: { net: 0 } }, null)).toEqual([]);
+  });
+});
+
+describe('holiday weeks', () => {
+  it('names the holidays inside a week', () => {
+    expect(holidaysIn('2026-11-23')).toEqual(['Thanksgiving Eve', 'Thanksgiving', 'Black Friday']);
+    expect(holidaysIn('2026-10-19')).toEqual([]);
+  });
+  it('flags a comparison with a holiday on one side only, and offers the same week last year', () => {
+    const comps = [{ id: 'prior', available: true }];
+    expect(calendarCheck('2026-11-23', { id: 'avg4', weeks: ['2026-11-02', '2026-11-09'] }, comps)).toMatchObject({ fair: false, suggest: 'prior' });
+    expect(calendarCheck('2026-10-19', { id: 'avg4', weeks: ['2026-10-05', '2026-10-12'] }, comps)).toMatchObject({ fair: true, suggest: null });
+    expect(calendarCheck('2026-11-23', { id: 'prior', weeks: ['2025-11-24'] }, comps)).toMatchObject({ fair: true, suggest: null });
+    expect(calendarCheck('2026-10-19', { id: 'matched', weeks: ['2025-10-13', '2025-10-20', '2025-10-27', '2026-09-14', '2026-09-21', '2026-09-28'] }, comps).fair).toBe(true); // one holiday week in six is not a warning
   });
 });
 

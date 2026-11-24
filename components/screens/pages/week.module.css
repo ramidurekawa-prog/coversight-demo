@@ -405,3 +405,24 @@
 @media (max-width: 860px) {
   .score { grid-template-columns: minmax(0, 1fr); gap: 10px; }
 }
+
+/* Prime cost: the one number operators run on, above the three it is made of. */
+.prime { display: flex; align-items: center; gap: 6px 18px; flex-wrap: wrap; padding: 14px 18px; margin-bottom: 14px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); }
+.primeLbl { display: flex; flex-direction: column; font-weight: 700; font-size: 16px; color: var(--fg-1); }
+.primeLbl small { font-weight: 500; font-size: 13px; color: var(--fg-3); }
+.primeNum { font-size: 36px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+.primeSub { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: 15px; }
+.primeGood .primeNum, .primeGood .primeSub { color: var(--success-700, var(--success-600)); }
+.primeBad .primeNum, .primeBad .primeSub { color: var(--error-600); }
+.primeEq { margin-left: auto; font-size: 14px; color: var(--fg-2); font-variant-numeric: tabular-nums; }
+@media (max-width: 720px) { .primeEq { margin-left: 0; width: 100%; } .primeNum { font-size: 30px; } }
+
+/* The numbers operators already use, small, under the three tiles. */
+.industry { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin: 14px 0; }
+.indTile { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); }
+.indLbl { font-size: 13px; font-weight: 700; color: var(--fg-2); }
+.indNum { font-size: 24px; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; color: var(--fg-1); }
+.indGood .indNum { color: var(--success-700, var(--success-600)); }
+.indBad .indNum { color: var(--error-600); }
+.indPlain, .indThen { font-size: 12.5px; line-height: 1.35; color: var(--fg-3); }
+.calNote { display: flex; align-items: center; gap: 8px 10px; flex-wrap: wrap; padding: 10px 14px; margin-bottom: 14px; border-radius: 10px; font-size: 14.5px; color: var(--fg-1); background: var(--warning-50, var(--surface-sunken)); border: 1px solid var(--warning-200, var(--border)); }

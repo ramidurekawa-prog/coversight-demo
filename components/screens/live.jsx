@@ -92,7 +92,7 @@ function JobsPanel() {
             <span className="cv-over">Email outbox</span>
             <Pill tone={out.provider ? 'good' : 'warn'} icon="Mail">{out.provider ? 'Sending through Resend' : 'No email provider yet: kept, not sent'}</Pill>
           </div>
-          {out.outbox.length === 0 ? <span className="cv-small cv-muted">No emails yet. Alerts email only rooms whose Fences &amp; alerts have email on.</span> : (
+          {out.outbox.length === 0 ? <span className="cv-small cv-muted">No emails yet. Alerts email only rooms whose Limits &amp; alerts have email on.</span> : (
             <div className="cv-tablewrap"><table className="cv-table">
               <thead><tr><th>When</th><th>To</th><th>Subject</th><th>Status</th></tr></thead>
               <tbody>{out.outbox.slice(0, 15).map((m) => (

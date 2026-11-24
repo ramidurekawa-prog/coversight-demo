@@ -30,7 +30,7 @@ function CvFences() {
   );
   return (
     <div className="cv-page">
-      <PageHead over={`Fences & alerts · ${CV_ROOM.name}`} q="What may the system do without asking, and when does it speak up?"
+      <PageHead over={`Limits & alerts · ${CV_ROOM.name}`} q="What may the system do without asking, and when does it speak up?"
         sub="Fences are hard limits. Every draft and every automated change is checked against them, and a breach drops that lever back to recommending." />
       <div className="cv-grid g2">
         <section className="cv-card">
