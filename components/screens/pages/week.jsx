@@ -392,6 +392,18 @@ function StepWhy({ v, comparator, setComparator }) {
   return (
     <Step n={1} id="week-why" kicker="How the week went" title={title}
       sub={dec ? `Your three numbers against ${vsPhrase(v.comparator)}. Tap a fix to add it to your plan; amounts are potential until tested.` : 'This fills in once there’s an earlier week of your own data.'}>
+      {v.prime && (
+        <div className={`${s.prime} ${v.prime.good ? s.primeGood : s.primeBad}`}>
+          <span className={s.primeLbl}>Prime cost<small>food plus labor, out of every sales dollar</small></span>
+          <span className={s.primeNum}>{(v.prime.now * 100).toFixed(1)}%</span>
+          <span className={s.primeSub}>
+            <Icon name={v.prime.good ? 'TrendingDown' : 'TrendingUp'} size={16} />
+            {Math.abs(v.prime.points) < 0.05 ? `Same as ${vsPhrase(v.comparator)}` : `${Math.abs(v.prime.points).toFixed(1)} points ${v.prime.good ? 'better' : 'worse'} than ${vsPhrase(v.comparator)}`}
+          </span>
+          <span className={s.primeEq}>{usd(v.prime.food)} food + {usd(v.prime.labour)} labor, of {usd(v.prime.net)} in sales</span>
+          <Claim k={v.contribution.claim} />
+        </div>
+      )}
       {v.score && <Scorecard score={v.score} vs={vsPhrase(v.comparator)} />}
       {dec && (
         <div className={`${s.result} ${ch >= 0 ? s.resultGood : s.resultBad}`}>

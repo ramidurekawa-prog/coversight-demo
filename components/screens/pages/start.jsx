@@ -37,7 +37,7 @@ function StartReal() {
   const done = steps.filter((x) => x.s === 'done').length;
   return (
     <div className="cv-page">
-      <PageHead over={`First six weeks · ${eng.org?.name ?? ''}`} q="What happens between signing up and the first proven dollar?"
+      <PageHead over={`Getting started · ${eng.org?.name ?? ''}`} q="What happens between signing up and the first proven dollar?"
         sub="Read from what has actually happened in your group. Each step links to where it's done." />
       <div className="progress"><span style={{ width: `${(done / steps.length) * 100}%` }} /></div>
       <span className="cv-small cv-muted">{done} of {steps.length} done</span>
@@ -74,7 +74,7 @@ function CvStartSample() {
   ];
   return (
     <div className="cv-page">
-      <PageHead over="First six weeks · how Walnut Creek looked on Jul 20, two weeks after connecting" q="What do I get before anything is proven?"
+      <PageHead over="Getting started · how Walnut Creek looked on Jul 20, two weeks after connecting" q="What do I get before anything is proven?"
         sub="Nothing is counted as saved until a test closes, and the first one takes about six weeks. So the first six weeks have to be useful on their own: findings, prevented costs, data fixes and tests in flight." />
       <div className="cv-grid g4">
         <div className="cv-card" style={{ gap: 6 }}><span className="cv-xs cv-faint">Banked so far</span><span className="cv-fig md">$0</span><span className="cv-xs cv-faint">Expected. Nothing counts until a window closes.</span></div>

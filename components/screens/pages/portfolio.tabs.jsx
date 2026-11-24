@@ -29,28 +29,17 @@ export function useRoomMarks(period = 'week') {
   return v.rooms.map((r) => ({ id: r.id, name: r.name, short: r.short, mark: roomMark(r), rank: r.rank }));
 }
 
-/** The tab bar. On Day by day it also shows each room, marked, so switching rooms is one tap. */
+/** On Day by day: each room, marked, so switching rooms is one tap. */
 export function ScoreTabs({ tab }) {
   const cv = useCv();
   const eng = useEngine();
   const rooms = useRoomMarks();
   const many = rooms.length > 1;
-  const pick = (id) => {
-    if (id === tab) return;
-    if (id === 'daily' && !rooms.some((r) => r.id === eng.room)) cv.pickRoom(rooms[0]?.id);
-    cv.go(id);
-  };
+  // The tabs themselves are drawn by the shell (CV_TABS in lib/pages.js).
+  if (tab !== 'daily' || !many) return null;
   return (
     <div className={s.scoreBar}>
-      <div className={s.scoreTabs} role="tablist" aria-label="Scoreboard">
-        {SCORE_TABS.map((t) => (
-          <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} className={tab === t.id ? s.on : ''} onClick={() => pick(t.id)}>
-            <Icon name={t.icon} size={16} />{t.label}
-            {t.id === 'portfolio' && many && <span className={s.scoreCount}>{rooms.length}</span>}
-          </button>
-        ))}
-      </div>
-      {tab === 'daily' && many && (
+      {(
         <div className={s.roomChips} role="radiogroup" aria-label="Restaurant">
           {[...rooms].sort((a, b) => a.rank - b.rank).map((r) => {
             const M = MARKS[r.mark];

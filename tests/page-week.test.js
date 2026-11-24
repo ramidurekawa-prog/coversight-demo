@@ -4,7 +4,7 @@ import { SEED } from '../lib/data/seed.js';
 import { deriveGroup, deriveRoom, choosePlan, money as cvMoney } from '../lib/data/model.js';
 import { densify } from '../lib/data/dense.js';
 import {
-  awaitingData, bankedFromWindows, blockedReason, buildCommit, comparators, decompose, planState, setItemStatus,
+  awaitingData, bankedFromWindows, blockedReason, buildCommit, comparators, decompose, planState, primeCost, setItemStatus,
   trimReviews, weekDigest, weekOf, weekView, REVIEW_KEEP,
 } from '../lib/data/page/week.js';
 
@@ -239,6 +239,20 @@ describe('the digest and the review record', () => {
     expect(Object.keys(kept)).toHaveLength(REVIEW_KEEP);
     expect(Object.keys(kept)).toContain('2026-10-22');
     expect(Object.keys(kept)).not.toContain('2026-01-01');
+  });
+});
+
+describe('prime cost', () => {
+  it('is food plus labor over sales for both weeks, and lower is better', () => {
+    const p = primeCost(decompose({ net: 1000, covers: 40, food: 300, labour: 280, earned: 420 }, { net: 900, covers: 38, food: 290, labour: 270, earned: 340 }));
+    expect(p.now).toBeCloseTo(0.58, 10);
+    expect(p.then).toBeCloseTo(560 / 900, 10);
+    expect(p.points).toBeCloseTo((0.58 - 560 / 900) * 100, 10);
+    expect(p.good).toBe(true);
+  });
+  it('is left out when there is nothing to compare or no sales', () => {
+    expect(primeCost(null)).toBeNull();
+    expect(primeCost(decompose({ net: 0, covers: 0, food: 0, labour: 0, earned: 0 }, { net: 900, covers: 38, food: 290, labour: 270, earned: 340 }))).toBeNull();
   });
 });
 

@@ -373,7 +373,7 @@ function fenceBreach(id, eng) {
   if (!item) return null;
   const f = eng?.actions?.[CV_D.id]?.fences?.f ?? { maxPrice: 8, priceGap: 6 };
   const pct = ((+m[2] - item.price) / item.price) * 100;
-  if (Math.abs(pct) > f.maxPrice + 1e-9) return `A ${pct.toFixed(1)}% move is past your fence of ${f.maxPrice}% for a single price change. Change the fence on Fences & alerts, or pick a smaller step.`;
+  if (Math.abs(pct) > f.maxPrice + 1e-9) return `A ${pct.toFixed(1)}% move is past your fence of ${f.maxPrice}% for a single price change. Change the limit on Limits & alerts, or pick a smaller step.`;
   const last = (eng?.tasks || []).filter((t) => t.roomId === CV_D.id && t.approvalId.startsWith(`price:${m[1]}:`) && t.approvalId !== id && t.status !== "cancelled")
     .map((t) => new Date(t.createdAt).getTime()).sort((a, b) => b - a)[0];
   if (last && Date.now() - last < f.priceGap * 7 * 864e5) return `The ${item.name.toLowerCase()} was repriced ${Math.round((Date.now() - last) / 864e5)} days ago. Your fence allows one move every ${f.priceGap} weeks.`;
