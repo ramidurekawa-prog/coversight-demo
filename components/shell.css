@@ -52,6 +52,31 @@
 @media (max-width: 640px) { .cv-top .sub.cv-clock { font-size: 14px; } }
 @media (min-width: 1100px) { .cv-top > .col { flex-shrink: 0; } }
 
+/* Keyboard users skip the 30 sidebar links straight to the page (UX pass, 2026-11-23). */
+.cv-skip { position: fixed; left: 12px; top: 10px; z-index: calc(var(--z-modal, 50) + 10); padding: 10px 16px; border-radius: var(--radius-md); background: var(--fg-1); color: var(--surface); font: 600 15px/1.2 var(--font-sans); text-decoration: none; transform: translateY(-160%); }
+.cv-skip:focus-visible { transform: none; outline: none; box-shadow: var(--ring); }
+.scroll:focus-visible { outline: none; box-shadow: inset var(--ring); }
+/* Phone top bar: the page name is never cut to "To…". Long names use their sidebar name; the clock and chips give way first. */
+.cv-title-short { display: none; }
+.cv-top h1 { white-space: nowrap; }
+@media (max-width: 640px) {
+  .cv-top h1 { font-size: 21px; }
+  .cv-top > .col { flex: 1 1 auto; min-width: 0; }
+  .cv-top h1 { overflow: hidden; text-overflow: clip; }
+  .cv-title-long { display: none; }
+  .cv-title-short { display: inline; }
+  .cv-top .locpick { min-width: 0; max-width: 132px; overflow: hidden; white-space: nowrap; }
+}
+
+/* Icon buttons in the top bar keep a full 36px target; the title gives way instead (tablet squeezed them to 18px). */
+.cv-top .iconbtn, .cv-top .cv-sous-btn, .cv-top .cv-health { flex-shrink: 0; }
+.cv-top .iconbtn { min-width: 36px; min-height: 36px; }
+@media (max-width: 440px) {
+  .cv-top .locpick > svg { display: none; }
+  .cv-top .locpick { padding-left: 10px; padding-right: 10px; }
+  .cv-top .cv-pop-wrap { min-width: 0; flex-shrink: 1; }
+}
+
 /* Sidebar groups open and close; the group holding the current page is marked. */
 .sidebar .cv-navtoggle { display: flex; align-items: center; justify-content: flex-start; gap: 6px; width: 100%; min-height: 32px; border: 0; background: none; cursor: pointer; text-align: left; border-radius: var(--radius-md); }
 .sidebar .cv-navtoggle:hover, .sidebar .cv-navtoggle.here { color: var(--side-active-fg); }

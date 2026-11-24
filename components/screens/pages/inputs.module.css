@@ -550,3 +550,20 @@ button.mRow.on { background: var(--accent-subtle); }
 .todayBar .todaySub { font-size: 14px; color: var(--fg-2); }
 .todayGo { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; color: var(--fg-1); white-space: nowrap; }
 @media (max-width: 700px) { .todayBar { grid-template-columns: 40px minmax(0, 1fr); padding: 14px 16px; } .todayGo { display: none; } }
+
+/* Phone (UX pass, 2026-11-23): each kind of data is two lines, not four. The status stays
+ * beside the name, and More sits next to the one action, which gets the rest of the row
+ * so its label is never cut. The six ways in sit two to a row. */
+@media (max-width: 700px) {
+  .page .dataRow { grid-template-columns: auto minmax(0, 1fr); row-gap: 8px; }
+  .page .dataRow > .dataMain { grid-template-columns: 40px minmax(0, 1fr) auto; }
+  .page .dataRow > .dataMain > :global(.cv-pill) { grid-column: 3; justify-self: end; align-self: start; }
+  .page .dataRow > :global(.btn) { white-space: normal; text-align: center; line-height: 1.25; }
+}
+@media (max-width: 560px) {
+  .page .wayGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .page .wayTile { grid-template-columns: 32px minmax(0, 1fr); gap: 10px; padding: 12px; min-height: 56px; }
+  .page .wayTile .dataIco { width: 32px; height: 32px; }
+  .page .wayTile .dataText span { display: none; }
+  .page .wayTile .dataText b { font-size: 15px; line-height: 1.25; }
+}

@@ -15,11 +15,19 @@ export function setDb(db: Db | null) {
   override = db;
 }
 
+/** No database is configured: the browser runs the demo on its own (engine.js "local" mode). */
+export class NoDatabaseError extends Error {
+  name = 'NoDatabaseError';
+  constructor() {
+    super('DATABASE_URL is not set');
+  }
+}
+
 export function getDb(): Db {
   if (override) return override;
   if (cached) return cached;
   const url = process.env.DATABASE_URL;
-  if (!url) throw new Error('DATABASE_URL is not set');
+  if (!url) throw new NoDatabaseError();
   // Serverless: a small pool per instance; Neon's pooled URL does the rest.
   const sql = postgres(url, { max: 3, prepare: false });
   cached = drizzlePg(sql, { schema });

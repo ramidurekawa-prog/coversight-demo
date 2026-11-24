@@ -115,7 +115,7 @@ here ships to customers.
   is a summary to confirm with payroll. A new skill for an agent is a new
   check, which also becomes a fact and can become its move.
   The *day loop* (`lib/ai/loop.js`, `dayLoop()`) gives Day Captain (Today),
-  Shift Pulse (Service) and Data Steward (Data pages) their checkups: last
+  Floor Captain (Service) and Data Steward (Data pages) their checkups: last
   night against Covercast's day-before call and its last-7-day record, today's
   covers and each service's floor (Service's own `servicePlan`), every decision
   still open (approved but not made, made but not in the data, hand-offs not
@@ -175,3 +175,26 @@ here ships to customers.
   a Toast client secret.
 
 `pnpm check` = typecheck + tests + build. Run it before pushing.
+
+
+<!-- COVERSIGHT_CLAUDE_KIT_BEGIN -->
+## Coversight: always-on quality standards
+
+Use the `.claude/skills/coversight-ux-pipeline/SKILL.md` workflow for user-facing UI/UX changes, audits, or design-system work. Read `docs/COVERSIGHT_DESIGN_SYSTEM.md` and `docs/QUALITY_SCORECARD.md` first. The repository's actual running code, data contracts and existing tests take precedence over any assumptions in this kit.
+
+**Product job:** Coversight is a restaurant operations decision system, not a generic marketing site or a decorative analytics dashboard. Each page should quickly communicate what is happening, why it matters financially, what decision to make, and how to verify its effect. Optimize for an owner/GM/restaurant operator with limited time and high task urgency.
+
+**Never break these rules:**
+- Preserve working integrations, calculations, APIs, routing, authentication, permissions, persisted data, accessibility, and tests while redesigning. Do not delete functionality to simplify a screenshot.
+- Never fabricate live restaurant data, verified savings, confidence intervals, test results, or business outcomes. Clearly label demo, manually entered, forecast, and verified values.
+- Start with an inventory and baseline audit of the **actual** repository and rendered application. Do not assume a page/feature exists based on this file.
+- Reduce scanning/clicking/scrolling without hiding decisions or safety constraints. Favor a primary decision/CTA and clear disclosure of supporting reasoning.
+- Use the existing brand system as authority. Cream + persimmon is a visual direction, not permission to invent authoritative brand tokens or change established colors without evidence.
+- Respect keyboard use, focus, contrast, touch targets, responsive widths, reduced-motion preferences, and loading/empty/error states.
+- For changes to a page, test in a real browser with Playwright CLI at representative desktop and mobile sizes, use screenshots, and retest after fixing failures. Run appropriate repo tests/build checks when available.
+- Do not run destructive database commands, migrate production data, reveal secrets, deploy, merge, force-push, or push to remote without explicit user approval. Keep secrets out of screenshots and reports.
+- Finish each task with a small, evidence-based scorecard and specify what is untested, unfinished, or blocked.
+
+**Page focus:** Today = a minimal action-first daily command hub; Service = in-shift staffing/coverage decision support; Labor = forecast vs staffing planning with sensible minimums; Data Inputs = accurate, low-friction manual/import entries and trust states. These are product intentions, not assertions about the repo's current implementation.
+<!-- COVERSIGHT_CLAUDE_KIT_END -->
+

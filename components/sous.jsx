@@ -39,7 +39,7 @@ function useLocalSous(role, page) {
     // What the room has taught Sous: its notebook, and which kinds of change have worked or been set aside.
     const notes = saved['sous.notes'] || [];
     const learned = sousLearned(CV_D, { mem: mem || {}, acts: saved['sous.learn'] || [] });
-    // The day loop: last night, today's plan and every decision still open, read by Day Captain, Shift Pulse and Data Steward.
+    // The day loop: last night, today's plan and every decision still open, read by Day Captain, Floor Captain and Data Steward.
     const day = { tasks: (eng.tasks || []).filter((t) => t.roomId === CV_D.id), assigned: today.view?.assigned || {}, open: today.open, fences: saved.fences ?? null };
     const facts = sousFacts(CV_D, { role, windows: eng.windows || [], card: today.card, open: today.open, noticed, group: CV_GROUP, notes, learned, day });
     const brief = sousBrief(CV_D, { role, facts, noticed, card: today.card, open: today.open });
@@ -112,6 +112,16 @@ export function PageAgent({ page, role: shellRole = 'owner', onOpen }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
+  // Fix it here, not on another page: when this page carries the thing a move would open
+  // (marked data-agent-here="<page>"), the button says so and the shell acts in place.
+  const target = read.move?.act?.kind === 'go' ? read.move.act.page : null;
+  const [here, setHere] = React.useState(/** @type {string | null} */ (null));
+  React.useEffect(() => {
+    if (!target) { setHere(null); return; }
+    const el = document.querySelector(`[data-agent-here="${target}"]`);
+    setHere(el ? el.getAttribute('data-agent-label') || 'Show me here' : null);
+  }, [target, page]);
+
   if (!read.lead && !read.move) return null;
   const { move } = read;
   const warn = move?.source === 'noticed' || read.noticed.some((n) => n.tone === 'warn');
@@ -143,7 +153,7 @@ export function PageAgent({ page, role: shellRole = 'owner', onOpen }) {
         </button>
         <Stake move={move} />
         <span className="cv-agent-acts">
-          <Button variant="secondary" icon={ACT[move.act.kind]?.icon} iconRight={ACT[move.act.kind] ? undefined : 'ArrowRight'} onClick={() => onOpen('', move)}>{ctaFor(move)}</Button>
+          <Button variant="secondary" icon={here ? 'ArrowDown' : ACT[move.act.kind]?.icon} iconRight={here || ACT[move.act.kind] ? undefined : 'ArrowRight'} onClick={() => onOpen('', move)}>{here || ctaFor(move)}</Button>
           <button type="button" className="cv-agent-why" onClick={() => onOpen()}>Why<Icon name="ChevronRight" size={14} /></button>
         </span>
       </section>
