@@ -8,12 +8,12 @@
 .tasks { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--border); }
 .task { border-bottom: 1px solid var(--border); }
 .open { background: var(--surface); }
-.head { display: flex; align-items: flex-start; gap: 10px; width: 100%; padding: 12px 8px; border: none; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; border-radius: 6px; }
+.head { display: flex; align-items: flex-start; gap: 10px; width: 100%; padding: 12px 8px; border: none; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; border-radius: var(--r-ctl); }
 .head:hover .title { text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--border-strong); }
 .head:focus-visible { outline: none; box-shadow: var(--ring); }
 .head > svg:first-child { flex: none; margin-top: 2px; }
 .text { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
-.title { font-size: 14px; font-weight: 500; line-height: 1.4; color: var(--fg-1); }
+.title { font-size: 15px; font-weight: 500; line-height: 1.4; color: var(--fg-1); }
 .sub { font-size: 12px; color: var(--fg-3); }
 .steps { align-self: center; font-size: 12px; color: var(--fg-3); font-variant-numeric: tabular-nums; }
 .chev { flex: none; align-self: center; color: var(--fg-3); }

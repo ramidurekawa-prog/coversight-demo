@@ -29,6 +29,7 @@ import '@fontsource/ibm-plex-mono/600.css';
 import './globals.css';
 import './theme.css';
 import './page-style.css';
+import './system.css';
 
 import { Shell } from '../components/shell';
 

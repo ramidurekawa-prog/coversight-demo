@@ -16,30 +16,18 @@
    ============================================================================= */
 
 :where([data-style='today']) {
-  /* Bigger type at every level, through the kit's own tokens. */
-  --text-display: 2.75rem;  /* 44 */
-  --text-h1: 2.25rem;       /* 36: page headline, key numbers */
-  --text-h2: 1.5625rem;     /* 25 */
-  --text-h3: 1.5625rem;     /* 25 */
-  --text-lg: 1.1875rem;     /* 19: card titles */
-  --text-base: 1rem;        /* 16 */
-  --text-sm: 0.9375rem;     /* 15 */
-  --text-xs: 0.84375rem;    /* 13.5: captions, labels */
-  /* Soft boxes instead of outlines; rounder corners. */
-  --radius-xs: 4px; --radius-sm: 6px; --radius-md: 8px; --radius-lg: 12px; --radius-xl: 16px;
-  --cv-box: 0 0 0 1px color-mix(in srgb, var(--fg-1) 7%, transparent), 0 1px 2px rgba(20, 28, 40, 0.04), 0 12px 32px -22px rgba(20, 28, 40, 0.22);
-  --cv-box-hover: 0 0 0 1px color-mix(in srgb, var(--fg-1) 14%, transparent), 0 2px 4px rgba(20, 28, 40, 0.05), 0 18px 40px -22px rgba(20, 28, 40, 0.3);
-  --pad-card: 22px;
+  /* Type, radius and elevation come from app/system.css. */
+  --pad-card: 24px;
   display: contents;
 }
 
 /* ---- page frame and hierarchy ------------------------------------------------ */
-:where([data-style='today']) .cv-page { padding: 32px 32px 80px; gap: 22px; font-size: 16px; color: var(--fg-1); }
+:where([data-style='today']) .cv-page { padding: 32px 32px 80px; gap: 22px; font-size: 17px; color: var(--fg-1); }
 :where([data-style='today']) .cv-over { font-size: 15px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--fg-2); }
 :where([data-style='today']) .cv-q { font-size: 36px; font-weight: 600; line-height: 1.12; letter-spacing: -0.03em; max-width: 34ch; color: var(--fg-1); }
 :where([data-style='today']) .cv-sub { font-size: 17px; line-height: 1.5; color: var(--fg-2); max-width: 62ch; }
 :where([data-style='today']) .cv-h3 { font-size: 25px; font-weight: 600; line-height: 1.2; letter-spacing: -0.02em; }
-:where([data-style='today']) .cv-h4 { font-size: 19px; font-weight: 600; line-height: 1.3; letter-spacing: -0.01em; }
+:where([data-style='today']) .cv-h4 { font-size: 20px; font-weight: 600; line-height: 1.3; letter-spacing: -0.01em; }
 :where([data-style='today']) .cv-faint { color: var(--fg-2); }
 :where([data-style='today']) .cv-small { line-height: 1.5; }
 :where([data-style='today']) :is(.cv-fig, .cv-num, b) { font-variant-numeric: tabular-nums lining-nums; }
@@ -49,28 +37,28 @@
 :where([data-style='today']) .cv-fig.md { font-size: 25px; }
 
 /* ---- boxes: soft surfaces, no hard outlines ---------------------------------- */
-:where([data-style='today']) .cv-card { border: none; border-radius: 12px; box-shadow: var(--cv-box); }
+:where([data-style='today']) .cv-card { border: none; border-radius: var(--r-box); box-shadow: var(--cv-box); }
 :where([data-style='today']) .cv-card.sunken { box-shadow: none; }
 :where([data-style='today']) .cv-card.flush .cv-table th:first-child,
 :where([data-style='today']) .cv-card.flush .cv-table td:first-child { padding-left: 20px; }
-:where([data-style='today']) .cv-q-ico { border-radius: 10px; }
+:where([data-style='today']) .cv-q-ico { border-radius: var(--r-box); }
 :where([data-style='today']) .cv-quote { border-left-color: var(--fg-1); border-radius: 0 8px 8px 0; }
 :where([data-style='today']) .cv-scrim + .cv-drawer,
-:where([data-style='today']) .cv-modal { border-radius: 16px; }
+:where([data-style='today']) .cv-modal { border-radius: var(--r-box); }
 
 /* ---- tables: sentence-case headers, bigger rows, a clear hover --------------- */
 :where([data-style='today']) .cv-table { font-size: 15px; }
-:where([data-style='today']) :is(.cv-table th, .tbl th, .cv-plan-row.head, .cv-diff .r.h) { font-size: 13.5px; font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--fg-2); background: transparent; padding: 12px 14px; border-bottom-color: var(--border-strong); }
+:where([data-style='today']) :is(.cv-table th, .tbl th, .cv-plan-row.head, .cv-diff .r.h) { font-size: 13px; font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--fg-2); background: transparent; padding: 12px 14px; border-bottom-color: var(--border-strong); }
 :where([data-style='today']) .cv-table td { padding: 13px 14px; }
 :where([data-style='today']) .cv-tr { cursor: pointer; transition: background var(--dur-fast, 120ms); }
 :where([data-style='today']) .cv-tr:hover { background: var(--surface-hover); }
 :where([data-style='today']) :is(.cv-tr.sel, .tbl tbody tr.sel) { background: var(--cv-selected-bg); box-shadow: inset 3px 0 0 var(--cv-selected); }
 
 /* ---- the CTA: persimmon, large, one per page --------------------------------- */
-:where([data-style='today']) .btn { border-radius: 10px; font-weight: 600; transition: background var(--dur-base, 160ms), box-shadow var(--dur-base, 160ms), color var(--dur-base, 160ms); }
-:where([data-style='today']) .btn-primary { min-height: 44px; padding: 0 20px; font-size: 16px; letter-spacing: -0.005em;
-  box-shadow: 0 1px 0 rgba(23, 37, 54, 0.08), 0 6px 16px -8px color-mix(in srgb, var(--primary) 70%, transparent); }
-:where([data-style='today']) .btn-primary:hover { box-shadow: 0 1px 0 rgba(23, 37, 54, 0.08), 0 10px 22px -10px color-mix(in srgb, var(--primary) 80%, transparent); }
+:where([data-style='today']) .btn { border-radius: var(--r-box); font-weight: 600; transition: background var(--dur-base, 160ms), box-shadow var(--dur-base, 160ms), color var(--dur-base, 160ms); }
+:where([data-style='today']) .btn-primary { min-height: 44px; padding: 0 20px; font-size: 17px; letter-spacing: -0.005em;
+  box-shadow: var(--shadow-box); }
+:where([data-style='today']) .btn-primary:hover { box-shadow: var(--shadow-box); }
 :where([data-style='today']) .btn-primary:active { background: var(--primary-active); }
 :where([data-style='today']) .btn-primary:focus-visible { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--fg-1); }
 :where([data-style='today']) .btn-primary.btn-sm { min-height: 36px; font-size: 15px; padding: 0 14px; }
@@ -79,16 +67,16 @@
 :where([data-style='today']) .btn-secondary { border: none; box-shadow: inset 0 0 0 1px var(--border-strong); background: var(--surface); }
 :where([data-style='today']) .btn-secondary:hover { background: var(--surface-hover); box-shadow: inset 0 0 0 1px var(--fg-3); }
 :where([data-style='today']) .btn-ghost { color: var(--fg-1); }
-:where([data-style='today']) .btn-sm { border-radius: 8px; font-size: 14px; }
+:where([data-style='today']) .btn-sm { border-radius: var(--r-ctl); font-size: 15px; }
 :where([data-style='today']) .btn:disabled { opacity: 0.5; cursor: default; box-shadow: none; }
 
 /* ---- clickables: links read as links, everything shows hover and focus -------- */
-:where([data-style='today']) .cv-link { font-size: 15px; font-weight: 600; color: var(--fg-1); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--fg-1) 28%, transparent); text-underline-offset: 3px; min-height: 28px; border-radius: 4px; }
+:where([data-style='today']) .cv-link { font-size: 15px; font-weight: 600; color: var(--fg-1); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--fg-1) 28%, transparent); text-underline-offset: 3px; min-height: 28px; border-radius: var(--r-ctl); }
 :where([data-style='today']) .cv-link:hover { text-decoration-color: currentColor; }
 :where([data-style='today']) :is(a, button, [role='button'], [tabindex='0']):focus-visible { outline: none; box-shadow: var(--ring); }
 :where([data-style='today']) :is(button.cv-card, a.cv-card, .cv-card[role='button']) { cursor: pointer; transition: box-shadow var(--dur-base, 160ms); }
 :where([data-style='today']) :is(button.cv-card, a.cv-card, .cv-card[role='button']):hover { box-shadow: var(--cv-box-hover); }
-:where([data-style='today']) .iconbtn { border-radius: 8px; }
+:where([data-style='today']) .iconbtn { border-radius: var(--r-ctl); }
 :where([data-style='today']) .iconbtn:hover { background: var(--surface-sunken); }
 
 /* ---- tabs, toggles, form fields: selected is persimmon ------------------------ */
@@ -99,24 +87,24 @@
 :where([data-style='today']) .cv-dial button.on.earned { color: var(--surface); border-color: var(--fg-1); }
 :where([data-style='today']) :is(.cv-kind.on, .cv-pop .opt.on) { border-color: var(--cv-selected); background: var(--cv-selected-bg); color: var(--fg-1); }
 /* The Detect / Understand / Act / Verify strip shows where a lever stands: a state, not an action, so navy. */
-:where([data-style='today']) .cv-loop li { border-radius: 10px; }
+:where([data-style='today']) .cv-loop li { border-radius: var(--r-box); }
 :where([data-style='today']) .cv-loop li.on { border-color: var(--fg-1); background: var(--accent-subtle); color: var(--fg-1); }
 :where([data-style='today']) .cv-loop li.on .n { background: var(--fg-1); color: var(--surface); }
-:where([data-style='today']) .input { border: none; box-shadow: inset 0 0 0 1px var(--border-strong); border-radius: 8px; font-size: 15px; }
+:where([data-style='today']) .input { border: none; box-shadow: inset 0 0 0 1px var(--border-strong); border-radius: var(--r-ctl); font-size: 15px; }
 :where([data-style='today']) .input:hover { box-shadow: inset 0 0 0 1px var(--fg-3); }
 :where([data-style='today']) .input:focus { box-shadow: inset 0 0 0 1px var(--fg-1), var(--ring); }
 :where([data-style='today']) .field > label { font-size: 15px; }
 :where([data-style='today']) .cv-range { accent-color: var(--cv-selected); }
 
 /* ---- chips and claim tags: icon + word, softer shape -------------------------- */
-:where([data-style='today']) :is(.badge, .cv-pill) { border-radius: 6px; font-size: 13.5px; height: 26px; }
-:where([data-style='today']) .cv-claim { border-radius: 6px; font-size: 12.5px; height: 24px; }
+:where([data-style='today']) :is(.badge, .cv-pill) { border-radius: var(--r-ctl); font-size: 13px; height: 26px; }
+:where([data-style='today']) .cv-claim { border-radius: var(--r-ctl); font-size: 13px; height: 24px; }
 
 /* ---- charts: navy data, quiet axes, Today's axis type ------------------------- */
-:where([data-style='today']) .cv-chart text { font-family: var(--font-sans); font-size: 12.5px; font-weight: 500; fill: var(--fg-2); font-variant-numeric: tabular-nums; }
-:where([data-style='today']) .cv-chart .lbl { font-size: 12.5px; font-weight: 600; fill: var(--fg-2); }
+:where([data-style='today']) .cv-chart text { font-family: var(--font-sans); font-size: 13px; font-weight: 500; fill: var(--fg-2); font-variant-numeric: tabular-nums; }
+:where([data-style='today']) .cv-chart .lbl { font-size: 13px; font-weight: 600; fill: var(--fg-2); }
 :where([data-style='today']) .cv-chart .grid { stroke: color-mix(in srgb, var(--border) 80%, transparent); }
-:where([data-style='today']) .cv-legend { font-size: 13.5px; gap: 16px; }
+:where([data-style='today']) .cv-legend { font-size: 13px; gap: 16px; }
 :where([data-style='today']) .cv-legend i { border-radius: 3px; }
 :where([data-style='today']) .cv-hbar { font-size: 15px; }
 :where([data-style='today']) .barchart .b.muted-bar { background: var(--teal-200); }
@@ -127,8 +115,8 @@
 @media (max-width: 760px) {
   :where([data-style='today']) .cv-page { padding: 20px 16px 64px; gap: 18px; }
   :where([data-style='today']) .cv-q { font-size: 28px; }
-  :where([data-style='today']) .cv-sub { font-size: 16px; }
+  :where([data-style='today']) .cv-sub { font-size: 17px; }
   :where([data-style='today']) .cv-fig.xl { font-size: 36px; }
-  :where([data-style='today']) .cv-fig.lg { font-size: 30px; }
+  :where([data-style='today']) .cv-fig.lg { font-size: 28px; }
   :where([data-style='today']) .cv-card { padding: 18px; }
 }

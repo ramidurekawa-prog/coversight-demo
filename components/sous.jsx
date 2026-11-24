@@ -27,11 +27,29 @@ import './sous.css';
  * fails, what is already on screen stays. An agent never acts by itself:
  * every move ends at the person's approval or a draft they send. */
 
+/* What Sous works out for a room is the same on every page (only the page's own
+ * agent line differs), and it takes a while, so it is kept for the last few
+ * versions of the room's data instead of being worked out on every page. */
+const SOUS_CACHE = [];
+function cachedSous(deps, make) {
+  const hit = SOUS_CACHE.find((c) => c.deps.length === deps.length && c.deps.every((d, i) => d === deps[i]));
+  if (hit) return hit.value;
+  const value = make();
+  SOUS_CACHE.unshift({ deps, value });
+  SOUS_CACHE.length = Math.min(SOUS_CACHE.length, 6);
+  return value;
+}
+function sousDeps(eng, role) {
+  const mem = eng.actions?.[CV_D.id]?.sous;
+  return [role, CV_D, mem, eng.version, eng.room, eng.actions, eng.windows, eng.tasks];
+}
+
 /** Everything Sous reads for the room in view, from this browser's copy of the data. */
 function useLocalSous(role, page) {
   const eng = useEngine();
   const mem = eng.actions?.[CV_D.id]?.sous;
-  return React.useMemo(() => {
+  const deps = sousDeps(eng, role);
+  const base = React.useMemo(() => cachedSous(deps, () => {
     const saved = eng.actions?.[CV_D.id] || {};
     const today = sousToday(CV_D, { stored: saved.queue || null, dismissed: saved.findings || {}, windows: eng.windows || [], tasks: eng.tasks || [] });
     const memory = sousRemember(sousNoticed(CV_D), mem || {});
@@ -44,10 +62,15 @@ function useLocalSous(role, page) {
     const facts = sousFacts(CV_D, { role, windows: eng.windows || [], card: today.card, open: today.open, noticed, group: CV_GROUP, notes, learned, day });
     const brief = sousBrief(CV_D, { role, facts, noticed, card: today.card, open: today.open });
     const moves = respectNotes(rankMoves(sousMoves(CV_D, { noticed, card: today.card, role, quietIds: memory.quietIds, day }), learned), notes);
-    return { facts, brief, noticed, memory, moves, day, notes, learned, me: eng.actions?.[ME]?.['sous.me'] || { asked: {} }, record: agentRecord(CV_D), suggest: sousSuggest(facts, role), agent: agentRead(page, facts, noticed, { role, moves }) };
+    return { facts, brief, noticed, memory, moves, day, notes, learned, record: agentRecord(CV_D), suggest: sousSuggest(facts, role) };
     // eng.version changes whenever the room or its data does.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [role, page, mem, eng.version, eng.room, eng.actions, eng.windows, eng.tasks]);
+  }), deps);
+  const me = eng.actions?.[ME]?.['sous.me'];
+  return React.useMemo(
+    () => ({ ...base, me: me || { asked: {} }, agent: agentRead(page, base.facts, base.noticed, { role, moves: base.moves }) }),
+    [base, me, page, role],
+  );
 }
 
 /** How many things Sous has noticed in the room in view and the person hasn't answered, for the top-bar button. */
@@ -63,7 +86,7 @@ export function SousButton({ onClick }) {
   const n = useSousCount();
   return (
     <button type="button" className="cv-sous-btn" onClick={onClick} aria-label={`${SOUS.name}, your AI teammate${n ? `. It noticed ${n} thing${n === 1 ? '' : 's'}` : ''}`} title={`${SOUS.name}, your AI teammate (press /)`}>
-      <Icon name="Sparkles" size={16} />
+      <Icon name="MessageSquare" size={16} />
       <span className="cv-sous-btn-l">{SOUS.name}</span>
       {n > 0 && <span className="cv-sous-btn-n" aria-hidden="true">{n}</span>}
     </button>
@@ -93,7 +116,23 @@ function Stake({ move, size = '' }) {
  * seen: one slim line. The page keeps its one filled button; the agent's are
  * outlined.
  */
-export function PageAgent({ page, role: shellRole = 'owner', onOpen }) {
+export function PageAgent(props) {
+  const eng = useEngine();
+  const role = sousRole(eng.mode === 'server' ? eng.viewer?.role : props.role || 'owner');
+  const deps = sousDeps(eng, role);
+  const known = SOUS_CACHE.some((c) => c.deps.every((d, i) => d === deps[i]));
+  const [ready, setReady] = React.useState(known);
+  React.useEffect(() => {
+    if (ready) return undefined;
+    // Paint the page first; the agent's line fills in a moment later.
+    const raf = requestAnimationFrame(() => setTimeout(() => setReady(true), 0));
+    return () => cancelAnimationFrame(raf);
+  }, [ready]);
+  if (!ready) return <div className="cv-agent-wrap" aria-hidden="true"><div className="cv-agent cv-agent-wait"><span className="cv-skel" /><span className="cv-skel" /></div></div>;
+  return <PageAgentLine {...props} />;
+}
+
+function PageAgentLine({ page, role: shellRole = 'owner', onOpen }) {
   const eng = useEngine();
   const role = sousRole(eng.mode === 'server' ? eng.viewer?.role : shellRole);
   const { agent: read } = useLocalSous(role, page);
@@ -125,7 +164,7 @@ export function PageAgent({ page, role: shellRole = 'owner', onOpen }) {
   if (!read.lead && !read.move) return null;
   const { move } = read;
   const warn = move?.source === 'noticed' || read.noticed.some((n) => n.tone === 'warn');
-  const icon = CV_PAGES[read.agent.id]?.icon || CV_PAGES[page]?.icon || 'Sparkles';
+  const icon = CV_PAGES[read.agent.id]?.icon || CV_PAGES[page]?.icon || 'MessageSquare';
   const title = move ? move.title : read.lead.text;
 
   // Today's own page already leads with its first card, so its agent stays a line there instead of saying it twice.
@@ -146,7 +185,7 @@ export function PageAgent({ page, role: shellRole = 'owner', onOpen }) {
   return (
     <div className="cv-agent-wrap">
       <section className={`cv-agent${warn ? ' warn' : ''}`} aria-label={`${read.agent.name}, ${SOUS.name} on this page`}>
-        <span className="cv-agent-mark" aria-hidden="true"><Icon name={icon} size={20} /><i><Icon name="Sparkles" size={11} /></i></span>
+        <span className="cv-agent-mark" aria-hidden="true"><Icon name={icon} size={18} /></span>
         <button type="button" className="cv-agent-main" onClick={() => onOpen()} title={`${read.agent.name}: ${read.agent.job}`}>
           <span className="cv-agent-name">{read.agent.name}<i className="new">{warn ? 'Noticed' : 'Suggests'}</i></span>
           <span className="cv-agent-lead">{title}</span>
@@ -490,7 +529,7 @@ export function SousPanel({ onClose, go, role: shellRole = 'owner', tools = fals
       <div className="cv-pass-scrim" onClick={onClose} />
       <div className="cv-pass" role="dialog" aria-modal="true" aria-label={`The Pass: ${SOUS.name}, your AI teammate`}>
         <header className="cv-pass-top">
-          <span className="cv-sous-mark" aria-hidden="true"><Icon name="Sparkles" size={20} /></span>
+          <span className="cv-sous-mark" aria-hidden="true"><Icon name="MessageSquare" size={20} /></span>
           <form className="cv-pass-ask" onSubmit={(e) => { e.preventDefault(); ask(text); }}>
             <input id="cv-sous-q" autoFocus value={text} onChange={(e) => setText(e.target.value)} placeholder={listen?.on ? 'Listening…' : 'Ask me anything'} maxLength={500} autoComplete="off" aria-label={`Ask ${SOUS.name} about ${brief.room}`} />
             {listen && <button type="button" className={`cv-sous-mic${listen.on ? ' on' : ''}`} onClick={listen.start} aria-pressed={listen.on} aria-label={listen.on ? 'Stop listening' : 'Ask out loud'} title="Ask out loud"><Icon name="Mic" size={18} /></button>}
@@ -510,7 +549,7 @@ export function SousPanel({ onClose, go, role: shellRole = 'owner', tools = fals
           {turn && (
             <section className="cv-ticket answer" aria-live="polite" aria-label="Sous's answer">
               <div className="cv-ticket-h">
-                <span className="who"><Icon name="Sparkles" size={13} />{turn.by || SOUS.name}</span>
+                <span className="who"><Icon name="MessageSquare" size={13} />{turn.by || SOUS.name}</span>
                 <span className="q">{turn.q}</span>
                 <button type="button" className="cv-sous-more" onClick={() => setTurns([])}>Clear</button>
               </div>
@@ -543,7 +582,7 @@ export function SousPanel({ onClose, go, role: shellRole = 'owner', tools = fals
                 return (
                   <article key={m.id} className={`cv-ticket${isOpen ? ' open' : ''}${m.source === 'noticed' ? ' warn' : ''}`}>
                     <button type="button" className="cv-ticket-h" onClick={() => setOpen(isOpen ? '-' : m.id)} aria-expanded={isOpen}>
-                      <span className="who"><Icon name={CV_PAGES[a.id]?.icon || 'Sparkles'} size={13} />{a.name}</span>
+                      <span className="who"><Icon name={CV_PAGES[a.id]?.icon || 'MessageSquare'} size={13} />{a.name}</span>
                       {m.go === me.agent.id && special && <span className="here">This page</span>}
                       <Icon name={isOpen ? 'ChevronDown' : 'ChevronRight'} size={15} />
                     </button>
@@ -634,7 +673,7 @@ export function SousPanel({ onClose, go, role: shellRole = 'owner', tools = fals
                 {agentTeam(local.facts, local.noticed, local.record).map((a) => (
                   <li key={a.page}>
                     <button type="button" className={a.page === me.agent.id ? 'on' : ''} onClick={() => leave(a.page)} title={a.job}>
-                      <span className="ic"><Icon name={CV_PAGES[a.page]?.icon || 'Sparkles'} size={15} /></span>
+                      <span className="ic"><Icon name={CV_PAGES[a.page]?.icon || 'MessageSquare'} size={15} /></span>
                       <span className="nm">{a.name}</span>
                       <span className="pg">{a.record?.wins ? `${money(Math.round(a.record.week))}/wk verified` : a.record?.testing ? `${a.record.testing} being tested` : CV_PAGES[a.page]?.title}</span>
                       {a.noticed > 0 && <span className="n" aria-label={`${a.noticed} noticed`}>{a.noticed}</span>}
