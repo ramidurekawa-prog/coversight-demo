@@ -179,7 +179,6 @@ import {
   Target,
   CircleStop,
   Trophy,
-  Sparkles,
   Star,
   GraduationCap,
   ChevronLeft,
@@ -192,6 +191,7 @@ import {
   Printer,
   Gift,
   Repeat,
+  Sparkles,
 } from 'lucide-react';
 
 const ICONS = {
@@ -369,7 +369,6 @@ const ICONS = {
   Target,
   CircleStop,
   Trophy,
-  Sparkles,
   Star,
   GraduationCap,
   ChevronLeft,
@@ -382,6 +381,7 @@ const ICONS = {
   Printer,
   Gift,
   Repeat,
+  Sparkles,
 };
 
 /** Every icon name the screens use. A unit test keeps this list complete. */
