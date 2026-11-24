@@ -197,7 +197,7 @@ export function Crew() {
             {sum.errors ? <Pill icon="CircleX" tone="bad">{sum.errors} errors</Pill> : null}
             <Pill icon="Timer">{sum.ms} ms</Pill>
           </div>
-        ) : <span className="cv-small cv-faint">{st ? 'The crew hasn’t run for this group yet.' : 'Loading…'}</span>}
+        ) : st ? <span className="cv-small cv-faint">The crew hasn’t run for this group yet.</span> : <span className="cv-skel cv-skel-line" role="status" aria-label="Loading" style={{ display: 'block', width: 'min(320px, 100%)' }} />}
         {err && <Callout tone="bad" icon="CircleX">{err}</Callout>}
       </section>
 

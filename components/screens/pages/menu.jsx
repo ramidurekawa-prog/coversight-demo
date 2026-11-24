@@ -190,7 +190,7 @@ function Tester({ v, sel, setSel, onAll }) {
           </div>
         )}
       </div>
-      {r && (recommended ? <span className={s.recTag}><Icon name="Sparkles" size={14} />Best price for this dish</span>
+      {r && (recommended ? <span className={s.recTag}><Icon name="Target" size={14} />Best price for this dish</span>
         : move?.kind === 'price' && move.item === item.key ? <button type="button" className={s.textBtn} onClick={() => setSel({ ...sel, price: move.to })}>Back to the best price ({cents(move.to)})</button> : null)}
 
       {!r ? (
@@ -221,7 +221,7 @@ function Tester({ v, sel, setSel, onAll }) {
 
       {why && r && changed && (
         <div className={s.why}>
-          {say && <p className={s.maker}><span className={s.makerTag}><Icon name="Sparkles" size={14} />Menu Maker</span>{say}</p>}
+          {say && <p className={s.maker}><span className={s.makerTag}><Icon name="MessageSquare" size={14} />Menu Maker</span>{say}</p>}
           <div className={s.whyGrid}>
             <span><small>Sales</small><b>{money(r.sales, { sign: true })}</b><small>a week</small></span>
             <span><small>Plates</small><b>{plates > 0 ? `−${plates}` : plates < 0 ? `+${-plates}` : '±0'}</b><small>of {item.units} a week</small></span>
@@ -264,7 +264,7 @@ function Gain({ value, lo, hi, claim }) {
 /** "Change 2 of 5" with back and next, instead of a row of chips. */
 function MoveNav({ v, sel, setSel, onAll }) {
   const list = [...v.moves].sort((a, b) => Number(b.ready) - Number(a.ready));
-  if (!list.length) return <span className={s.over}><Icon name="Sparkles" size={14} />Try a price on any dish</span>;
+  if (!list.length) return <span className={s.over}><Icon name="Tag" size={14} />Try a price on any dish</span>;
   const i = list.findIndex((m) => m.id === sel.move);
   const go = (k) => {
     const m = list[(k + list.length) % list.length];
@@ -273,7 +273,7 @@ function MoveNav({ v, sel, setSel, onAll }) {
   };
   return (
     <div className={s.nav}>
-      <span className={s.over}><Icon name="Sparkles" size={14} />{i >= 0 ? `Change ${i + 1} of ${list.length}` : 'Your own price'}</span>
+      <span className={s.over}>{i >= 0 ? `Change ${i + 1} of ${list.length}` : 'Your own price'}</span>
       <span className={s.navBtns}>
         {i < 0 ? <button type="button" className={s.textBtn} onClick={() => go(0)}>Back to our picks</button> : <>
           <button type="button" className={s.navBtn} onClick={() => go(i - 1)} aria-label="Previous change"><Icon name="ChevronLeft" size={18} /></button>
@@ -402,7 +402,7 @@ function CvMenu() {
           </div>
           <section className={s.detail} id="menu-detail">
             <div className={s.detailTabs} role="tablist" aria-label="Menu detail">
-              {[['balanced', 'Best prices', 'Sparkles'], ['dishes', `Every dish (${v.dishes})`, 'LayoutList'], ['weeks', '52 weeks', 'ChartLine'], ['how', 'How it works', 'Calculator']].map(([k, label, icon]) => (
+              {[['balanced', 'Best prices', 'Target'], ['dishes', `Every dish (${v.dishes})`, 'LayoutList'], ['weeks', '52 weeks', 'ChartLine'], ['how', 'How it works', 'Calculator']].map(([k, label, icon]) => (
                 <button key={k} type="button" role="tab" aria-selected={open === k} className={`${s.detailTab} ${open === k ? s.detailTabOn : ''}`} onClick={() => setOpen(open === k ? null : k)}>
                   <Icon name={icon} size={16} />{label}<Icon name={open === k ? 'ChevronUp' : 'ChevronDown'} size={15} />
                 </button>
@@ -644,7 +644,7 @@ function DealMath({ e }) {
         {e.kind === 'bundle' && e.kept != null && <span><small>Most likely</small><b className={e.kept >= 0 ? s.green : s.red}>{money(e.kept, { sign: true })}</b><small>a week <Claim k="mod" /></small></span>}
         {e.kind === 'comeback' && <span><small>Each return visit</small><b className={s.green}>{cents(e.visit)}</b><small>kept</small></span>}
       </div>
-      {say && <p className={s.maker}><span className={s.makerTag}><Icon name="Sparkles" size={14} />Menu Maker</span>{say}</p>}
+      {say && <p className={s.maker}><span className={s.makerTag}><Icon name="MessageSquare" size={14} />Menu Maker</span>{say}</p>}
     </div>
   );
 }

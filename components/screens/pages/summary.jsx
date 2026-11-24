@@ -170,7 +170,7 @@ function StartHere({ view, go, onFix }) {
   const bad = !!l;
   return (
     <section className={`${s.start} ${bad ? s.start_bad : s.start_move}`} aria-label="Start here">
-      <span className={s.startIcon}><Icon name={bad ? l.icon : 'Sparkles'} size={22} /></span>
+      <span className={s.startIcon}><Icon name={bad ? l.icon : 'CircleCheck'} size={22} /></span>
       <div className={s.startMain}>
         <span className={s.startLabel}>{bad ? <>Fix this first · {l.name}</> : <>Your best move this week · {t.lever}</>}</span>
         <span className={s.startTitle}>{bad ? (l.bad?.text ?? l.name) : t.title}</span>
@@ -248,7 +248,7 @@ function Detail({ l, go, onClose, onFix }) {
             <li><Icon name="CircleCheck" size={15} className={s.icoGood} /><span><b>Going well:</b> {l.good ? <>{l.good.text} <ClaimDot k={l.good.claim} /></> : 'Nothing to celebrate yet'}</span></li>
             <li><Icon name={l.bad ? 'CircleAlert' : 'Minus'} size={15} className={l.bad ? s.icoBad : s.icoMuted} /><span><b>Not going well:</b> {l.bad ? <>{l.bad.text} <ClaimDot k={l.bad.claim} /></> : 'Nothing wrong found'}</span></li>
             {l.handled && <li><Icon name={on[0]} size={15} className={s.icoInk} /><span><b>{ON_IT_LONG[l.handled.kind]}:</b> {l.handled.text} <span className={s.faint}>· {l.handled.sub}</span></span></li>}
-            {l.fix && <li><Icon name="Sparkles" size={15} className={s.icoGood} /><span><b>Easy win:</b> {l.fix.title}, <span className={s.win}>{l.fix.range ? winText(l.fix) : `about ${cvMoney(Math.round(l.fix.value))}/wk`}</span> <ClaimDot k={l.fix.claim} /> <button type="button" className={s.fixInline} onClick={() => onFix(l.fix)}>Fix it here</button></span></li>}
+            {l.fix && <li><Icon name="Lightbulb" size={15} className={s.icoGood} /><span><b>Easy win:</b> {l.fix.title}, <span className={s.win}>{l.fix.range ? winText(l.fix) : `about ${cvMoney(Math.round(l.fix.value))}/wk`}</span> <ClaimDot k={l.fix.claim} /> <button type="button" className={s.fixInline} onClick={() => onFix(l.fix)}>Fix it here</button></span></li>}
           </ul>
           <div className={s.detailSide}>
             {l.trend && <span className={s.ctxTrend}><Spark trend={l.trend} label={l.name} w={160} h={40} /><span className={s.faint}>the last 12 weeks</span></span>}

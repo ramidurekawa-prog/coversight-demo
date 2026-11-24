@@ -513,7 +513,7 @@ function StepPlan({ v, rec }) {
       sub={committed && !revising ? `Committed ${stampDay(committed.committedAt)}${plan.committedBy ? ` by ${plan.committedBy}` : ''} · mark each one as it moves` : `${ready} ready · fits ${hrs(v.plan.hours)} of manager time · amounts are potential until tested`}
       right={<button type="button" className={s.linkBtn} onClick={() => cv.go('meeting')}>Take it to the meeting<Icon name="ArrowRight" size={14} /></button>}>
       <GreenTarget v={v} plan={plan} />
-      {!plan ? <span className="cv-small cv-muted">{rec.error ? `Couldn’t load the plan: ${rec.error}` : 'Loading…'}</span>
+      {!plan ? (rec.error ? <span className="cv-small cv-muted">{`Couldn’t load the plan: ${rec.error}`}</span> : <span className="cv-skel cv-skel-line" role="status" aria-label="Loading" style={{ display: 'block', width: 'min(320px, 100%)' }} />)
         : committed && !revising ? <PlanCommitted v={v} rec={rec} plan={plan} onRevise={() => setRevising(true)} />
           : v.plan.ranked.length === 0 ? null
             : <PlanDraft key={`${v.roomId}:${revising}`} v={v} rec={rec} defaults={defaults} onCancel={revising ? () => setRevising(false) : null} />}

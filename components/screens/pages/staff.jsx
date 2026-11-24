@@ -121,7 +121,7 @@ function StaffBoard({ page }) {
       <div className={s.two}>
         <section className="cv-card">
           <div className="cv-card-head"><span className="cv-h4">What you might be missing</span><Icon name="Search" size={18} /></div>
-          <NoteList items={team.missing.slice(0, 4)} empty="Nothing hidden in the totals this month." icon={(m) => (m.kind === 'not-scheduled' ? ['Sparkles', s.good] : m.kind === 'slipping' ? ['TrendingDown', s.warn] : ['Eye', s.warn])} onOpen={setOpen} />
+          <NoteList items={team.missing.slice(0, 4)} empty="Nothing hidden in the totals this month." icon={(m) => (m.kind === 'not-scheduled' ? ['UserPlus', s.good] : m.kind === 'slipping' ? ['TrendingDown', s.warn] : ['Eye', s.warn])} onOpen={setOpen} />
         </section>
         <section className="cv-card">
           <div className="cv-card-head"><span className="cv-h4">Where you might over-correct</span><Icon name="Scale" size={18} /></div>
@@ -216,7 +216,7 @@ function TeamCoach({ person }) {
   return (
     <section className="cv-card" style={{ gap: 10 }}>
       <div className="cv-card-head">
-        <span className="cv-h4" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><Icon name="Sparkles" size={18} className={s.good} />Team Coach{person ? ` on ${first(person.name)}` : ''}</span>
+        <span className="cv-h4" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><Icon name="MessageSquare" size={18} className={s.good} />Team Coach{person ? ` on ${first(person.name)}` : ''}</span>
         <Button variant="secondary" size="sm" icon="MessageSquare" onClick={ask} disabled={busy}>{busy ? 'Thinking…' : ans ? 'Ask again' : person ? `What should I do about ${first(person.name)}?` : 'What should I focus on this week?'}</Button>
       </div>
       {ans ? (

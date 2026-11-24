@@ -8,7 +8,7 @@ import { useCv, cvMoney, CV_D, CV_ROOM, CV_NOW, Claim, Money, Pill, PageHead } f
 import { ServiceCheck } from '../touches';
 import { DenseService } from '../dense-sections';
 import { covercastPace, shiftPulseDay } from '../../../lib/data/forecast/index.js';
-import { useCovercast } from '../covercast';
+import { useCovercastState } from '../covercast';
 import {
   addDays, bandSpread, clockLabel, clockMinutes, cutApprovalId, dayOfDate, dayOutlook, fencesOf, hhmm, hourRows, isCutFor, localNow,
   manualNight, MEALS, mealOf, MIN_CALIBRATED, needsFrom, pacing, planTotals, serviceRecap, servicePlan, slotRows, SLOT_MIN, toCsv,
@@ -138,6 +138,16 @@ function fromToast(r) {
 }
 
 /** The sample's fixed dinner scene, in the same shape. Its figures are the seed's, labelled as a sample. */
+/** The page frame while Covercast works out tonight (a few hundred ms): same shapes, no numbers yet. */
+function ServiceSkeleton() {
+  return (
+    <div className={s.skeleton} role="status" aria-live="polite" aria-label="Working out tonight's forecast">
+      <div className={s.skelStrip}>{[0, 1, 2].map((i) => <span key={i} className="cv-skel" />)}</div>
+      <div className={`${s.skelHero} cv-skel`} />
+    </div>
+  );
+}
+
 function fromSample(sv, cc, date, plan, fences) {
   // The scene's own call (cut, wait, quiet) stands; the pace and the likely finish are Covercast's when it has the day.
   const start = 17 * 60;
@@ -335,7 +345,7 @@ function CvService() {
   const day = dayOfDate(date);
   const nowMin = clock.minutes;
 
-  const cc = useCovercast(CV_D.room, CV_D.id, server);
+  const { cc, pending: ccPending } = useCovercastState(CV_D.room, CV_D.id, server);
   const sp = cc ? shiftPulseDay(cc, date) : null;
   const plans = { lunch: servicePlan(CV_D.room, day, fencesSaved, 'lunch', sp?.lunch ?? null), dinner: servicePlan(CV_D.room, day, fencesSaved, 'dinner', sp?.dinner ?? null) };
   const outlook = dayOutlook(plans);
@@ -666,6 +676,7 @@ function CvService() {
       </div>
       {banner}
 
+      {ccPending ? <ServiceSkeleton /> : <>
       <div className={`${s.strip} ${s.stripSlim}`} role="group" aria-label="Lunch, dinner or the full day">
         <MealCard id="lunch" active={view.meal === 'lunch'} onPick={(id) => { setView({ meal: id }); setSel(null); }} title="Lunch" {...lc} foot={null} />
         <MealCard id="dinner" active={view.meal !== 'lunch' && view.meal !== 'day'} onPick={(id) => { setView({ meal: id }); setSel(null); }} title="Dinner" {...dc} foot={null} />
@@ -743,6 +754,7 @@ function CvService() {
           )}
         </aside> : null}
       </section>
+      </>}
 
       {vit && (
         <div className={s.vitals} aria-label={`${M.label} vitals`}>

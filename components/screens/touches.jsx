@@ -15,7 +15,7 @@ const quiet = { color: 'var(--fg-3)' };
 export function SpottedBy({ style }) {
   return (
     <span className="cv-xs" style={{ ...quiet, display: 'inline-flex', alignItems: 'center', gap: 4, ...style }}>
-      <Icon name="Sparkles" size={12} />Spotted by {TEAMMATE}
+      <Icon name="Eye" size={12} />Spotted by {TEAMMATE}
     </span>
   );
 }

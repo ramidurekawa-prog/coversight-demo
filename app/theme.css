@@ -104,10 +104,10 @@
 .sidebar .navitem.active { background: var(--side-active); color: var(--side-active-fg); font-weight: 600; }
 .sidebar .navitem.active svg { color: var(--cv-side-mark, var(--side-active-fg)); }
 .sidebar .navitem.active::before { width: 3px; height: 18px; left: 0; background: var(--cv-side-mark, var(--side-active-fg)); }
-.sidebar .navitem .count { font-family: var(--font-sans); font-size: 12.5px; font-weight: 600; padding: 0 6px; background: rgba(255, 255, 255, 0.1); color: var(--side-active-fg); }
+.sidebar .navitem .count { font-family: var(--font-sans); font-size: 13px; font-weight: 600; padding: 0 6px; background: rgba(255, 255, 255, 0.1); color: var(--side-active-fg); }
 .sidebar .navitem .cv-new { color: var(--side-active-fg); background: rgba(255, 255, 255, 0.1); }
-.sidebar .cv-navgroup { margin-top: 14px; font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.7; }
-.sidebar .navitem { min-height: 36px; font-size: 16px; }
+.sidebar .cv-navgroup { margin-top: 8px; font-size: 13px; font-weight: 500; letter-spacing: 0; text-transform: none; }
+.sidebar .navitem { min-height: 36px; font-size: 15px; gap: 10px; }
 
 /* Money and figures always set in tabular mono. */
 .cv-fig, .cv-num { font-family: var(--font-mono); font-variant-numeric: tabular-nums lining-nums; letter-spacing: -0.01em; }

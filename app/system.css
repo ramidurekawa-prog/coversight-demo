@@ -1,0 +1,120 @@
+/* =============================================================================
+   Coversight UI system (2026-11-24). Loaded last: the one place the app's
+   scale is defined. Every page and component reads these; don't add new
+   values beside them. Written down in docs/DESIGN_SYSTEM.md.
+
+   Type     13 / 15 / 17 / 20 / 25 / 28 / 36 / 44 px (12 only inside charts)
+   Weight   400 body, 500 labels, 600 titles and figures, 700 hero numbers
+   Space    4-px grid: 4, 8, 12, 16, 24, 32, 48
+   Radius   --r-ctl 8px (buttons, inputs, chips, inner tiles)
+            --r-box 12px (cards, panels, dialogs)
+   Shadow   --shadow-box (resting surface, always with a 1px border)
+            --shadow-pop (things that float: menus, dialogs, drawers)
+   Motion   150 ms, ease-out, colour and background only; none when reduced
+   Colour   Persimmon & Ink (app/theme.css): persimmon = the one action,
+            ink = structure and data, green = good, red = problem,
+            amber = caution. Never a gradient, never a coloured stripe.
+   ============================================================================= */
+
+:root {
+  --r-ctl: 8px;
+  --r-box: 12px;
+  --radius-xs: 4px;
+  --radius-sm: var(--r-ctl);
+  --radius-md: var(--r-ctl);
+  --radius-lg: var(--r-box);
+  --radius-xl: var(--r-box);
+
+  --shadow-box: 0 1px 2px rgba(23, 37, 54, 0.05);
+  --shadow-pop: 0 12px 32px -8px rgba(23, 37, 54, 0.18), 0 2px 6px rgba(23, 37, 54, 0.06);
+  --shadow-xs: none;
+  --shadow-sm: var(--shadow-box);
+  --shadow-md: var(--shadow-pop);
+  --shadow-lg: var(--shadow-pop);
+  --shadow-xl: var(--shadow-pop);
+  --cv-box: 0 0 0 1px var(--border), var(--shadow-box);
+  --cv-box-hover: 0 0 0 1px var(--border-strong), var(--shadow-box);
+  --soft: var(--cv-box);
+
+  --text-display: 2.75rem; /* 44 */
+  --text-h1: 2.25rem;      /* 36 */
+  --text-h2: 1.5625rem;    /* 25 */
+  --text-h3: 1.25rem;      /* 20 */
+  --text-lg: 1.25rem;      /* 20 */
+  --text-base: 1rem;       /* 16: controls */
+  --text-sm: 0.9375rem;    /* 15 */
+  --text-xs: 0.8125rem;    /* 13 */
+  --tracking-wide: 0;
+
+  --dur-fast: 150ms;
+  --dur-base: 150ms;
+}
+[data-theme='dark'] { --shadow-box: none; --shadow-pop: 0 16px 40px -8px rgba(0, 0, 0, 0.6), 0 0 0 1px var(--border); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) { --shadow-box: none; --shadow-pop: 0 16px 40px -8px rgba(0, 0, 0, 0.6), 0 0 0 1px var(--border); }
+}
+
+/* Figures line up everywhere, not only where a class remembers to ask. */
+body { font-variant-numeric: tabular-nums lining-nums; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+
+/* One quiet transition for everything you can press. */
+:is(button, a, .btn, .cv-card, .navitem, .tab, input, select, textarea) {
+  transition-property: background-color, border-color, color, box-shadow, opacity;
+  transition-duration: 150ms;
+  transition-timing-function: var(--ease-out);
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0ms !important; animation-duration: 0ms !important; animation-iteration-count: 1 !important; }
+}
+
+/* ---- Buttons: flat, no glow, no lift ------------------------------------------ */
+.btn, :where([data-style='today']) .btn { border-radius: var(--r-ctl); font-weight: 600; }
+.btn:active { transform: none; }
+.btn-primary,
+.btn-primary:hover,
+:where([data-style='today']) .btn-primary,
+:where([data-style='today']) .btn-primary:hover { box-shadow: none; }
+.btn-primary:hover svg:last-child { transform: none; }
+.btn-primary:focus-visible { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--fg-1); }
+.btn-secondary { border: 1px solid var(--border-strong); box-shadow: none; background: var(--surface); }
+.btn-secondary:hover { background: var(--surface-hover); border-color: var(--fg-3); box-shadow: none; }
+
+/* ---- Surfaces: one card ---------------------------------------------------------- */
+.cv-card { border-radius: var(--r-box); }
+.cv-modal, .cv-scrim + .cv-drawer { border-radius: var(--r-box); box-shadow: var(--shadow-pop); }
+
+/* ---- Chips: one shape --------------------------------------------------------- */
+.badge, .cv-pill, .cv-claim { border-radius: var(--r-ctl); }
+.badge, .cv-pill { font-weight: 500; }
+.cv-claim { font-weight: 600; font-size: 12.5px; }
+
+/* ---- Labels: sentence case, never shouted ------------------------------------- */
+.cv-over { text-transform: none; letter-spacing: 0; font-size: var(--text-sm); font-weight: 500; color: var(--fg-2); }
+.tbl th, .cv-table th { text-transform: none; letter-spacing: 0; }
+
+/* ---- Loading: one skeleton ---------------------------------------------------- */
+.cv-skel { position: relative; overflow: hidden; border-radius: var(--r-ctl); background: var(--surface-sunken); }
+.cv-skel::after { content: ''; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--fg-1) 5%, transparent), transparent); animation: cv-skel 1.4s ease-in-out infinite; }
+@keyframes cv-skel { to { transform: translateX(100%); } }
+.cv-skel-line { height: 14px; }
+.cv-skel-title { height: 32px; width: 60%; }
+.cv-skel-block { height: 180px; border-radius: var(--r-box); }
+
+/* ---- Shell: flush rails, one container ---------------------------------------- */
+/* Every page body, its tabs and its agent line share one column: 1200px, 32px gutters. */
+.cv-pagetabs { padding-left: max(32px, calc((100% - 1200px) / 2 + 32px)); padding-right: 32px; }
+.sidebar .brand { padding-bottom: 14px; }
+.sidebar .navitem .ico svg, .sidebar .navitem > svg { width: 18px; height: 18px; }
+.topbar { min-height: 64px; padding-top: 10px; padding-bottom: 10px; }
+.cv-top .cv-health, .cv-top .locpick { height: 36px; font-size: 15px; font-weight: 500; border-color: var(--border-strong); }
+.cv-top .cv-sampletag { font-size: 12px; font-weight: 500; padding: 1px 6px; }
+@media (max-width: 720px) { .cv-pagetabs { padding-left: 8px; padding-right: 8px; } }
+
+/* ---- Empty and error states: one shape -------------------------------------- */
+.cv-empty { border: 1px dashed var(--border-strong); border-radius: var(--r-box); background: var(--surface); padding: 40px 24px; }
+.cv-error { display: grid; place-items: center; min-height: 60vh; padding: 32px 16px; font-family: var(--font-sans); color: var(--fg-1); }
+.cv-error-card { max-width: 480px; display: flex; flex-direction: column; gap: 12px; padding: 32px; border: 1px solid var(--border); border-radius: var(--r-box); background: var(--surface); box-shadow: var(--shadow-box); }
+.cv-error-card h1 { margin: 0; font-size: 25px; font-weight: 600; letter-spacing: -0.02em; }
+.cv-error-card p { margin: 0; font-size: 15px; line-height: 1.55; color: var(--fg-2); }
+.cv-error-ico { display: grid; place-items: center; width: 36px; height: 36px; border-radius: var(--r-ctl); background: var(--error-50); color: var(--error-600); font-weight: 700; }
+.cv-error-acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
