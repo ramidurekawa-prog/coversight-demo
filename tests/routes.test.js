@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest';
 
 import { cvPlanCandidates, CV_PROOF } from '../components/screens/core.jsx';
 import { SCREENS } from '../components/screen.jsx';
-import { CV_NAV, CV_PAGES, CV_ROLES, DEFAULT_IDS, FINDING_IDS, PACKET_IDS, pageFromPath, pathFor, SCREEN_PAGES } from '../lib/pages.js';
+import { CV_NAV, CV_PAGES, CV_ROLES, CV_SETTINGS, CV_TABS, DEFAULT_IDS, familyOf, FINDING_IDS, PACKET_IDS, pageFromPath, pathFor, SCREEN_PAGES } from '../lib/pages.js';
 
 describe('routing', () => {
   test('every page has a screen component', () => {
@@ -37,11 +37,34 @@ describe('routing', () => {
     expect(pageFromPath('/nope').page).toBe('week');
   });
 
+  test('every visible page has exactly one home: the sidebar, a tab or Settings', () => {
+    const nav = CV_NAV.flatMap((g) => g.items);
+    const tabs = Object.values(CV_TABS).flatMap((t) => t.map(([id]) => id));
+    expect(new Set(nav).size).toBe(nav.length);
+    expect(new Set(tabs).size).toBe(tabs.length);
+    for (const [parent, list] of Object.entries(CV_TABS)) {
+      expect(list[0][0], parent).toBe(parent); // the sidebar entry opens the first tab
+      expect(nav.includes(parent) || parent === CV_SETTINGS, parent).toBe(true);
+      for (const [id] of list) expect(CV_PAGES[id]?.hidden, id).toBe(undefined);
+    }
+    for (const g of CV_NAV) for (const id of Object.keys(g.sections || {})) expect(g.items, id).toContain(id);
+    const placed = new Set([...nav, ...tabs]);
+    for (const [id, p] of Object.entries(CV_PAGES)) {
+      if (p.hidden || id === 'connect') continue; // id screens and Connect your POS open from inside a tab
+      expect(placed.has(id), id).toBe(true);
+    }
+    expect(familyOf('plan')).toMatchObject({ parent: 'week', tab: 'plan' });
+    expect(familyOf('finding')).toMatchObject({ parent: 'week', tab: 'plan' });
+    expect(familyOf('connect')).toMatchObject({ parent: 'inputs', tab: 'sources' });
+    expect(familyOf('today').tabs).toBeNull();
+  });
+
   test('nav and role homes point at real, visible pages', () => {
     for (const g of CV_NAV) for (const id of g.items) expect(CV_PAGES[id]?.hidden, id).toBeFalsy();
     for (const r of Object.values(CV_ROLES)) {
       expect(CV_PAGES[r.home]).toBeDefined();
       if (r.nav) expect(CV_NAV.some((g) => r.nav.includes(g.label) && g.items.includes(r.home))).toBe(true);
+      expect(r.hide).not.toContain(r.home);
     }
   });
 });

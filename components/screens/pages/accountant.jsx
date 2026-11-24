@@ -3,7 +3,8 @@
 import * as React from 'react';
 import { Button } from '../../kit';
 import { useEngine, useSaved } from '../../engine';
-import { useCv, cvMoney, CV_LOCS, Pill, Callout, PageHead } from '../core';
+import { useCv, cvMoney, CV_D, CV_LOCS, Claim, Pill, Callout, PageHead } from '../core';
+import { CALENDARS, periodPnl, pnlCsv } from '../../../lib/data/periods';
 
 /* ================================================================ Accountant */
 const CV_RECON = [
@@ -98,6 +99,66 @@ function AccountantReal() {
   );
 }
 
+/**
+ * The room's P&L lines by accounting period: sales, food, labor and prime
+ * cost, summed from the same weekly figures every other page reads. The
+ * group picks how it closes its books; the CSV drops into a P&L workbook.
+ */
+function PeriodPnl() {
+  const eng = useEngine();
+  const [cal, setCal] = useSaved('accountant.calendar', { calendar: 'month' }, { group: true });
+  const real = eng.mode === 'server' && !!eng.org && !eng.org.sample;
+  const rows = (CV_D.hist?.rows || []).filter((r) => !real || r.own);
+  const periods = periodPnl(rows, cal.calendar).slice(-6).reverse();
+  const pct = (x) => `${(x * 100).toFixed(1)}%`;
+  const download = () => {
+    const blob = new Blob([pnlCsv(periodPnl(rows, cal.calendar), { room: CV_D.profile.name })], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `coversight-pnl-${CV_D.id}-${cal.calendar}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+  return (
+    <div className="cv-card" style={{ padding: 18 }} data-period-pnl>
+      <div className="cv-row" style={{ flexWrap: 'wrap', gap: 10 }}>
+        <div className="cv-col" style={{ gap: 2, flex: 1, minWidth: 220 }}>
+          <span className="cv-h3">Sales, food and labor by period · {CV_D.profile.short}</span>
+          <span className="cv-small cv-muted">The same weekly figures as This week, grouped the way you close your books. {cal.calendar === 'month' ? 'A week belongs to the month it ends in.' : 'Week 1 is the week that holds January 1.'}</span>
+        </div>
+        <label className="cv-row" style={{ gap: 8 }}>
+          <span className="cv-small" style={{ fontWeight: 600 }}>We close by</span>
+          <select className="input" style={{ width: 'auto' }} value={cal.calendar} onChange={(e) => setCal({ calendar: e.target.value }, `Books close by ${CALENDARS[e.target.value].label.toLowerCase()}`)}>
+            {Object.entries(CALENDARS).map(([k, c]) => <option key={k} value={k}>{c.label}</option>)}
+          </select>
+        </label>
+        <Button variant="secondary" icon="Download" disabled={!periods.length} onClick={download}>Download P&amp;L lines (CSV)</Button>
+      </div>
+      {periods.length ? (
+        <div style={{ overflowX: 'auto', marginTop: 12 }}>
+          <table className="cv-table">
+            <thead><tr><th>Period</th><th className="r">Weeks</th><th className="r">Net sales</th><th className="r">Food cost</th><th className="r">Labor</th><th className="r">Prime cost</th><th className="r">Kept after food and labor</th></tr></thead>
+            <tbody>
+              {periods.map((p) => (
+                <tr key={p.id}>
+                  <td>{p.label}{p.complete === false && <span className="cv-xs cv-muted"> · part period</span>}</td>
+                  <td className="r">{p.weeks.length}</td>
+                  <td className="r">{cvMoney(Math.round(p.net))}</td>
+                  <td className="r">{cvMoney(Math.round(p.food))} <span className="cv-xs cv-muted">{pct(p.foodRate)}</span></td>
+                  <td className="r">{cvMoney(Math.round(p.labour))} <span className="cv-xs cv-muted">{pct(p.labourRate)}</span></td>
+                  <td className="r" style={{ fontWeight: 700 }}>{pct(p.prime)}</td>
+                  <td className="r">{cvMoney(Math.round(p.earned))}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : <span className="cv-small cv-muted">This fills in once there is a week of your own sales.</span>}
+      <div className="cv-row" style={{ marginTop: 10, gap: 8 }}><Claim k="mod" /><span className="cv-xs cv-muted">Food cost is plates sold × recipe cost, not invoices. Rent and other costs are not included.</span></div>
+    </div>
+  );
+}
+
 function CvAccountant() {
   const eng = useEngine();
   if (eng.mode === 'server' && eng.org && !eng.org.sample && !['gm', 'floor'].includes(eng.viewer?.role)) {
@@ -106,6 +167,7 @@ function CvAccountant() {
         <PageHead over={`For the group controller · ${eng.org.name}`} q="The period package"
           sub="Every verified saving in the month, at its cautious lower bound, where it lands in your books, and the approval the invoice waits on. Download it as CSV for your close." />
         <AccountantReal />
+        <PeriodPnl />
       </div>
     );
   }
@@ -180,6 +242,7 @@ function CvAccountantSample() {
         {mapping ? <Callout tone={mapping === "ok" ? "good" : ""} icon={mapping === "ok" ? "CircleCheck" : "Pencil"}>{mapping === "ok" ? "Mapping confirmed by you, version 3, effective Oct 1." : "Opened in the mapping editor."}</Callout> :
           <div className="cv-row"><Button size="sm" variant="secondary" icon="Check" onClick={() => setMapping("ok")}>Confirm mapping</Button><Button size="sm" variant="secondary" onClick={() => setMapping("edit")}>Change it</Button></div>}
       </section>
+      <PeriodPnl />
     </div>
   );
 }
