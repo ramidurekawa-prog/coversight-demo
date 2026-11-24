@@ -6,7 +6,7 @@ import { Button, Icon } from '../../kit';
 import { ASSIGNEES, assigneeLabel, DECLINE, worthOf, unlocksOf } from '../../../lib/data/page/today';
 import { AREAS, areaOf, carriedOut } from '../../../lib/data/page/today-brief';
 import { CV_CLAIM, CV_D, Claim, useCv } from '../core';
-import { StaffingEvidence, StaffingHours, StaffingReadiness } from '../staffing';
+import { ApprovalLine, StaffingCompare, StaffingEvidence, StaffingHours, StaffingReadiness, TimeChoice, useStaffingDecision } from '../staffing';
 import s from './today.module.css';
 
 /* The review panel: one recommendation, opened in place. A side panel on a
@@ -81,11 +81,14 @@ function whoDecides(q) {
 /**
  * @param {{ q: any, cards: any[], history: any[], fix: any, busy: boolean, label: string, onClose: () => void, caution?: string|null,
  *   people?: { id: string, name: string, roleLabel: string }[], held?: any, meId?: string|null,
- *   act: { primary: () => void, snooze: () => void, decline: (r: string) => void, assign: (to: string, name?: string) => void, ack: () => void, done: () => void, open?: () => void } }} p
+ *   act: { primary: (chosen?: any) => void, snooze: () => void, decline: (r: string) => void, assign: (to: string, name?: string) => void, ack: () => void, done: () => void, open?: () => void } }} p
  */
 export function ReviewPanel({ q, cards, history, fix, busy, label, onClose, act, caution, people = [], held = null, meId = null, onService, onFixData }) {
   const cv = useCv();
-  const st = q.staffing || null;
+  // A staffing change's time stays editable before approval: the pick is re-worked here and re-checked by the server.
+  const [choose, setChoose] = React.useState(null);
+  const picked = useStaffingDecision(q.staffing?.date, q.staffing?.meal, choose);
+  const st = q.staffing ? (choose && picked?.approvalId ? picked : q.staffing) : null;
   const forMe = !!(held && meId && held.to === meId);
   const [asking, setAsking] = React.useState(null); // 'decline' | 'assign' | null
   const w = worthOf(q);
@@ -125,9 +128,13 @@ export function ReviewPanel({ q, cards, history, fix, busy, label, onClose, act,
           {/prevent|avoid/i.test(`${q.value} ${q.means}`) && <p className={s.blockNote}>Money that’s avoided is never counted as saved.</p>}
         </Block>
 
+        {st && ['act', 'decided'].includes(st.state) && (
+          <ApprovalLine dec={st} held={held && st.state === 'act' ? { label: assigneeLabel(held.to, CV_D.profile, held.name), at: held.at, from: held.from } : null} people={people} />
+        )}
         {st?.hoursRows && (
           <Block title={`${st.label}, hour by hour`}>
             <StaffingHours dec={st} />
+            <StaffingCompare dec={st} />
           </Block>
         )}
 
@@ -155,6 +162,7 @@ export function ReviewPanel({ q, cards, history, fix, busy, label, onClose, act,
 
         <Block title="If you go ahead">
           <p className={s.blockText}>{st?.state === 'act' ? `${st.short}. Approving records the decision; someone still changes ${st.system.toLowerCase()} and tells the person. After the shift, clock-ins show whether it happened.` : how.text}</p>
+          {st?.state === 'act' && <TimeChoice dec={st} choose={choose} onChoose={setChoose} />}
           {(q.task?.diff || (st?.state === 'act' && st.diff)) && (
             <table className={s.diff}>
               <thead><tr><th scope="col">What</th><th scope="col">Now</th><th scope="col">After</th></tr></thead>
@@ -191,7 +199,7 @@ export function ReviewPanel({ q, cards, history, fix, busy, label, onClose, act,
         )}
         {!asking && (
           <>
-            <Button size="lg" className={s.panelPrimary} disabled={busy} onClick={act.primary}>{label}</Button>
+            <Button size="lg" className={s.panelPrimary} disabled={busy} onClick={() => act.primary(choose && st?.approvalId ? st : null)}>{label}</Button>
             <div className={s.panelMore}>
               <Button size="sm" variant="secondary" icon="UserPlus" disabled={busy} onClick={() => setAsking('assign')}>Assign</Button>
               {canSnooze && <Button size="sm" variant="secondary" disabled={busy} onClick={act.snooze}>Not now</Button>}

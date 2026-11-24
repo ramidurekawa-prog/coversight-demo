@@ -12,7 +12,8 @@ import * as React from 'react';
 import { Button, Icon, Tabs } from '../../kit';
 import { CV_D, CV_DS, CV_ROOM, Callout, Claim, Pill, useCv } from '../core';
 import { engine, useEngine } from '../../engine';
-import { SCHEMAS, mapColumns, parseCSV, templateRows } from '../../../lib/data/ingest';
+import { SCHEMAS, guessColumns, mapColumns, parseCSV, templateRows } from '../../../lib/data/ingest';
+import { readDraft, recordAttempt, saveDraft } from '../attempts';
 import { analyze, checkRows, cleanOpts, fingerprint, mappingReview, safeCSV } from '../../../lib/data/page/inputs';
 import { jfetch } from './inputs-data';
 import { linkRows, shortDate } from '../../../lib/data/page/staffing';
@@ -109,7 +110,7 @@ function Mapping({ kind, review, map, setMap, confirmed, setConfirmed }) {
                     {cols.map((c) => <option key={c.k} value={c.k}>{c.label}</option>)}
                   </select>
                 </td>
-                <td className="cv-xs">{r.how === 'exact' ? <Pill tone="good" icon="CircleCheck">Exact</Pill> : r.how === 'alias' ? (r.risk ? <span className="cv-row nowrap" style={{ gap: 6 }}><Pill tone="warn" icon="TriangleAlert">Check</Pill>{r.risk}</span> : <Pill icon="Check">Common name</Pill>) : <span className="cv-faint">Ignored</span>}</td>
+                <td className="cv-xs">{r.how === 'exact' ? <Pill tone="good" icon="CircleCheck">Exact</Pill> : r.how === 'guess' ? <span className="cv-row nowrap" style={{ gap: 6 }}><Pill tone="warn" icon="CircleHelp">Guess</Pill>{r.risk}</span> : r.how === 'alias' ? (r.risk ? <span className="cv-row nowrap" style={{ gap: 6 }}><Pill tone="warn" icon="TriangleAlert">Check</Pill>{r.risk}</span> : <Pill icon="Check">Common name</Pill>) : <span className="cv-faint">Ignored</span>}</td>
               </tr>
             ))}
           </tbody>
@@ -119,7 +120,7 @@ function Mapping({ kind, review, map, setMap, confirmed, setConfirmed }) {
       {review.needsConfirm && (
         <label className="cv-row cv-small" style={{ gap: 8, cursor: 'pointer', flexWrap: 'nowrap', alignItems: 'flex-start' }}>
           <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} style={{ marginTop: 3 }} />
-          <span><b>These columns are right.</b> <span className="cv-faint">Some were matched by a guess that could swap a money or unit meaning (per case vs per unit, gross vs net). Check them before the rows are read.</span></span>
+          <span><b>These columns are right.</b> <span className="cv-faint">{review.rows.some((r) => r.how === 'guess') ? 'Some headers were matched by a guess from their words. Pick the right column above if one is wrong.' : 'Some were matched by a guess that could swap a money or unit meaning (per case vs per unit, gross vs net). Check them before the rows are read.'}</span></span>
         </label>
       )}
     </div>
@@ -330,14 +331,42 @@ export function Editor({ kind, seed, startMode, lastEntry = null, onUndo, onHist
   const fileRef = React.useRef(null);
   const [find, setFind] = React.useState('');
   const [fixOnly, setFixOnly] = React.useState(false);
+  // A save that didn't go through: the rows stay as they are, with the reason and a retry.
+  const [saveError, setSaveError] = React.useState(/** @type {{ message: string, at: number }|null} */ (null));
+  const [phase, setPhase] = React.useState(/** @type {null|'sending'|'checking'} */ (null));
+  const [elapsed, setElapsed] = React.useState(0);
+  // One id per set of rows: a retry of the same rows is the same attempt, so the server saves it once.
+  const attemptRef = React.useRef(/** @type {{ print: string, id: string }|null} */ (null));
+  // Unsaved corrections are kept in this browser until they're saved, so a failed save or a reload never loses them.
+  const draftKey = `${CV_D.id}`;
+  const [draft, setDraft] = React.useState(() => (seed || quick ? null : readDraft(draftKey, kind)));
 
   const parsed = React.useMemo(() => (mode === 'csv' && csv.trim() ? parseCSV(csv) : null), [mode, csv]);
   const autoMap = React.useMemo(() => (parsed ? mapColumns(parsed.headers, kind).map : {}), [parsed, kind]);
-  const curMap = map ?? autoMap;
-  const review = parsed ? mappingReview(parsed.headers, kind, curMap) : null;
+  // Headers no name matched get a suggested column from their words, shown as a guess that needs a yes.
+  const guesses = React.useMemo(() => (parsed ? guessColumns(parsed.headers, kind, autoMap) : {}), [parsed, kind, autoMap]);
+  const curMap = map ?? { ...autoMap, ...guesses };
+  const review = parsed ? mappingReview(parsed.headers, kind, curMap, guesses) : null;
   const missingCols = schema.columns.filter((c) => c.required && !Object.values(curMap).includes(c.k));
 
-  const stale = () => { setResult(null); setA(null); setYes(false); setDirty(true); };
+  const stale = () => { setResult(null); setA(null); setYes(false); setDirty(true); setSaveError(null); };
+  React.useEffect(() => {
+    if (!dirty || seed || quick) return undefined;
+    const t = setTimeout(() => saveDraft(draftKey, kind, { at: new Date().toISOString(), mode, rows: mode === 'grid' ? rows : undefined, csv: mode === 'csv' ? csv : undefined, ctx: context ? `${context.date}:${context.meal}` : null }), 400);
+    return () => clearTimeout(t);
+  }, [dirty, rows, csv, mode]); // eslint-disable-line react-hooks/exhaustive-deps
+  React.useEffect(() => {
+    if (!phase) { setElapsed(0); return undefined; }
+    const start = Date.now();
+    const i = setInterval(() => setElapsed(Math.round((Date.now() - start) / 1000)), 1000);
+    return () => clearInterval(i);
+  }, [phase]);
+  const restoreDraft = () => {
+    if (!draft) return;
+    if (draft.mode === 'csv' && draft.csv != null) { setMode('csv'); setCsvState(draft.csv); } else if (draft.rows) { setMode('grid'); setRowsState(draft.rows); }
+    setDraft(null); setResult(null); setA(null); setDirty(true);
+  };
+  const dropDraft = () => { saveDraft(draftKey, kind, null); setDraft(null); };
   const setRows = (r) => { setRowsState(r); stale(); };
   const setCsv = (t) => { setCsvState(t); setMapState(null); setMapOk(false); stale(); };
   const setMap = (m) => { setMapState(m); stale(); };
@@ -376,19 +405,23 @@ export function Editor({ kind, seed, startMode, lastEntry = null, onUndo, onHist
   // Arrived from "Bring data in": check it straight away so the issues and the preview show.
   React.useEffect(() => { if (seed) { if (!review?.needsConfirm && !missingCols.length) check(); document.getElementById('inputs-editor')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const finish = (r) => { done.key = doneKey; done.result = r; setLast(r); };
+  const finish = (r) => { done.key = doneKey; done.result = r; setLast(r); saveDraft(draftKey, kind, null); setDraft(null); setSaveError(null); attemptRef.current = null; recordAttempt(CV_D.id, kind, { at: new Date().toISOString(), ok: true, rows: r?.verify?.rows }); };
   const commit = async () => {
     if (a.unchanged) { finish({ unchanged: true, duplicates: a.duplicates, verify: { ok: true, rows: a.rows.length, fingerprint: a.fingerprint, expected: a.fingerprint }, effects: { moved: 0, unblocked: [], tests: [] } }); return; }
     const changed = a.moves.filter((m) => m.changed).map((m) => `${m.label}: ${m.before} → ${m.after}`);
     const source = mode === 'grid' ? 'grid' : file?.source || 'csv';
-    setBusy(true);
+    if (busy) return;
+    setBusy(true); setSaveError(null); setPhase('sending');
+    const print = `${fingerprint(result.rows)}:${JSON.stringify(opts ?? null)}`;
+    if (!attemptRef.current || attemptRef.current.print !== print) attemptRef.current = { print, id: `att-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}` };
     try {
       if (server) {
         const r = await jfetch('/api/inputs', { method: 'POST', body: JSON.stringify({
-          roomId: CV_D.id, kind, rows: result.rows, opts, confirm: a.confirm.length ? yes : undefined,
+          roomId: CV_D.id, kind, rows: result.rows, opts, confirm: a.confirm.length ? yes : undefined, attempt: attemptRef.current.id,
           mappingConfirmed: review?.needsConfirm ? mapOk : undefined,
           provenance: { source, ...(file?.name ? { file: file.name.slice(0, 300) } : {}), ...(mode === 'csv' ? { filePrint: fingerprint(csv), mapping: curMap } : {}), rejected: result.rejected },
         }) });
+        setPhase('checking');
         finish(r);
         await engine.hydrate();
       } else {
@@ -398,8 +431,11 @@ export function Editor({ kind, seed, startMode, lastEntry = null, onUndo, onHist
       }
       cv.toast(`${schema.title} saved for ${CV_ROOM.short}.`);
     } catch (e) {
-      cv.toast(`Not saved: ${e.message}`);
-    } finally { setBusy(false); }
+      const message = e?.message || 'No connection';
+      setSaveError({ message, at: Date.now() });
+      recordAttempt(CV_D.id, kind, { at: new Date().toISOString(), ok: false, error: message.slice(0, 120), rows: result.rows.length });
+      cv.toast(`Not saved: ${message}`);
+    } finally { setBusy(false); setPhase(null); }
   };
 
   const onFile = (e) => {
@@ -411,7 +447,7 @@ export function Editor({ kind, seed, startMode, lastEntry = null, onUndo, onHist
     reader.readAsText(f);
   };
 
-  const discard = () => { setRowsState(quick ? quickRows() : initialRows()); if (seed) setMode('csv'); setCsvState(seed?.csv ?? ''); setMapState(null); setMapOk(false); setResult(null); setA(null); setDirty(false); setYes(false); };
+  const discard = () => { saveDraft(draftKey, kind, null); setSaveError(null); setRowsState(quick ? quickRows() : initialRows()); if (seed) setMode('csv'); setCsvState(seed?.csv ?? ''); setMapState(null); setMapOk(false); setResult(null); setA(null); setDirty(false); setYes(false); };
   const needYes = !!a?.confirm.length;
   const mapBlocked = mode === 'csv' && (!parsed || missingCols.length > 0 || (review?.needsConfirm && !mapOk));
   const canCommit = result && !result.errors && a && (!needYes || yes) && !busy && !eng.saving;
@@ -434,6 +470,14 @@ export function Editor({ kind, seed, startMode, lastEntry = null, onUndo, onHist
         <div className={s.linkCtx} role="note">
           <Icon name="CalendarClock" size={16} />
           <span><b>For the {mealWord} staffing check on {shortDate(context.date)}</b> · {CV_ROOM.name}. {kind === 'shifts' ? 'One row per shift. Times like 4:30 pm or 16:30.' : 'Guests seated and servers on, each hour. Leave a row out if you weren’t open.'} Other dates stay as they are.</span>
+        </div>
+      )}
+      {draft && !dirty && (
+        <div className={s.draftNote} role="status">
+          <Icon name="History" size={16} />
+          <span>You have unsaved changes from {new Date(draft.at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}.</span>
+          <Button size="sm" variant="secondary" onClick={restoreDraft}>Bring them back</Button>
+          <Button size="sm" variant="ghost" onClick={dropDraft}>Discard</Button>
         </div>
       )}
       {last && <Verified r={last} onClose={() => { done.key = null; setLast(null); }} />}
@@ -514,9 +558,16 @@ export function Editor({ kind, seed, startMode, lastEntry = null, onUndo, onHist
           </label>
         </div>
       )}
+      {saveError && !busy && (
+        <div className={s.saveFail} role="alert">
+          <Icon name="CircleX" size={16} />
+          <span><b>Not saved: {saveError.message}.</b> Your {plural(result?.rows?.length ?? rows.length, 'row')} and any fixes are still here{eng.inputs[CV_D.id]?.[kind] ? ', and the data saved before is still the one in use' : ''}.</span>
+          <Button size="sm" icon="RefreshCw" disabled={!canCommit} onClick={commit}>Try again</Button>
+        </div>
+      )}
       <div className={s.bar}>
         <span className={s.barNote}>
-          {busy || eng.saving ? <><Icon name="RefreshCw" size={14} /> Saving…</>
+          {busy ? <span className={s.progress}><Icon name="RefreshCw" size={14} /> {phase === 'checking' ? 'Saved. Double-checking what was stored…' : `Saving ${plural(result?.rows?.length ?? 0, 'row')}…`}{elapsed >= 2 ? ` ${elapsed} s` : ''}</span>
             : canCommit ? <><Icon name="CircleCheck" size={14} color="var(--success-600)" /> {a.unchanged ? 'Same as what’s already there.' : 'Ready to save.'}</>
               : a && needYes && !yes ? <><Icon name="TriangleAlert" size={14} color="var(--warning-600)" /> Tick the box above to save.</>
                 : result?.errors ? <><Icon name="CircleX" size={14} color="var(--error-600)" /> {result.rejected ? `${plural(result.rejected, 'row')} need${result.rejected === 1 ? 's' : ''} a fix before you can save.` : 'Something needs a fix before you can save.'}</>

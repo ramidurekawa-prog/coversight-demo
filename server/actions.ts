@@ -122,6 +122,21 @@ export const ACTION_KEYS = {
   'forecast.live': { scope: 'room', schema: forecastLive },
   /** Covercast decisions: what a short server-hour costs, and the pilot ledger. */
   'forecast.decisions': { scope: 'room', schema: forecastDecisions },
+  /**
+   * Pre-shift staffing: the manager's own changes to the guests expected in
+   * an hour of one service (a large party, an event, a closure), each with its
+   * reason, who and when. The forecast they change is kept as it was; the
+   * staffing call is worked out again on the changed hours (lib/data/page/staffing.js).
+   */
+  'staffing.adjust': { scope: 'room', schema: z.object({ list: z.array(z.object({
+    id: z.string().min(1).max(40).regex(/^[\w-]+$/), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), meal: z.enum(['lunch', 'dinner']),
+    hour: z.number().int().min(0).max(23), guests: z.number().int().min(-500).max(500).refine((n) => n !== 0, 'a change of 0 guests'),
+    reason: z.enum(['party', 'event', 'weather', 'closure', 'other']), note: z.string().trim().max(80).optional(), at: isoDate, by: z.string().max(80).optional(),
+  })).max(60) }) },
+  /** Pre-shift staffing: the last call each service showed that needed a decision, so one that's covered later is kept as history, not lost. */
+  'staffing.seen': { scope: 'room', schema: z.record(z.string().regex(/^staff:\d{4}-\d{2}-\d{2}:(lunch|dinner)$/), z.object({
+    title: z.string().max(200), kind: z.enum(['add', 'start', 'end']).optional(), version: z.string().max(20), at: isoDate, approvalId: z.string().max(120).optional(),
+  })).refine((r) => Object.keys(r).length <= 30, 'too many') },
   /** Weekly meeting: the room's slot (day of week, 0 = Sunday, local time, length) and who usually attends. */
   'meeting.schedule': { scope: 'room', schema: meetingSchemas.schedule },
   /** Labor: days entered by hand (cost and hours), for when no schedule or payroll feed is connected or one is down. One entry per date. */

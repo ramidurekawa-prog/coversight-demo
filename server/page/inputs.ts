@@ -6,13 +6,16 @@
 //    units need `confirm: true`, re-derived here, not trusted from the client.
 //  - Process: idempotent. Rows identical to what's in use, or waste rows
 //    already logged, add nothing, so a retry or a repeat upload can't double.
+//    A save carries an `attempt` id: the same id sent again (a retry after
+//    the answer was lost, a double tap) returns the first save's result, and
+//    two at once wait for each other.
 //  - Verify: the stored rows are read back and fingerprinted against what was
 //    checked; a mismatch is reported, never hidden.
 //  - Provenance: one `inputs.import` audit row per commit (source, file print,
 //    mapping, counts, effects, the entry it replaced).
 //  - Propagation: running tests on a lever this kind feeds get a notification.
 // Undo and the history are scoped to the viewer's rooms.
-import { and, desc, eq, gte, inArray, lt } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { analyze as analyzeJs, checkRows, cleanOpts, commitSummary, currentIds, fingerprint, roomFor } from '../../lib/data/page/inputs.js';
@@ -48,6 +51,7 @@ const commitBody = z.object({
   confirm: z.boolean().optional(),
   mappingConfirmed: z.boolean().optional(),
   provenance,
+  attempt: z.string().regex(/^[\w-]{8,64}$/).optional(),
 });
 
 type Analysis = {
@@ -75,15 +79,47 @@ export type CommitResult = {
   duplicates: number;
   verify: { ok: boolean; rows: number; fingerprint: string; expected: string };
   effects: { moved: number; unblocked: string[]; tests: string[] };
+  /** The same attempt was already saved: this is that save's result, and nothing new was stored. */
+  replayed?: boolean;
 };
 
 /** Check a commit like the screen does, then save it. */
+/** Saves in flight on this server, by attempt id, so the same attempt sent twice at once is saved once. */
+const inFlight = new Map<string, Promise<CommitResult>>();
+
 export async function commitChecked(db: Db, v: V, raw: unknown): Promise<CommitResult> {
   if (JSON.stringify(raw ?? null).length > MAX_JSON) throw new InputError('That is too much to commit at once. Split it into smaller files.');
   const p = commitBody.safeParse(raw);
   if (!p.success) throw new InputError(p.error.issues[0]?.message ?? 'invalid input');
-  const { roomId, kind, rows } = p.data;
+  const { roomId, kind, attempt } = p.data;
   if (!canSee(v, roomId)) throw new AuthError(403, 'That room is not one of yours.');
+  if (!attempt) return commitOnce(db, v, p.data);
+  const key = `${v.orgId}:${attempt}`;
+  const prior = await replayOf(db, v.orgId, attempt);
+  if (prior) return prior;
+  const running = inFlight.get(key);
+  if (running) return running;
+  const run = commitOnce(db, v, p.data).catch(async (err) => {
+    // A refused save is kept on the record with its reason; what was saved before stays in use.
+    await db.insert(auditLog).values({ orgId: v.orgId, userId: v.userId, action: 'inputs.failed', detail: { roomId, kind, attempt, rows: p.data.rows.length, error: String(err?.message ?? err).slice(0, 300) } }).catch(() => null);
+    throw err;
+  }).finally(() => inFlight.delete(key));
+  inFlight.set(key, run);
+  return run;
+}
+
+/** The result of a save already made under this attempt id, read back from its audit row. */
+async function replayOf(db: Db, orgId: string, attempt: string): Promise<CommitResult | null> {
+  const [row] = await db.select({ detail: auditLog.detail }).from(auditLog)
+    .where(and(eq(auditLog.orgId, orgId), eq(auditLog.action, 'inputs.import'), sql`${auditLog.detail}->>'attempt' = ${attempt}`)).limit(1);
+  const d = row?.detail as { inputId?: string; verify?: CommitResult['verify']; result?: Partial<CommitResult> } | undefined;
+  if (!d?.inputId) return null;
+  return { id: d.inputId, unchanged: false, duplicates: d.result?.duplicates ?? 0, verify: d.verify!, effects: d.result?.effects ?? { moved: 0, unblocked: [], tests: [] }, replayed: true };
+}
+
+async function commitOnce(db: Db, v: V, data: z.infer<typeof commitBody>): Promise<CommitResult> {
+  const p = { data };
+  const { roomId, kind, rows } = data;
   const { inputs: live } = await loadInputs(db, v.orgId);
   const prior = (live[roomId]?.[kind] as { rows?: unknown[] } | undefined);
   const [priorEntry] = await db.select({ id: inputs.id }).from(inputs).where(and(eq(inputs.orgId, v.orgId), eq(inputs.roomId, roomId), eq(inputs.kind, kind), eq(inputs.undone, false))).orderBy(desc(inputs.createdAt)).limit(1);
@@ -122,7 +158,7 @@ export async function commitChecked(db: Db, v: V, raw: unknown): Promise<CommitR
       validation: { warnings: checked.warnings, rejected: pv.rejected ?? 0 },
       counts: { accepted: checked.rows.length, matched: a.diff.matched, added: a.diff.added, updated: a.diff.updated, unchanged: a.diff.unchanged, removed: a.diff.removed.length, duplicates: a.duplicates },
       effects: { moves: a.moves.filter((m) => m.changed).map((m) => `${m.label}: ${m.before} → ${m.after}`), ...effects },
-      prior: priorEntry?.id ?? null, verify,
+      prior: priorEntry?.id ?? null, verify, attempt: p.data.attempt ?? null, result: { duplicates: a.duplicates, effects },
     },
   });
   // A schedule with clock-ins, or the guests of a service, can confirm a staffing change already approved.

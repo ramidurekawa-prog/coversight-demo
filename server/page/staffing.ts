@@ -28,11 +28,13 @@ const query = z.object({
   meal: z.enum(['lunch', 'dinner']).optional(),
 });
 
-async function fencesFor(db: Db, orgId: string, roomId: string) {
+/** The room's latest saved value for an action key. */
+async function savedFor(db: Db, orgId: string, roomId: string, key: string) {
   const [row] = await db.select({ value: actions.value }).from(actions)
-    .where(and(eq(actions.orgId, orgId), eq(actions.roomId, roomId), eq(actions.key, 'fences'))).orderBy(desc(actions.at), desc(actions.id)).limit(1);
-  return (row?.value as { f?: unknown } | undefined) ?? null;
+    .where(and(eq(actions.orgId, orgId), eq(actions.roomId, roomId), eq(actions.key, key))).orderBy(desc(actions.at), desc(actions.id)).limit(1);
+  return row?.value ?? null;
 }
+const fencesFor = async (db: Db, orgId: string, roomId: string) => (await savedFor(db, orgId, roomId, 'fences')) as { f?: unknown } | null;
 
 /** The room's own time zone: its Toast location's, else the room's, else Pacific. */
 async function tzFor(db: Db, orgId: string, roomId: string, room: { tz?: string } | undefined) {
@@ -60,13 +62,15 @@ export async function staffingContext(db: Db, v: V, roomId: string, { now = new 
   const roomTasks = await db.select().from(tasks).where(and(eq(tasks.orgId, v.orgId), eq(tasks.roomId, roomId)));
   const cc = covercast && !room.serviceOwn ? await covercastFor(db, v, roomId, clock.date, now, fetchImpl) : null;
   const entries = (loaded!.ds.inputs?.[roomId] ?? {}) as Record<string, { at?: string; date?: string }>;
-  return { room, tz, clock, fences, tasks: roomTasks, cc, entries, sample: !!loaded!.org.sample };
+  // The manager's own changes to the guests expected (staffing.adjust): the call is worked out on them here too.
+  const adjust = await savedFor(db, v.orgId, roomId, 'staffing.adjust');
+  return { room, tz, clock, fences, tasks: roomTasks, cc, entries, adjust, sample: !!loaded!.org.sample };
 }
 
 type Ctx = Awaited<ReturnType<typeof staffingContext>>;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const decide = (c: Ctx, date: string, meal: 'lunch' | 'dinner'): any =>
-  staffingDecision(c.room, { date, meal, today: c.clock.date, nowMin: c.clock.minutes, fences: c.fences, cc: c.cc, tasks: c.tasks, entries: c.entries });
+const decide = (c: Ctx, date: string, meal: 'lunch' | 'dinner', choose: string | null = null): any =>
+  staffingDecision(c.room, { date, meal, today: c.clock.date, nowMin: c.clock.minutes, fences: c.fences, cc: c.cc, tasks: c.tasks, entries: c.entries, adjust: c.adjust, choose });
 
 /** Lunch and dinner on a date (today by default) for one room: decision, readiness and, once approved, the outcome. */
 export async function loadStaffing(db: Db, v: V, raw: unknown, opts: Opts = {}) {
@@ -90,14 +94,16 @@ export async function loadStaffing(db: Db, v: V, raw: unknown, opts: Opts = {}) 
  * now, for someone allowed to approve it: the date and service's call is
  * still `act`, it's the same change (a different one means the facts moved),
  * no other change is approved for that service, and it's not past the time
- * to decide. Returns the server's own decision and the evidence to keep.
+ * to decide. The manager may pick a nearer time than the one suggested (one
+ * of the call's own `options`, each re-checked here); any other time is
+ * refused. Returns the server's own decision and the evidence to keep.
  */
 export async function refuseShift(db: Db, v: V, input: { roomId: string; approvalId: string }, opts: Opts = {}) {
   if (!STAFFING_APPROVERS.includes(v.role)) throw new AuthError(403, 'A floor manager can review this and record what happened. The GM or the owner approves a schedule change.');
   const id = parseShiftId(input.approvalId);
   if (!id) throw new InputError('That isn’t a staffing change.');
   const c = await staffingContext(db, v, input.roomId, opts);
-  const d = decide(c, id.date, id.meal as 'lunch' | 'dinner');
+  const d = decide(c, id.date, id.meal as 'lunch' | 'dinner', input.approvalId);
   if (d.state === 'decided') throw new InputError(`${d.label} on ${id.date} already has an approved staffing change: “${d.task?.title}”. Undo it first to approve a different one.`);
   if (d.state !== 'act') throw new InputError(`This changed since it was shown: ${d.title} ${d.why ?? ''}`.trim());
   if (d.approvalId !== input.approvalId) throw new InputError(`The numbers moved since this was shown. The call now is: ${d.title}. Look again before approving.`);

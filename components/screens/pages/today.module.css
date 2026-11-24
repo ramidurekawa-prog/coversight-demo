@@ -546,3 +546,10 @@ button.pill { cursor: pointer; }
 /* The data a staffing call needs, entered in place on Today. */
 .fixPanel { position: relative; padding: 16px; overflow: auto; flex: 1; display: flex; flex-direction: column; gap: 8px; }
 .fixPanel > .iconBtn { align-self: flex-end; }
+
+/* A staffing call the schedule covered later: history, not work. */
+.coveredRow { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--surface-sunken, rgba(0,0,0,.03)); }
+.coveredIcon { flex: none; margin-top: 2px; color: var(--success-600, #16a34a); }
+/* Where, which service and who approves, on the lead decision. */
+.actionContext { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 0; font-size: 14px; color: var(--fg-2); }
+.actionContext span { display: inline-flex; align-items: center; gap: 5px; }

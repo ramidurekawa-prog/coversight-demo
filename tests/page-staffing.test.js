@@ -162,7 +162,7 @@ describe('Staffing: the call before the shift', () => {
   it('opens Data on just that service’s rows', () => {
     const room = roomWith();
     expect(linkRows('shifts', room, { date: TUE, meal: 'dinner', today: TUE })).toHaveLength(SHIFTS.length);
-    expect(linkRows('shifts', room, { date: add(TUE, 1), meal: 'dinner', today: TUE })).toEqual([{ date: add(TUE, 1), role: 'Server', start: '', end: '', name: '', rate: '', clock_in: '', clock_out: '' }]);
+    expect(linkRows('shifts', room, { date: add(TUE, 1), meal: 'dinner', today: TUE })).toEqual([{ date: add(TUE, 1), role: 'Server', start: '', end: '', name: '', rate: '', clock_in: '', clock_out: '', paid_hours: '' }]);
     const fresh = linkRows('services', roomWith({ services: null }), { date: TUE, meal: 'dinner', today: TUE });
     expect(new Set(fresh.map((r) => r.date))).toEqual(new Set(['2026-11-17', '2026-11-10', '2026-11-03']));
     expect(fresh.every((r) => r.covers === '' && r.servers === '')).toBe(true);

@@ -130,6 +130,8 @@ export const engine = {
         window.location.assign(`/login/?next=${encodeURIComponent(window.location.pathname)}`);
         return;
       }
+      // Signed in already and a refresh failed (offline, server down): keep what's on screen, say how old it is, offer a retry.
+      if (state.mode === 'server') { state = { ...state, refresh: { failedAt: Date.now(), error: err.message || 'No connection', syncedAt: state.refresh?.syncedAt ?? null } }; emit(); return; }
       // No backend (404 on a static host, 503 with no database, or offline).
       hydrateLocal();
       return;
@@ -145,6 +147,7 @@ export const engine = {
       inputs: body.inputs || {},
       log: body.log || [],
       actions: body.actions || {},
+      refresh: { failedAt: null, error: null, syncedAt: Date.now() },
     };
     reload();
     api('/api/tasks').then((b) => { state = { ...state, tasks: b.tasks || [] }; emit(); }).catch(() => { /* tasks load best-effort */ });

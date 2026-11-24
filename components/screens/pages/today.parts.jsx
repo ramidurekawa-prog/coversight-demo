@@ -385,7 +385,10 @@ export function evidenceFor(q, d, sv) {
 export function frameFor(q, d, sv, trust = {}) {
   // A pre-shift staffing call: its own hours chart, from the schedule against the forecast's need.
   if (q.staffing && q.staffing.hoursRows && q.staffing.state === 'act') {
-    return { problem: q.title, why: q.staffing.why, fix: q.staffing.short, viz: <StaffingHours dec={q.staffing} compact /> };
+    const st = q.staffing;
+    const day = new Date(`${st.date}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
+    const context = [st.room && { icon: 'MapPin', text: st.room }, { icon: 'CalendarClock', text: `${st.label}, ${day}` }, { icon: 'UserCheck', text: `${st.approvers || 'The GM or the owner'} approves` }].filter(Boolean);
+    return { problem: q.title, why: st.why, fix: st.short, viz: <StaffingHours dec={st} compact />, context };
   }
   const plan = d.room?.labour?.tue;
   const first = (q.body || '').split(/(?<=\.)\s/)[0];
@@ -444,6 +447,7 @@ export function ActionCard({ q, cards, frame, trust, label, busy, due, onPrimary
         </div>
         <h3 id={`a-${q.id}`} className={s.actionTitle}>{frame.problem}</h3>
         {frame.why && <p className={s.actionWhy}>{frame.why}</p>}
+        {frame.context && <p className={s.actionContext}>{frame.context.map((c) => <span key={c.icon}><Icon name={c.icon} size={13} />{c.text}</span>)}</p>}
         {frame.viz && <div className={s.actionViz}>{frame.viz}</div>}
       </div>
       <div className={s.actionSide}>
@@ -460,7 +464,7 @@ export function ActionCard({ q, cards, frame, trust, label, busy, due, onPrimary
 /** Who can act on a row, in two or three words. */
 function actorOf(q) {
   if (q.blocked) return null;
-  if (q.approval) return 'GM or owner';
+  if (q.approval) return 'GM or owner approves';
   if (q.task) return `In ${q.task.system}`;
   if (q.kind === 'data' || q.go === 'inputs') return 'Anyone';
   return null;

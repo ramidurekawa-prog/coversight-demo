@@ -21,7 +21,8 @@ import { undoEntry, useHistory, useLinks } from './inputs-data';
 import { templateRows } from '../../../lib/data/ingest';
 import { useTodayTheme } from './today.themes';
 import { StaffingReadiness, useStaffingInputs } from '../staffing';
-import { shortDate, staffingDecision } from '../../../lib/data/page/staffing';
+import { shortDate, staffingDecision, staffingSources } from '../../../lib/data/page/staffing';
+import { readAttempts } from '../attempts';
 import { localNow } from '../../../lib/data/page/service';
 import s from './inputs.module.css';
 
@@ -212,9 +213,13 @@ function StaffingCheck({ ctx, onFix }) {
     : x.nowMin < 11 * 60 - 30 ? { date: x.today, meal: 'lunch' }
       : x.nowMin < 17 * 60 - 30 ? { date: x.today, meal: 'dinner' }
         : { date: new Date(Date.parse(`${x.today}T12:00:00Z`) + 864e5).toISOString().slice(0, 10), meal: 'dinner' };
-  const dec = React.useMemo(() => staffingDecision(x.room, { ...x, date: next.date, meal: next.meal }), [x.room, x.fences, x.cc, x.tasks, x.entries, x.today, x.nowMin, next.date, next.meal]); // eslint-disable-line react-hooks/exhaustive-deps
+  const dec = React.useMemo(() => staffingDecision(x.room, { ...x, date: next.date, meal: next.meal }), [x.room, x.fences, x.cc, x.tasks, x.entries, x.adjust, x.today, x.nowMin, next.date, next.meal]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Attempts live in this browser: read after the first paint, so the server's HTML matches.
+  const [attempts, setAttempts] = React.useState(/** @type {any} */ (undefined));
+  React.useEffect(() => { setAttempts(readAttempts(CV_D.id)); }, [x.entries]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!dec?.readiness) return null;
   const r = dec.readiness;
+  const sources = staffingSources(x.room, { date: next.date, meal: next.meal, entries: x.entries, readiness: r, attempts });
   const need = r.items.filter((i) => i.need === 'required' && i.state !== 'ready').length;
   const label = `${next.meal === 'lunch' ? 'lunch' : 'dinner'} · ${shortDate(next.date)}`;
   return (
@@ -228,9 +233,27 @@ function StaffingCheck({ ctx, onFix }) {
         {ctx?.back && !need && <Button size="sm" icon="ArrowLeft" onClick={() => cv.go(ctx.back, { date: next.date, meal: next.meal, ...(ctx.back === 'today' ? { card: dec.id } : {}) })}>Back to the decision</Button>}
         {!ctx?.back && !need && dec.state === 'act' && <Button size="sm" variant="secondary" iconRight="ArrowRight" onClick={() => cv.go('service', { date: next.date, meal: next.meal, back: 'inputs' })}>Open in Service</Button>}
       </div>
-      <StaffingReadiness readiness={r} onFix={onFix} />
+      <ul className={s.sources} aria-label="The data this check runs on">
+        {sources.map((src) => (
+          <li key={src.kind} className={`${s.source} ${src.failed ? s.sourceFailed : ''}`}>
+            <span className={s.sourceHead}>
+              <b>{src.title}</b>
+              <span className={`${s.sourceState} ${s[`ss_${src.failed ? 'failed' : src.state}`] || ''}`}>{src.failed ? 'Last save failed' : STATE_WORD[src.state] || src.state}</span>
+            </span>
+            <span className={s.sourceMeta}>
+              {src.source}{src.room ? ` · ${src.room}` : ''}{src.period ? ` · ${src.period}` : ''}
+              {src.lastGood ? ` · last good ${src.lastGood.when}, ${src.lastGood.rows} row${src.lastGood.rows === 1 ? '' : 's'}` : ''}
+            </span>
+            {src.attempt && <span className={s.sourceMeta}>Latest attempt {src.attempt.when}: {src.attempt.ok ? 'saved' : `didn’t save${src.attempt.error ? ` (${src.attempt.error})` : ''}. ${src.lastGood ? 'The last good data is still the one in use.' : 'Nothing was changed.'}`}</span>}
+            {src.blocks && <span className={s.sourceBlocks}><Icon name="Lock" size={12} />{src.blocks}</span>}
+            {src.fix && <button type="button" className={s.sourceFix} onClick={() => onFix(src.fix)}>{src.fix.label}<Icon name="ArrowRight" size={13} /></button>}
+          </li>
+        ))}
+      </ul>
+      <StaffingReadiness readiness={{ ...r, items: r.items.filter((i) => i.key !== 'schedule' && i.key !== 'history') }} onFix={onFix} />
     </section>
   );
 }
+const STATE_WORD = { ready: 'Ready', limited: 'Limited', stale: 'Out of date', missing: 'Missing', later: 'After the shift' };
 
 export { CvInputs };

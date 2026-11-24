@@ -14,7 +14,7 @@ import { useDense } from '../dense-ui';
 import { reportTodayView } from './today.badge';
 import { useClock } from '../../clock';
 import { useCovercast } from '../covercast';
-import { approveStaffing, useStaffingCards, useSticky } from '../staffing';
+import { RefreshNote, approveStaffing, useCanApprove, useCoveredCalls, useStaffingCards, useSticky } from '../staffing';
 import { Yesterday } from './today.last';
 import { applyScenario, useLayout } from './today.layout';
 import {
@@ -118,17 +118,19 @@ function useQueue({ cards, today, own, tz }) {
   const [saved, setSaved] = useSaved('queue', null);
   const [remote, setRemote] = React.useState(() => remoteCache.get(key) || null);
   const [busy, setBusy] = React.useState(null);
-  const [offline, setOffline] = React.useState(false);
-  const keep = React.useCallback((b) => { remoteCache.set(key, b); setRemote(b); reportTodayView(CV_D.id, b.state); }, [key]);
+  const [offline, setOffline] = React.useState(/** @type {number|null} */ (null)); // when the last refresh failed
+  const [syncedAt, setSyncedAt] = React.useState(() => remoteCache.get(key)?.syncedAt ?? null);
+  const [retry, setRetry] = React.useState(0);
+  const keep = React.useCallback((b) => { const at = Date.now(); remoteCache.set(key, { ...b, syncedAt: at }); setRemote(b); setSyncedAt(at); reportTodayView(CV_D.id, b.state); }, [key]);
   // Re-read when the room, or a task's status, changes (an approval on another screen updates the queue here).
   const taskSig = (eng.tasks || []).filter((t) => t.roomId === CV_D.id).map((t) => `${t.approvalId}:${t.status}`).join('|');
 
   React.useEffect(() => {
     if (!server) return undefined;
     let live = true;
-    call(`/api/page/today?room=${encodeURIComponent(CV_D.id)}`).then((b) => { if (live) { keep(b); setOffline(false); } }).catch(() => { if (live) setOffline(true); /* the saved value from /api/state still shows */ });
+    call(`/api/page/today?room=${encodeURIComponent(CV_D.id)}`).then((b) => { if (live) { keep(b); setOffline(null); } }).catch(() => { if (live) setOffline(Date.now()); /* the last answer (or the saved value from /api/state) still shows */ });
     return () => { live = false; };
-  }, [server, key, keep, taskSig]);
+  }, [server, key, keep, taskSig, retry]);
 
   const view = server && remote ? remote.state : queueView(saved, { today, own, tz, cards });
   const history = server && remote ? remote.history : localHistory(view);
@@ -158,7 +160,8 @@ function useQueue({ cards, today, own, tz }) {
       setBusy(null);
     }
   };
-  return { view, history, run, busy, remote, offline, people: (server && remote?.people) || [] };
+  const refresh = () => { setRetry((n) => n + 1); if (server) void engine.hydrate(); };
+  return { view, history, run, busy, remote, offline, syncedAt, refresh, people: (server && remote?.people) || [] };
 }
 
 const clock = (at, tz) => new Date(at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: tz });
@@ -176,7 +179,7 @@ function actLabel(q, fix) {
   return q.primary;
 }
 /** In the review panel, the primary says the decision itself. */
-const panelLabel = (q, fix) => (q.staffing?.state === 'act' ? 'Approve this change' : q.approval ? 'Approve…' : actLabel(q, fix));
+const panelLabel = (q, fix, canApprove = true) => (q.staffing?.state === 'act' ? (canApprove ? 'Approve this change' : 'Ask the GM to approve') : q.approval ? 'Approve…' : actLabel(q, fix));
 
 /** Before acting on a card whose data is behind: what to check, in one sentence. */
 function cautionFor(q, d, now) {
@@ -270,7 +273,9 @@ function CvToday() {
   const sc = applyScenario(scenario, CV_D, liveCards);
   const d = sc.d;
   const cards = sc.cards;
-  const { view, history, run, busy, remote, offline, people } = useQueue({ cards, today, own, tz });
+  const { view, history, run, busy, remote, offline, syncedAt, refresh, people } = useQueue({ cards, today, own, tz });
+  const canApprove = useCanApprove();
+  const covered = useCoveredCalls();
   const meId = eng.viewer?.userId ? `user:${eng.viewer.userId}` : null;
   // A link from a "For you" alert opens that card.
   React.useEffect(() => {
@@ -310,9 +315,9 @@ function CvToday() {
   const findingId = (q) => (q?.id?.startsWith('find:') ? q.id.slice(5) : null);
 
   /** A staffing change: one task, re-checked by the server; a refusal is shown in place with the latest call. */
-  const approveShift = (q) => approveStaffing(q.staffing).then((r) => {
+  const approveShift = (q, chosen = null) => approveStaffing(chosen || q.staffing).then((r) => {
     if (!r.ok) { tell(`Not approved. ${r.error}`); return; }
-    const dec = q.staffing;
+    const dec = chosen || q.staffing;
     showReceipt(
       rcpt(`Approved: ${dec.title}`, ['Approved, with your name and the time', `Make it in ${dec.system}, then mark it made`, 'Clock-ins after the shift show it happened'], { icon: 'CircleCheck' }),
       `Approved. ${dec.title}. Nothing changes until someone makes the change; it’s under Being handled.`,
@@ -324,6 +329,10 @@ function CvToday() {
       // Fixed in place: the schedule (or the history) opens here, on that service's rows, not on another page.
       const fx = q.staffing.blocker?.fix;
       return setFixing({ kind: fx?.kind || q.input, date: q.staffing.date, meal: q.staffing.meal });
+    }
+    if (q.staffing?.state === 'act' && !q.blocked && !canApprove) {
+      return decide('assign', q, { to: 'gm', summary: `${q.title}: asked the GM to approve` }, 'Asked the GM to approve. It waits on them, under “Waiting on something else”.',
+        rcpt(`Asked the GM to approve: ${q.staffing.short}`, ['Asked', 'Waiting on the GM', 'Approved changes go to Being handled'], { icon: 'UserCheck', undo: q.id }));
     }
     if (q.staffing?.state === 'act' && !q.blocked) return approveShift(q);
     if (q.blocked) {
@@ -372,7 +381,7 @@ function CvToday() {
   const reset = () => decide('reset', null, { summary: own ? 'Today’s cards shown again' : 'Queue reset' }, own ? 'Today’s cards are back.' : 'The demo is reset.');
   const close = React.useCallback(() => setReview(null), []);
   const panelActs = (q) => ({
-    primary: () => { close(); perform(q); },
+    primary: (chosen) => { close(); if (chosen && q.staffing?.state === 'act' && canApprove) approveShift(q, chosen); else perform(q); },
     snooze: () => { close(); decide('snooze', q, { summary: `${q.title}: snoozed` }, 'Not now: it comes back tomorrow.', rcpt(`Snoozed: ${q.title}`, ['Snoozed', 'Back tomorrow'], { icon: 'CalendarClock', undo: q.id })); },
     decline: (r) => { close(); decline(q, r); },
     assign: (to, name) => { close(); const who = assigneeLabel(to, d.profile, name); const person = to.startsWith('user:'); decide('assign', q, { to, name, summary: `${q.title}: assigned` }, `Assigned to ${who}.${person ? ' They’ve been alerted.' : ''} Moved to Being handled until it’s done.`, rcpt(`Assigned to ${who}: ${q.title}`, person ? ['Assigned', 'Alert sent', 'Waiting for them to see it', 'Done once they mark it'] : ['Assigned', 'Awaiting their update', 'Done once they mark it'], { icon: 'UserCheck', undo: q.id })); },
@@ -387,7 +396,7 @@ function CvToday() {
   const lead = ready[leadAt];
   const rest = ready.filter((_, i) => i !== leadAt);
   // Handed to someone else (not me): shown with who has it, like an inbox that knows who can act.
-  const withOthers = cards.map((q) => ({ q, a: view.assigned?.[q.id] })).filter(({ a }) => a && a.to !== meId);
+  const withOthers = cards.map((q) => ({ q, a: view.assigned?.[q.id] })).filter(({ q, a }) => a && a.to !== meId && cardState(q, view) === 'assigned');
   // Ready work first; what's waiting on data or someone else goes in its own compact group below.
   const next = upNextOrder(rest, cards);
   const opps = next.filter((q) => !isFix(q));
@@ -417,12 +426,10 @@ function CvToday() {
   return (
     <div className={`cv-page ${s.page}`} data-page="today" data-today-theme={theme}>
       {tools && <ScenarioBar value={scenario} onPick={setScenario} rooms={(CV_GROUP?.rows || []).map((r) => ({ id: r.id, name: r.name }))} onRoom={cv.pickRoom} />}
-      {offline && <p className={s.offline} role="status"><Icon name="TriangleAlert" size={13} />Can’t reach the server. Showing the last saved state.</p>}
+      <RefreshNote failedAt={offline || eng.refresh?.failedAt || null} syncedAt={syncedAt || eng.refresh?.syncedAt || null} onRetry={refresh} />
 
       <Status brief={brief} explain={explain} period={period} now={now} sum={sum} onFeeds={() => setFeedsOpen(true)} onCustomize={() => setCustomizing(true)}
         trial={tools ? <><ThemePicker theme={theme} onPick={pickTheme} onCompare={() => setComparing(true)} /><FontPicker font={font} onPick={pickFont} /></> : null} />
-      <Tiles ids={layout.metrics} tiles={tiles} onOpen={setTileOpen} />
-
       {receipt && <Receipt key={receipt.at} r={receipt} onClose={() => setReceipt(null)} onUndo={receipt.undo ? () => undo(receipt.undo) : undefined} />}
 
       {lead ? (
@@ -438,6 +445,8 @@ function CvToday() {
           </span>
         </div>
       )}
+      {/* The numbers behind the decision, as a slim strip under it (Toast Now): the decision comes first. */}
+      <Tiles ids={layout.metrics} tiles={tiles} onOpen={setTileOpen} />
 
       {opps.length > 0 && (
         <section className={s.rows} aria-labelledby={fixes.length ? 'opps-head' : undefined} aria-label={fixes.length ? undefined : 'Also on your list'}>
@@ -457,7 +466,20 @@ function CvToday() {
           <h3 id="wait-head" className={s.rowGroupHead}>Waiting on something else</h3>
           <ul className={s.rowList}>
             {waiting.map((q) => <IssueRow key={q.id} q={q} cards={cards} waitingOn={byId(q.blockedBy)?.title || null} onOpen={() => setReview(q.id)} />)}
-            {withOthers.map(({ q, a }) => <IssueRow key={q.id} q={{ ...q, blocked: true }} cards={cards} waitingOn={assigneeLabel(a.to, d.profile, a.name)} onOpen={() => setReview(q.id)} />)}
+            {withOthers.map(({ q, a }) => <IssueRow key={q.id} q={{ ...q, blocked: true }} cards={cards} waitingOn={`${assigneeLabel(a.to, d.profile, a.name)}${q.staffing?.state === 'act' ? ' to approve' : ''}${a.ack ? ' · seen' : ' · not seen yet'}`} onOpen={() => setReview(q.id)} />)}
+          </ul>
+        </section>
+      )}
+      {covered.length > 0 && (
+        <section className={s.rows} aria-labelledby="covered-head">
+          <h3 id="covered-head" className={s.rowGroupHead}>Covered since it was shown</h3>
+          <ul className={s.rowList}>
+            {covered.map((c) => (
+              <li key={c.id} className={s.coveredRow}>
+                <Icon name="CircleCheck" size={16} className={s.coveredIcon} />
+                <span className={s.rowText}><span className={s.rowTitle}>{c.was}</span><span className={s.rowSub}>Covered: the schedule now has every hour it needs{c.when ? ` · shown ${c.when}` : ''}</span></span>
+              </li>
+            ))}
           </ul>
         </section>
       )}
@@ -479,7 +501,7 @@ function CvToday() {
 
       {reviewing && (
         <ReviewPanel q={reviewing} cards={cards} history={history} fix={reviewing.blockedBy ? byId(reviewing.blockedBy) : null} busy={busy === reviewing.id}
-          label={panelLabel(reviewing, reviewing.blockedBy ? byId(reviewing.blockedBy) : null)} onClose={close} act={panelActs(reviewing)}
+          label={panelLabel(reviewing, reviewing.blockedBy ? byId(reviewing.blockedBy) : null, canApprove)} onClose={close} act={panelActs(reviewing)}
           people={people} held={view.assigned?.[reviewing.id] || null} meId={meId}
           caution={cautionFor(reviewing, d, now)}
           onService={reviewing.staffing ? () => { close(); cv.go('service', { date: reviewing.staffing.date, meal: reviewing.staffing.meal, back: 'today' }); } : undefined}
