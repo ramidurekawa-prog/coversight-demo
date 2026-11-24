@@ -15,6 +15,7 @@ import {
 } from '../../../lib/data/page/service.js';
 import { GuestsChart, HourChart } from './service.charts';
 import s from './service.module.css';
+import { ShadowRecord } from './service.shadow';
 
 /*
  * The Service page: during the day, which service needs you and what to do.
@@ -596,7 +597,7 @@ function CvService() {
     if (!t) return 'Approved';
     return { open: 'Approved · not done yet', done: 'Marked done on Today', verified: 'Confirmed', mismatch: 'Didn’t match Toast', cancelled: 'Undone' }[t.status] ?? 'Approved';
   };
-  const detailTabs = [['slots', 'Every 15 minutes'], ['hours', 'Hour by hour'], ['rules', NAMES.guard], ['money', 'The money'], ['past', 'Past decisions'], ['busy', 'Busy times']];
+  const detailTabs = [['slots', 'Every 15 minutes'], ['hours', 'Hour by hour'], ['rules', NAMES.guard], ['money', 'The money'], ['past', 'Past decisions'], ['shadow', 'Track record'], ['busy', 'Busy times']];
   const pick = sel == null ? null : sel >= SLOT_FLOOR ? sel : sel * 60;
 
   // The problem and the fix, side by side: only figures the page already computed.
@@ -862,6 +863,7 @@ function CvService() {
           {view.detail === 'past' && (past.length ? (
             <ul className={s.past}>{past.map((p, k) => <li key={k}><b>{p.date}{p.meal ? ` · ${MEALS[p.meal].label}` : ''}</b><span>{p.answer === 'yes' ? `Send 1 home at ${p.at ? clockLabel(clockMinutes(p.at)) : '—'}` : p.answer === 'later' ? 'Decide later' : p.answer === 'no' ? 'Kept everyone on' : 'Send-home call'}{p.to ? ` · handed to the ${HANDOFF[p.to]}` : ''}</span><span className="cv-faint">{outcome(p)}</span></li>)}</ul>
           ) : <Note icon="ListChecks">No decisions yet. Each one shows here with what came of it.</Note>)}
+          {view.detail === 'shadow' && <ShadowRecord roomId={CV_D.id} server={server} />}
           {view.detail === 'busy' && <DenseService />}
         </div>
       </section>}

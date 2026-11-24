@@ -692,4 +692,27 @@ export const staffConnections = pgTable('staff_connections', {
   createdAt: at('created_at').notNull().defaultNow(),
 });
 
-export const schema = { users, sessions, accounts, verifications, orgs, memberships, rooms, roomData, inputs, actions, auditLog, memberRole, windowStatus, testWindows, checkpoints, jobRuns, snapshots, taskStatus, tasks, notifications, notificationReads, outbox, invites, invoices, toastConnections, posDays, linkedSources, agentCycles, agentEvents, agentRuns, agentProposals, meetingSessions, meetingActions, serviceLive, staffConnections };
+/**
+ * Shadow mode: the staffing call Coversight would have made for a service,
+ * logged before the service (frozen: the first issue wins) and graded once it
+ * is over (lib/data/page/staffing.js shadowEntry / gradeShadow). Nobody acts
+ * on it; it is the record that earns trust before the calls are used.
+ */
+export const shadowCalls = pgTable(
+  'shadow_calls',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+    roomId: text('room_id').notNull(),
+    date: text('date').notNull(),
+    meal: text('meal').notNull(),
+    state: text('state').notNull(),
+    entry: jsonb('entry').notNull(),
+    issuedAt: at('issued_at').notNull().defaultNow(),
+    graded: jsonb('graded'),
+    gradedAt: at('graded_at'),
+  },
+  (t) => [unique('shadow_calls_service').on(t.orgId, t.roomId, t.date, t.meal), index('shadow_calls_room_idx').on(t.orgId, t.roomId, t.date)],
+);
+
+export const schema = { users, sessions, accounts, verifications, orgs, memberships, rooms, roomData, inputs, actions, auditLog, memberRole, windowStatus, testWindows, checkpoints, jobRuns, snapshots, taskStatus, tasks, notifications, notificationReads, outbox, invites, invoices, toastConnections, posDays, linkedSources, agentCycles, agentEvents, agentRuns, agentProposals, meetingSessions, meetingActions, serviceLive, staffConnections, shadowCalls };

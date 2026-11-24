@@ -102,9 +102,10 @@ describe('The server works the call out the same way: a picked time and a guest 
     expect(row!.title).toBe('Start Ana at 7 pm, not 4 pm');
   });
 
+  // The change is stamped after the schedule save (which carries the wall clock), so it leads the list on any day the test runs.
   it('check 7: a GM’s guest change is saved with its reason, the call moves with it, and the forecast it changed is kept', async () => {
     await expect(saveAction(db, floor(), { roomId: 'oakland', key: 'staffing.adjust', value: { list: [{ id: 'a1', date: TUE, meal: 'dinner', hour: 19, guests: 0, reason: 'party', at: NOW.toISOString() }] } })).rejects.toThrow(/0 guests/);
-    await saveAction(db, gm(), { roomId: 'oakland', key: 'staffing.adjust', value: { list: [{ id: 'a1', date: TUE, meal: 'dinner', hour: 19, guests: 20, reason: 'party', note: 'Birthday', at: NOW.toISOString(), by: 'Marcus' }] }, summary: '+20 at 7 pm' });
+    await saveAction(db, gm(), { roomId: 'oakland', key: 'staffing.adjust', value: { list: [{ id: 'a1', date: TUE, meal: 'dinner', hour: 19, guests: 20, reason: 'party', note: 'Birthday', at: new Date(Date.now() + 60_000).toISOString(), by: 'Marcus' }] }, summary: '+20 at 7 pm' });
     const s = await loadStaffing(db, owner(), { roomId: 'oakland', date: TUE, meal: 'dinner' }, { now: NOW, covercast: false }) as Record<string, any>;
     expect(s.dinner.forecast).toMatchObject({ covers: 158, original: { covers: 138 } });
     expect(s.dinner.title).toBe('Add 1 server from 7 pm to 8 pm');

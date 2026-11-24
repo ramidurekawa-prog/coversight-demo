@@ -23,6 +23,7 @@ import { runTrendsWatch } from './page/trends';
 import { runWeekDigest } from './page/week';
 import { runPortfolio } from './page/portfolio';
 import { runSous } from './ai/sous';
+import { runShadow } from './shadow';
 
 export const JOBS = {
   sync: { schedule: 'Daily, 2:20 am Pacific (hourly on Vercel Pro: set the cron to 20 * * * *)', what: 'Pulls new Toast orders and time entries for every connected restaurant (13 weeks the first time) and rebuilds each room’s figures from them', cron: '20 10 * * *' },
@@ -38,6 +39,7 @@ export const JOBS = {
   trends: { schedule: 'Daily, 2:10 am Pacific', what: 'Judges every room’s latest weeks against its control limits and tells the room about a new, unexplained signal', cron: '10 10 * * *' },
   week: { schedule: 'Mondays, 7:00 am Pacific', what: 'Sends each room of every real group its week in review (This week), once per week of data', cron: '0 15 * * 1' },
   portfolio: { schedule: 'Daily, 5:30 am Pacific', what: 'Ranks every real group’s rooms, tells each room’s people about an urgent issue once, raises it to the group if it stays open 2 days, and sends the owner a weekly summary on Mondays', cron: '30 13 * * *' },
+  shadow: { schedule: 'Daily, 3:30 am Pacific', what: 'Shadow mode: logs the staffing call Coversight would make for today’s and tomorrow’s services, and grades the ones that are over against the guests who came and the schedule that ran', cron: '30 11 * * *' },
   sous: { schedule: 'Daily, 2:50 am Pacific', what: 'Sous, the AI teammate, re-reads every room of every real group: tells its people what it noticed (once per finding per week of data) and writes the morning briefs', cron: '50 10 * * *' },
 } as const;
 export type JobName = keyof typeof JOBS;
@@ -106,7 +108,7 @@ export async function runJob(db: Db, job: JobName, { orgId, trigger = 'schedule'
   const ids = orgId ? [orgId] : job === 'sync' ? (await db.select({ id: toastConnections.orgId }).from(toastConnections)).map((o) => o.id) : job === 'links' ? [...new Set((await db.select({ id: linkedSources.orgId }).from(linkedSources)).map((o) => o.id))] : (job === 'agents' || job === 'week' || job === 'trends' || job === 'portfolio' || job === 'sous') ? (await db.select({ id: orgs.id }).from(orgs).where(eq(orgs.sample, false))).map((o) => o.id) : (await db.select({ id: orgs.id }).from(orgs)).map((o) => o.id);
   const results = [];
   for (const id of ids) {
-    results.push(await record(db, job, id, trigger, () => (job === 'sync' ? syncToast(db, id, { now, ...(fetchImpl ? { fetchImpl } : {}) }) : job === 'links' ? pullLinks(db, id, fetchImpl ? { fetchImpl } : {}) : job === 'agents' ? runAgents(db, id, { trigger, now, ...(fetchImpl ? { fetchImpl } : {}) }) : job === 'detection' ? runDetection(db, id) : job === 'proof' ? runProofLoop(db, id, now) : job === 'billing' ? runBilling(db, id, previousPeriod(now)) : job === 'week' ? runWeekDigest(db, id, now) : job === 'trends' ? runTrendsWatch(db, id) : job === 'portfolio' ? runPortfolio(db, id, now) : job === 'sous' ? runSous(db, id, { now, ...(fetchImpl ? { fetchImpl } : {}) }) : runReverify(db, id))));
+    results.push(await record(db, job, id, trigger, () => (job === 'sync' ? syncToast(db, id, { now, ...(fetchImpl ? { fetchImpl } : {}) }) : job === 'links' ? pullLinks(db, id, fetchImpl ? { fetchImpl } : {}) : job === 'agents' ? runAgents(db, id, { trigger, now, ...(fetchImpl ? { fetchImpl } : {}) }) : job === 'detection' ? runDetection(db, id) : job === 'proof' ? runProofLoop(db, id, now) : job === 'billing' ? runBilling(db, id, previousPeriod(now)) : job === 'week' ? runWeekDigest(db, id, now) : job === 'trends' ? runTrendsWatch(db, id) : job === 'portfolio' ? runPortfolio(db, id, now) : job === 'sous' ? runSous(db, id, { now, ...(fetchImpl ? { fetchImpl } : {}) }) : job === 'shadow' ? runShadow(db, id, { now, ...(fetchImpl ? { fetchImpl } : {}) }) : runReverify(db, id))));
   }
   await deliverOutbox(db, { now }).catch(() => null);
   // Stripe deliveries that are due (retries with backoff) ride on every job run.
