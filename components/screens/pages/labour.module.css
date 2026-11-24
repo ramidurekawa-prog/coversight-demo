@@ -286,7 +286,7 @@ button.barCol:hover { background: var(--surface-sunken); }
 .seg { display: inline-flex; align-self: flex-start; padding: 3px; gap: 2px; border-radius: var(--r-box); background: var(--surface-sunken); box-shadow: inset 0 0 0 1px var(--border); }
 .segBtn { min-height: 32px; padding: 0 12px; border: none; border-radius: var(--r-ctl); background: none; font: inherit; font-size: 15px; font-weight: 600; color: var(--fg-2); cursor: pointer; white-space: nowrap; }
 .segBtn:hover { color: var(--fg-1); }
-.segBtn[aria-checked='true'] { background: var(--surface); color: var(--fg-1); box-shadow: 0 0 0 2px var(--accent); }
+.segBtn[aria-checked='true'] { background: var(--surface); color: var(--fg-1); box-shadow: 0 0 0 1px var(--border-strong), var(--shadow-box); }
 .week { display: flex; flex-direction: column; gap: var(--s3); }
 .weekHead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--s3); }
 .sectionTitle { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.01em; color: var(--fg-1); }

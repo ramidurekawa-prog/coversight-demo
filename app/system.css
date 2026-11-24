@@ -109,3 +109,12 @@ body { font-variant-numeric: tabular-nums lining-nums; -webkit-font-smoothing: a
 .cv-top .cv-health, .cv-top .locpick { height: 36px; font-size: 15px; font-weight: 500; border-color: var(--border-strong); }
 .cv-top .cv-sampletag { font-size: 12px; font-weight: 500; padding: 1px 6px; }
 @media (max-width: 720px) { .cv-pagetabs { padding-left: 8px; padding-right: 8px; } }
+
+/* ---- Empty and error states: one shape -------------------------------------- */
+.cv-empty { border: 1px dashed var(--border-strong); border-radius: var(--r-box); background: var(--surface); padding: 40px 24px; }
+.cv-error { display: grid; place-items: center; min-height: 60vh; padding: 32px 16px; font-family: var(--font-sans); color: var(--fg-1); }
+.cv-error-card { max-width: 480px; display: flex; flex-direction: column; gap: 12px; padding: 32px; border: 1px solid var(--border); border-radius: var(--r-box); background: var(--surface); box-shadow: var(--shadow-box); }
+.cv-error-card h1 { margin: 0; font-size: 25px; font-weight: 600; letter-spacing: -0.02em; }
+.cv-error-card p { margin: 0; font-size: 15px; line-height: 1.55; color: var(--fg-2); }
+.cv-error-ico { display: grid; place-items: center; width: 36px; height: 36px; border-radius: var(--r-ctl); background: var(--error-50); color: var(--error-600); font-weight: 700; }
+.cv-error-acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }

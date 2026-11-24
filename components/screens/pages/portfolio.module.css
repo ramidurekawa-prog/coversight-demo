@@ -7,7 +7,7 @@
   :global(:root:not([data-theme="light"])) .viz { --pf-s1: #3987e5; --pf-s2: #d95926; --pf-s3: #199e70; --pf-s4: #c98500; --pf-s5: #d55181; --pf-s6: #9085e9; }
 }
 
-.sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.sr { position: absolute; left: 0; top: 0; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .linkish { all: unset; cursor: pointer; font-weight: 600; text-decoration: underline; text-decoration-color: var(--border-strong); text-underline-offset: 3px; border-radius: var(--radius-sm); }
 .linkish:focus-visible { box-shadow: var(--ring); }
 

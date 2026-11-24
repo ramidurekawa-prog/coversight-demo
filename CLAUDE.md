@@ -22,7 +22,11 @@ here ships to customers.
 - **Every dollar carries a claim strength** (Estimated, Modelled, Causal,
   Bookable, Observed) with its icon, never colour alone.
 - **Design system:** tokens and kit classes in `app/globals.css` come from the
-  monorepo's design system. Use existing classes before adding new ones.
+  monorepo's design system. Use existing classes before adding new ones. The
+  app's one scale (type sizes, two radii `--r-ctl`/`--r-box`, `--shadow-box`/
+  `--shadow-pop`, motion) is `app/system.css`, written down in
+  `docs/DESIGN_SYSTEM.md`: no new sizes, radii or shadows beside it, no
+  gradients, coloured card stripes, uppercase labels or sparkle icons.
 - **Pages:** one file per page at `components/screens/pages/<pageId>.jsx`.
   The sidebar is four groups (`CV_NAV`); pages that share a sidebar entry are
   tabs drawn by the shell (`CV_TABS`), and setup pages sit behind the Settings

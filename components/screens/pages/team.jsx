@@ -53,7 +53,7 @@ function Groups() {
   return (
     <section className="cv-card" aria-labelledby="groups-head">
       <div className="cv-card-head"><span className="cv-h4" id="groups-head">Your groups</span></div>
-      {!orgs ? <span className="cv-small cv-muted">Loading…</span> : (
+      {!orgs ? <span className="cv-skel cv-skel-line" role="status" aria-label="Loading" style={{ display: 'block', width: 'min(320px, 100%)' }} /> : (
         <div className="cv-col" style={{ gap: 0 }}>
           {orgs.orgs.map((o) => (
             <div key={o.id} className="cv-row nowrap" style={{ gap: 10, padding: '8px 0', borderTop: '1px solid var(--border)' }}>
@@ -108,7 +108,7 @@ function People() {
     if (r?.link) { setLink(new URL(r.link, window.location.origin).toString()); setInv({ role: 'gm', rooms: [], email: '' }); }
   };
   const roomName = (id) => CV_LOCS.find((l) => l.id === id)?.short || id;
-  if (!team) return <section className="cv-card"><span className="cv-small cv-muted">{err || 'Loading…'}</span></section>;
+  if (!team) return <section className="cv-card">{err ? <span className="cv-small cv-muted">{err}</span> : <span className="cv-skel cv-skel-line" role="status" aria-label="Loading" style={{ display: 'block', width: 'min(320px, 100%)' }} />}</section>;
   return (
     <section className="cv-card" aria-labelledby="people-head">
       <div className="cv-card-head"><span className="cv-h4" id="people-head">People in this group</span><Pill icon="Users">{team.people.length}</Pill></div>

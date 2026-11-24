@@ -484,11 +484,11 @@ button { font-family: inherit; }
 .navsec-top { display: flex; flex-direction: column; gap: 2px; padding-bottom: 10px; margin-bottom: 4px; border-bottom: 1px solid var(--border); }
 
 .navsec { display: flex; flex-direction: column; gap: 2px; }
-.sb-scroll .navsec { padding-top: var(--space-1); margin-top: 10px; }
+.sb-scroll .navsec { padding-top: var(--space-1); margin-top: 4px; }
 .sb-scroll .navsec:first-child { margin-top: 0; }
 /* Closed and open sections keep the SAME top margin so the header doesn't shift
    when toggled — only the item list below it animates. */
-.sb-scroll .navsec.closed { margin-top: 10px; }
+.sb-scroll .navsec.closed { margin-top: 4px; }
 
 /* ---- Collapsed rail: sections become icon groups split by a thin rule ---- */
 .sb-scroll .navsec.collapsed-sec { margin-top: 0; }

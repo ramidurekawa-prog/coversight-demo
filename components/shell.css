@@ -14,7 +14,7 @@
 .iconbtn.cv-quiet:focus-visible { outline: none; box-shadow: var(--ring); }
 
 /* Sidebar: readable group labels, calmer rhythm, room before the account. */
-.sidebar .cv-navgroup { margin-top: 18px; padding: 0 11px 6px; font: 500 13px/1.2 var(--font-sans); letter-spacing: 0; text-transform: none; color: var(--side-mute); }
+.sidebar .cv-navgroup { margin-top: 8px; padding: 0 11px 6px; font: 500 13px/1.2 var(--font-sans); letter-spacing: 0; text-transform: none; color: var(--side-mute); }
 [data-theme="dark"] .sidebar .cv-navgroup { color: #9EA2AE; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .sidebar .cv-navgroup { color: #9EA2AE; } }
 .sidebar .navsec:first-child .cv-navgroup { margin-top: 4px; }
