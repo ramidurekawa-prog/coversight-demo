@@ -24,6 +24,9 @@ here ships to customers.
 - **Design system:** tokens and kit classes in `app/globals.css` come from the
   monorepo's design system. Use existing classes before adding new ones.
 - **Pages:** one file per page at `components/screens/pages/<pageId>.jsx`.
+  The sidebar is four groups (`CV_NAV`); pages that share a sidebar entry are
+  tabs drawn by the shell (`CV_TABS`), and setup pages sit behind the Settings
+  gear (`CV_SETTINGS`). A new page must be in one of the three.
   Add a screen in `lib/pages.js` (title, icon, nav group) and import it in
   `components/screen.jsx`; `tests/routes.test.js` enforces all three. Helpers
   used by more than one page live in `components/screens/*.jsx`. When several

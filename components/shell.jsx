@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import * as React from 'react';
 
-import { CV_NAV, CV_PAGES, CV_ROLES, GROUP_PAGES, pageFromPath, pathFor } from '../lib/pages';
+import { CV_NAV, CV_PAGES, CV_ROLES, CV_SETTINGS, familyOf, GROUP_PAGES, pageFromPath, pathFor } from '../lib/pages';
 import { Button, Icon } from './kit';
 import { ApprovalModal, Claim, cvApproval, CV_CLAIM, CV_D, CV_LOCS, CvCtx, DerivDrawer, Pill } from './screens/core';
 import { engine, useEngine } from './engine';
@@ -45,11 +45,32 @@ function TodayCount() {
   return <span className="count" title={`${c.ready} to decide today`} aria-label={`${c.ready} to decide today`}>{c.ready}</span>;
 }
 
+/** Which sidebar groups are open: the one holding the current page always, the rest as the person left them (kept in this browser). */
+function useOpenGroups(current) {
+  const [open, setOpen] = React.useState({ 'Every day': true });
+  React.useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('cv-nav-open') || 'null');
+      if (saved && typeof saved === 'object') setOpen(saved);
+    } catch {}
+  }, []);
+  const toggle = (label) => setOpen((o) => {
+    const next = { ...o, [label]: !(o[label] ?? label === current) };
+    try { localStorage.setItem('cv-nav-open', JSON.stringify(next)); } catch {}
+    return next;
+  });
+  return [(label) => open[label] ?? label === current, toggle];
+}
+
 function Sidebar({ page, role, onNavigate }) {
   const base = CV_ROLES[role];
   const gm = CV_D.profile.gm;
   const r = role === 'gm' ? { ...base, person: gm, sub: `GM · ${CV_D.profile.short}`, initials: gm.split(' ').map((w) => w[0]).join('') } : base;
-  const groups = CV_NAV.filter((g) => !r.nav || r.nav.includes(g.label));
+  const hide = r.hide || [];
+  const groups = CV_NAV.filter((g) => !r.nav || r.nav.includes(g.label)).map((g) => ({ ...g, items: g.items.filter((id) => !hide.includes(id)) }));
+  const here = familyOf(page).parent;
+  const current = groups.find((g) => g.items.includes(here))?.label ?? null;
+  const [isOpen, toggle] = useOpenGroups(current);
   return (
     <aside className="sidebar" aria-label="Main navigation">
       <div className="sb-head">
@@ -62,34 +83,50 @@ function Sidebar({ page, role, onNavigate }) {
         <div className="divider" style={{ margin: '8px 4px' }} />
       </div>
       <div className="sb-scroll">
-        {groups.map((g) => (
-          <nav key={g.label} className="navsec" style={{ marginTop: 6 }} aria-label={g.label}>
-            <div className="cv-navgroup">
-              <span>{g.label}</span>
-            </div>
-            {g.items.map((id) => {
-              const p = CV_PAGES[id];
-              const active = page === id || (id === 'proof' && page === 'packet') || (id === 'plan' && page === 'finding') || (id === 'portfolio' && page === 'daily');
-              return (
-                <Link
-                  key={id}
-                  href={pathFor(id)}
-                  className={`navitem ${active ? 'active' : ''}`}
-                  aria-current={active ? 'page' : undefined}
-                  onClick={onNavigate}
-                >
-                  <span className="ico">
-                    <Icon name={p.icon} size={18} />
-                  </span>
-                  {p.navTitle || p.title}
-                  {id === 'today' && <TodayCount />}
-                </Link>
-              );
-            })}
-          </nav>
-        ))}
+        {groups.map((g) => {
+          const open = isOpen(g.label);
+          const gid = `nav-${g.label.replace(/\W+/g, '-').toLowerCase()}`;
+          return (
+            <nav key={g.label} className="navsec" style={{ marginTop: 6 }} aria-label={g.label}>
+              <button type="button" className={`cv-navgroup cv-navtoggle ${g.label === current ? 'here' : ''}`} aria-expanded={open} aria-controls={gid} onClick={() => toggle(g.label)}>
+                <Icon name={open ? 'ChevronDown' : 'ChevronRight'} size={14} />
+                <span>{g.label}</span>
+                {!open && g.items.includes('today') && <TodayCount />}
+              </button>
+              <div id={gid} hidden={!open} className="cv-navitems">
+                {g.items.map((id) => {
+                  const p = CV_PAGES[id];
+                  const active = here === id;
+                  return (
+                    <React.Fragment key={id}>
+                      {g.sections?.[id] && <span className="cv-navsub">{g.sections[id]}</span>}
+                      <Link
+                        href={pathFor(id)}
+                        className={`navitem ${active ? 'active' : ''}`}
+                        aria-current={active ? 'page' : undefined}
+                        onClick={onNavigate}
+                      >
+                        <span className="ico">
+                          <Icon name={p.icon} size={18} />
+                        </span>
+                        {p.navTitle || p.title}
+                        {id === 'today' && <TodayCount />}
+                      </Link>
+                    </React.Fragment>
+                  );
+                })}
+              </div>
+            </nav>
+          );
+        })}
       </div>
       <div className="foot navsec">
+        {r.settings && (
+          <Link href={pathFor(CV_SETTINGS)} className={`navitem ${here === CV_SETTINGS ? 'active' : ''}`} aria-current={here === CV_SETTINGS ? 'page' : undefined} onClick={onNavigate}>
+            <span className="ico"><Icon name="Settings" size={18} /></span>
+            Settings
+          </Link>
+        )}
         <div className="userchip">
           <span className="avatar">{r.initials}</span>
           <div className="col" style={{ lineHeight: 1.3 }}>
@@ -101,6 +138,24 @@ function Sidebar({ page, role, onNavigate }) {
         </div>
       </div>
     </aside>
+  );
+}
+
+/**
+ * Tabs for pages that share one sidebar entry (CV_TABS). Drawn by the shell
+ * above the page, so page files stay untouched and every tab keeps its URL.
+ */
+function PageTabs({ page }) {
+  const f = familyOf(page);
+  if (!f.tabs) return null;
+  return (
+    <nav className="cv-pagetabs" aria-label={`${CV_PAGES[f.parent].navTitle || CV_PAGES[f.parent].title} sections`}>
+      {f.tabs.map(([id, label]) => (
+        <Link key={id} href={pathFor(id)} className={f.tab === id ? 'on' : ''} aria-current={f.tab === id ? 'page' : undefined}>
+          {label}
+        </Link>
+      ))}
+    </nav>
   );
 }
 
@@ -486,6 +541,7 @@ function AppShell({ children }) {
           <div className="content">
             <TopBar page={page} loc={loc} onLoc={chooseLoc} role={role} onRole={chooseRole} go={go} onMenu={() => setNavOpen(true)} onAsk={() => setAsk({})} tools={tools} />
             <main id="cv-main" className="scroll" ref={scrollRef} tabIndex={0} aria-label={CV_PAGES[page].title}>
+              <PageTabs page={page} />
               <PageAgent key={`${eng.room}:${page}`} page={page} role={role} onOpen={(q, run) => (run && run.act.kind === 'approve' ? setApproval({ id: run.act.id }) : run && run.act.kind === 'go' ? (actHere(run.act.page) || go(run.act.page, run.act.goId ? { id: run.act.goId } : undefined)) : setAsk({ q: q || '', run: run || null }))} />
               <React.Fragment key={`${eng.room}-${eng.version}`}>{children}</React.Fragment>
             </main>
