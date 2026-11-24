@@ -11,6 +11,8 @@ import { engine, useEngine } from './engine';
 import { useClock } from './clock';
 import { CV_PAGE_DEPS } from './screens/extra';
 import { PageAgent, SousButton, SousPanel } from './sous';
+import { CommandPalette, SearchButton } from './command';
+import { GROUP_NAME } from './screens/live';
 import { useTodayCounts } from './screens/pages/today.badge';
 import './shell.css';
 
@@ -62,7 +64,7 @@ function useOpenGroups(current) {
   return [(label) => open[label] ?? label === current, toggle];
 }
 
-function Sidebar({ page, role, onNavigate }) {
+function Sidebar({ page, role, onNavigate, onSearch }) {
   const base = CV_ROLES[role];
   const gm = CV_D.profile.gm;
   const r = role === 'gm' ? { ...base, person: gm, sub: `GM · ${CV_D.profile.short}`, initials: gm.split(' ').map((w) => w[0]).join('') } : base;
@@ -80,7 +82,8 @@ function Sidebar({ page, role, onNavigate }) {
           </span>
           <span className="wm">Coversight</span>
         </div>
-        <div className="divider" style={{ margin: '8px 4px' }} />
+        <Workspace role={r} />
+        <SearchButton onClick={onSearch} />
       </div>
       <div className="sb-scroll">
         {groups.map((g) => {
@@ -199,6 +202,24 @@ function actHere(target) {
   return true;
 }
 
+/** The group in view, its size and the viewer's role: the line an enterprise
+ * app keeps at the top of the sidebar so you always know whose data this is. */
+function Workspace({ role }) {
+  const eng = useEngine();
+  const name = (eng.mode === 'server' && eng.org?.name) || GROUP_NAME;
+  const n = CV_LOCS.filter((l) => l.id !== 'all').length;
+  const initials = name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
+  return (
+    <div className="cv-ws-row" title={name}>
+      <span className="cv-ws-mark" aria-hidden="true">{initials}</span>
+      <span className="cv-ws-text">
+        <span className="cv-ws-name">{name}</span>
+        <span className="cv-ws-sub">{n} location{n === 1 ? '' : 's'} · {role.label || role.person}</span>
+      </span>
+    </div>
+  );
+}
+
 function TopClock() {
   const clock = useClock({ own: !!CV_D.room?.fromToast, tz: CV_D.room?.tz });
   return (
@@ -220,15 +241,22 @@ function TopBar({ page, loc, onLoc, role, onRole, go, onMenu, onAsk, tools }) {
   }, []);
   const l = CV_LOCS.find((x) => x.id === loc);
   const deps = CV_PAGE_DEPS[page];
+  const parent = familyOf(page).parent;
+  const crumbGroup = parent === CV_SETTINGS ? 'Settings' : CV_NAV.find((g) => g.items.includes(parent))?.label;
   return (
     <header className="topbar cv-top" ref={ref}>
       <button className="iconbtn cv-menu-btn" onClick={onMenu} aria-label="Open navigation">
         <Icon name="Menu" size={18} />
       </button>
       <div className="col" style={{ lineHeight: 1.25, minWidth: 0 }}>
+        <div className="cv-crumbs">
+          <span className="cv-crumb cv-hide-sm">{l.short}</span>
+          <Icon name="ChevronRight" size={14} className="cv-crumb-sep cv-hide-sm" aria-hidden="true" />
+          {crumbGroup && <><span className="cv-crumb cv-hide-sm">{crumbGroup}</span><Icon name="ChevronRight" size={14} className="cv-crumb-sep cv-hide-sm" aria-hidden="true" /></>}
         <h1>{CV_PAGES[page].navTitle && CV_PAGES[page].navTitle !== CV_PAGES[page].title
           ? <><span className="cv-title-long">{CV_PAGES[page].title}</span><span className="cv-title-short">{CV_PAGES[page].navTitle}</span></>
           : CV_PAGES[page].title}</h1>
+        </div>
         <TopClock />
       </div>
       <div className="spacer" />
@@ -242,6 +270,11 @@ function TopBar({ page, loc, onLoc, role, onRole, go, onMenu, onAsk, tools }) {
         <button className="cv-health cv-warnchip" onClick={() => go('sources')} aria-label={`${CV_D.staleCount} source${CV_D.staleCount === 1 ? ' needs' : 's need'} updating`} title="Some figures use data that is out of date. Open Sources to update it.">
           <i /><span className="cv-wl">{CV_D.staleCount} source{CV_D.staleCount === 1 ? ' needs' : 's need'} updating</span><span className="cv-ws" aria-hidden="true">{CV_D.staleCount}</span>
         </button>
+      )}
+      {CV_D.staleCount === 0 && (
+        <span className="cv-fresh cv-hide-sm" title="Every connected source has reported on time.">
+          <i aria-hidden="true" />Data up to date
+        </span>
       )}
       <SousButton onClick={onAsk} />
       <div className="cv-pop-wrap">
@@ -462,6 +495,15 @@ function AppShell({ children }) {
   }, [pathname]);
 
   const go = React.useCallback((p, params) => router.push(pathFor(p, params)), [router]);
+  // ⌘K / Ctrl+K opens Search or jump to, even while typing.
+  const [cmd, setCmd] = React.useState(false);
+  React.useEffect(() => {
+    const k = (e) => {
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 'k') { e.preventDefault(); setCmd((v) => !v); }
+    };
+    window.addEventListener('keydown', k);
+    return () => window.removeEventListener('keydown', k);
+  }, []);
   // "/" opens Sous from anywhere, unless the person is typing.
   React.useEffect(() => {
     const k = (e) => {
@@ -536,7 +578,7 @@ function AppShell({ children }) {
       <div className="cv-host">
         <a className="cv-skip" href="#cv-main" onClick={(e) => { e.preventDefault(); document.getElementById('cv-main')?.focus(); }}>Skip to the page</a>
         <div className={`app cv-app ${navOpen ? 'nav-open' : ''}`}>
-          <Sidebar page={page} role={role} onNavigate={() => setNavOpen(false)} />
+          <Sidebar page={page} role={role} onNavigate={() => setNavOpen(false)} onSearch={() => { setNavOpen(false); setCmd(true); }} />
           {navOpen && <div className="cv-scrim" style={{ zIndex: 'calc(var(--z-drawer) - 1)' }} onClick={() => setNavOpen(false)} />}
           <div className="content">
             <TopBar page={page} loc={loc} onLoc={chooseLoc} role={role} onRole={chooseRole} go={go} onMenu={() => setNavOpen(true)} onAsk={() => setAsk({})} tools={tools} />
@@ -549,6 +591,7 @@ function AppShell({ children }) {
         </div>
       </div>
       </div>
+      {cmd && <CommandPalette onClose={() => setCmd(false)} onGo={(p) => go(p)} onLoc={chooseLoc} />}
       {ask && <SousPanel onClose={() => setAsk(null)} go={go} role={role} tools={tools} page={page} first={ask.q || ''} run={ask.run || null} turns={sousTurns} setTurns={setSousTurns} />}
       {deriv && <DerivDrawer id={deriv} onClose={() => setDeriv(null)} />}
       {approval && (

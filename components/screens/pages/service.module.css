@@ -243,41 +243,26 @@
 .ms_bad { background: color-mix(in srgb, var(--error-600) 14%, transparent); color: var(--error-600); }
 .ms_warn { background: var(--warning-50); color: var(--warning-700); }
 .mark { color: var(--primary); }
-.h_act { background: #172536; color: #fff; box-shadow: var(--shadow-box); }
-.h_act .heroKicker { align-self: flex-start; padding: 5px 12px; border-radius: 99px; background: var(--primary); color: #172536; }
-.h_act .heroKicker svg { color: #172536; }
-.h_act .heroOutcome { color: #fff; }
-.h_act .heroSub { color: rgba(255, 255, 255, 0.74); }
-.h_act .mark { color: #FF9A70; }
-.h_act .heroActions :global(.btn):not(.cta) { color: #fff; background: transparent; border-color: rgba(255, 255, 255, 0.32); }
-.h_act .heroActions :global(.btn):not(.cta):hover { background: rgba(255, 255, 255, 0.08); }
-.h_act .handoff { border-color: rgba(255, 255, 255, 0.2); }
+.h_act { background: var(--surface); color: var(--fg-1); box-shadow: 0 0 0 1px var(--border), var(--shadow-box); }
+.h_act .heroKicker { align-self: flex-start; padding: 4px 10px; border-radius: var(--r-ctl); background: color-mix(in srgb, var(--primary) 14%, var(--surface)); color: var(--primary-active); }
+.h_act .heroKicker svg { color: var(--primary-active); }
 .h_good { }
 .h_warn { }
 .heroPf { grid-template-columns: minmax(0, 1fr) 360px; }
 .pf { gap: 12px; padding: 20px; justify-content: center; }
-.h_act .pf { background: rgba(255, 255, 255, 0.04); border-color: rgba(255, 255, 255, 0.1); }
 .prob, .fix { display: flex; flex-direction: column; gap: 3px; padding: 14px 16px; border-radius: var(--r-box); }
 .prob { background: color-mix(in srgb, var(--error-600) 10%, var(--surface)); color: var(--fg-1); }
 .fix { background: color-mix(in srgb, var(--primary) 12%, var(--surface)); color: var(--fg-1); }
-.h_act .prob { background: rgba(198, 76, 80, 0.2); color: #fff; }
-.h_act .fix { background: rgba(255, 128, 80, 0.16); color: #fff; }
 .pfLabel { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; letter-spacing: 0; text-transform: none; }
 .prob .pfLabel { color: var(--error-600); }
 .fix .pfLabel { color: var(--primary-active); }
-.h_act .prob .pfLabel { color: #FF8F92; }
-.h_act .fix .pfLabel { color: #FF9A70; }
 .pfHead { font-size: 15px; font-weight: 700; }
 .pfBig { font-size: 28px; font-weight: 700; line-height: 1.1; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
 .pfFoot { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 13px; line-height: 1.4; opacity: 0.85; }
 .fix .ba { font-size: 28px; }
 
-.h_act .seatDot { background: #fff; }
-.h_act .seatGone { background: transparent; border-color: #FF9A70; }
-.h_act .seatSpare { background: #E0A447; }
 @media (max-width: 1080px) { .heroPf { grid-template-columns: 1fr; } }
 .fix .baAfter { color: var(--primary-active); }
-.h_act .fix .baAfter { color: #FF9A70; }
 
 /* ---- service vitals ------------------------------------------------------------- */
 .vitals { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
@@ -295,7 +280,7 @@
 /* ---- Covercast, the forecast underneath ------------------------------------------ */
 .chartHead { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .ccLine { margin: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; color: var(--fg-2); }
-.ccTag { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 99px; background: #172536; color: #fff; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; }
+.ccTag { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border-radius: 6px; background: var(--surface-sunken); color: var(--fg-1); font-size: 12px; font-weight: 600; }
 .ccTag svg { color: var(--primary); }
 
 /* Loading: the hero's shape while Covercast is worked out, so the page never sits blank. */

@@ -5,7 +5,7 @@ import * as React from 'react';
 import { Button, Icon } from '../../kit';
 import { engine, useEngine, useSaved } from '../../engine';
 import {
-  applyOp, assigneeLabel, cardState, DECLINE, DEFAULT_TZ, FIRST_SCREEN, isActive, localDay, queueSummary, queueView, TEST_DAYS, todayCards, upNextOrder, worthOf,
+  applyOp, assigneeLabel, cardState, DECLINE, DEFAULT_TZ, isActive, localDay, queueSummary, queueView, TEST_DAYS, todayCards, upNextOrder, worthOf,
 } from '../../../lib/data/page/today';
 import { areaOf, briefing, cardTrust, clockMinutes, results as resultsOf, servicePeriod, tonight } from '../../../lib/data/page/today-brief';
 import { TasksPanel } from '../tasks';
@@ -17,7 +17,7 @@ import { useCovercast } from '../covercast';
 import { Yesterday } from './today.last';
 import { applyScenario, useLayout } from './today.layout';
 import {
-  ActionCard, ActivityStrip, comingSoon, ComparePanel, CustomizePanel, dueFor, FeedsPanel, frameFor, handledOf, HandledPanel, IssueRow, Locations, Receipt, ResultsPanel,
+  ActionCard, ActivityStrip, comingSoon, QueueTable, ComparePanel, CustomizePanel, dueFor, FeedsPanel, frameFor, handledOf, HandledPanel, Locations, Receipt, ResultsPanel,
   FontPicker, ScenarioBar, Status, ThemePicker, TilePanel, Tiles, tileData,
 } from './today.parts';
 import { ReviewPanel } from './today.review';
@@ -248,7 +248,6 @@ function CvToday() {
   const [resOpen, setResOpen] = React.useState(null); // 'confirmed' | 'checking' | 'could'
   const [tileOpen, setTileOpen] = React.useState(null);
   const [feedsOpen, setFeedsOpen] = React.useState(false);
-  const [showMore, setShowMore] = React.useState(false);
   const [customizing, setCustomizing] = React.useState(false);
   const [said, setSaid] = React.useState('');
   const [receipt, setReceipt] = React.useState(null); // what just happened, and what's next
@@ -368,8 +367,6 @@ function CvToday() {
   const next = [...upNextOrder(rest, cards), ...waiting];
   const opps = next.filter((q) => !isFix(q));
   const fixes = next.filter(isFix);
-  const top = opps.slice(0, FIRST_SCREEN - 1);
-  const more = opps.slice(FIRST_SCREEN - 1);
   const reviewing = review ? byId(review) : null;
   const leadTrust = lead ? cardTrust(lead, d, now) : null;
   const leadFrame = lead ? frameFor(lead, d, sv, leadTrust) : null;
@@ -415,30 +412,13 @@ function CvToday() {
         </div>
       )}
 
-      {opps.length > 0 && (
-        <section className={s.rows} aria-labelledby={fixes.length ? 'opps-head' : undefined} aria-label={fixes.length ? undefined : 'Also on your list'}>
-          {fixes.length > 0 && <h3 id="opps-head" className={s.rowGroupHead}>Opportunities</h3>}
-          <ul className={s.rowList}>
-            {(showMore ? opps : top).map((q) => <IssueRow key={q.id} q={q} cards={cards} onOpen={() => setReview(q.id)} />)}
-          </ul>
-          {more.length > 0 && (
-            <button type="button" className={s.moreBtn} aria-expanded={showMore} onClick={() => setShowMore(!showMore)}>
-              {showMore ? 'Show less' : `View remaining (${more.length})`}<Icon name={showMore ? 'ChevronUp' : 'ChevronDown'} size={14} />
-            </button>
-          )}
-        </section>
-      )}
-      {fixes.length > 0 && (
-        <section className={s.rows} aria-labelledby="fix-head">
-          <h3 id="fix-head" className={s.rowGroupHead}>Data to fix</h3>
-          <ul className={s.rowList}>
-            {fixes.map((q) => <IssueRow key={q.id} q={q} cards={cards} onOpen={() => setReview(q.id)} />)}
-          </ul>
-        </section>
-      )}
-
-      <ActivityStrip h={handled} confirmed={res.confirmed} soon={soonItems} flash={!!receipt}
-        onHandled={() => setHandledOpen(true)} onResults={() => setResOpen('confirmed')} onGo={cv.go} />
+      <div className={s.split}>
+        <QueueTable items={[...opps, ...fixes]} cards={cards} view={view} profile={d.profile} onOpen={setReview} />
+        <aside className={s.rail} aria-label="Activity and results">
+          <ActivityStrip h={handled} confirmed={res.confirmed} soon={soonItems} flash={!!receipt}
+            onHandled={() => setHandledOpen(true)} onResults={() => setResOpen('confirmed')} onGo={cv.go} />
+        </aside>
+      </div>
 
       {layout.widgets.map(extra)}
 

@@ -4,7 +4,7 @@ import * as React from 'react';
 
 import { Button, Icon } from '../../kit';
 import { assigneeLabel, cardState, isActive, queueView, todayCards, worthOf, unlocksOf } from '../../../lib/data/page/today';
-import { areaOf, comingUp } from '../../../lib/data/page/today-brief';
+import { AREAS, areaOf, comingUp } from '../../../lib/data/page/today-brief';
 import { CV_D, CV_DS, CV_GROUP, CV_NOW, Claim, cvMoney } from '../core';
 import { ACCRUAL_START, deriveRoom, serviceTimes } from '../../../lib/data/model';
 import { Panel } from './today.review';
@@ -469,6 +469,59 @@ export function IssueRow({ q, cards, onOpen }) {
         </span>
       </button>
     </li>
+  );
+}
+
+/**
+ * Every open decision as one table, the way an operations team works a queue:
+ * what, which area, who has it, when it's due, what's at stake (with its
+ * claim) and where it stands. A row opens the same review panel as a card.
+ */
+export function QueueTable({ items, cards, view, profile, onOpen }) {
+  if (!items.length) return null;
+  const due = (q) => (q.deadline === 'today' ? 'Today' : q.deadline || '—');
+  const status = (q) => (q.blocked ? 'waiting' : q.approval ? 'review' : 'todo');
+  return (
+    <section className={s.queue} aria-labelledby="queue-head">
+      <div className={s.queueHead}>
+        <h2 id="queue-head" className={s.queueTitle}>Decision queue</h2>
+        <span className={s.queueSub}>{items.length} open · by deadline, then money at stake</span>
+      </div>
+      <div className={s.queueScroll}>
+        <table className={s.qTable}>
+          <thead>
+            <tr>
+              <th scope="col">Decision</th>
+              <th scope="col">Area</th>
+              <th scope="col">Owner</th>
+              <th scope="col">Due</th>
+              <th scope="col" className={s.qNum}>At stake</th>
+              <th scope="col">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((q) => {
+              const held = view.assigned?.[q.id];
+              return (
+                <tr key={q.id} className={q.blocked ? s.qBlocked : undefined} onClick={() => onOpen(q.id)}>
+                  <td>
+                    <button type="button" className={s.qOpen} onClick={(e) => { e.stopPropagation(); onOpen(q.id); }} aria-haspopup="dialog">
+                      <span className={s.qName}>{q.title}</span>
+                      {q.affects && !q.blocked && <span className={s.qSub}>{q.affects}</span>}
+                    </button>
+                  </td>
+                  <td>{AREAS[areaOf(q)]}</td>
+                  <td className={held ? undefined : s.qMute}>{held ? assigneeLabel(held.to, profile, held.name) : 'Unassigned'}</td>
+                  <td className={q.deadline === 'today' ? s.qDue : undefined}>{due(q)}</td>
+                  <td className={s.qNum}><Worth q={q} cards={cards} /></td>
+                  <td><StateChip k={status(q)} /></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 
