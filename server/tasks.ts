@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { findingBlocked } from '../lib/data/findings.js';
 import { deriveRoom } from '../lib/data/model.js';
 import { checkExpect, expectFor, stepsFor } from '../lib/data/writebacks.js';
+import { foodCostChecks, itemSlug, vendorAsk, vendorCheck } from '../lib/data/page/purchasing.js';
 import { shiftCheck, staffingOutcome } from '../lib/data/page/staffing.js';
 import type { Db } from './db/client';
 import { actions, auditLog, rooms, tasks } from './db/schema';
@@ -83,6 +84,16 @@ export async function createTask(db: Db, v: V, input: unknown, opts: CreateOpts 
     const ok = await refuseShift(db, v, { roomId, approvalId }, opts);
     ({ title, system, diff } = ok);
     evidence = ok.evidence;
+  } else if (/^vendor:/.test(approvalId)) {
+    // A vendor ask must be one the room's invoices show right now; its title and email come from the server's own check.
+    const loaded = await loadDataset(db, v.orgId, v.rooms);
+    const r = loaded?.ds.rooms[roomId];
+    const check = r ? foodCostChecks(r).find((c: { approvalId: string | null }) => c.approvalId === approvalId) : null;
+    if (!check) throw new InputError('This changed since it was shown: the invoices no longer show it. Look again before approving.');
+    const ask = vendorAsk(check, { room: r.profile?.name ?? roomId, from: r.profile?.gm ?? 'Purchasing' });
+    title = check.title; system = 'Your vendor';
+    diff = check.kind === 'price' ? [[`${check.item}, per ${check.unit}`, `$${(check.now ?? 0).toFixed(2)}`, `$${(check.before ?? 0).toFixed(2)}`]] : [[`${check.item}, per ${check.unit}`, `${check.pack1} ${check.packUnit}`, `${check.pack0} ${check.packUnit}`]];
+    evidence = { check: { kind: check.kind, item: check.item, vendor: check.vendor, cents: check.cents, before: check.before, now: check.now, pack0: check.pack0 ?? null, pack1: check.pack1 ?? null, claim: 'obs' }, email: ask };
   } else if (/^cut:/.test(approvalId) && !opts.checked) {
     const m = /^cut:(\d{4}-\d{2}-\d{2}):(\d{2}:\d{2})$/.exec(approvalId);
     if (!m) throw new InputError('That isn’t a send-home approval.');
@@ -144,7 +155,7 @@ const GRACE_DAYS = 7;
 export async function verifyTasks(db: Db, orgId: string) {
   // Open staffing changes are read too: clock-ins can show a change was made before anyone ticks it off.
   const open = (await db.select().from(tasks).where(and(eq(tasks.orgId, orgId), inArray(tasks.status, ['open', 'done', 'mismatch']))))
-    .filter((t) => t.status !== 'open' || (t.expect as { type?: string } | null)?.type === 'shift');
+    .filter((t) => t.status !== 'open' || ['shift', 'vendor'].includes((t.expect as { type?: string } | null)?.type ?? ''));
   if (!open.length) return { checked: 0, verified: [], mismatched: [] };
   const loaded = await loadDataset(db, orgId);
   const verified: string[] = [], mismatched: string[] = [];
@@ -163,6 +174,19 @@ export async function verifyTasks(db: Db, orgId: string) {
       await db.insert(auditLog).values({ orgId, userId: null, action: `task.${chk.ok ? 'verified' : 'mismatch'}`, detail: { id: t.id, from: 'clock-ins' } });
       await notify(db, { orgId, roomId: t.roomId, kind: chk.ok ? 'task.verified' : 'task.mismatch', severity: chk.ok ? 'good' : 'warn', link: '/today/', dedupe: `task.${status}:${t.id}`,
         title: chk.ok ? `Clock-ins match: ${t.title}` : `Clock-ins don’t match yet: ${t.title}`, body: chk.note });
+      continue;
+    }
+    if ((t.expect as { type?: string } | null)?.type === 'vendor') {
+      // A vendor ask is confirmed by the room's next invoice: the money back is Observed at the latest quantity, never booked.
+      const chk = vendorCheck(t.expect, room);
+      if (!chk?.ok) continue;
+      const ev = (t.evidence as { check?: { kind: string; before?: number; now?: number; cents?: number } } | null)?.check;
+      const line = (room?.invoices ?? []).find((x: { item: string }) => itemSlug(x.item) === (t.expect as { item: string }).item);
+      const backCents = ev?.kind === 'price' && ev.now != null && line ? Math.max(0, Math.round((ev.now - line.p1) * line.q1 * 100)) : ev?.cents ?? null;
+      verified.push(t.id);
+      await db.update(tasks).set({ status: 'verified', checkedAt: new Date(), note: chk.note, outcome: { result: 'fixed', backCents, claim: 'obs', at: new Date().toISOString() } }).where(eq(tasks.id, t.id));
+      await db.insert(auditLog).values({ orgId, userId: null, action: 'task.verified', detail: { id: t.id, from: 'invoice' } });
+      await notify(db, { orgId, roomId: t.roomId, kind: 'task.verified', severity: 'good', link: '/purchasing/', dedupe: `task.verified:${t.id}`, title: `Fixed on the invoice: ${t.title}`, body: `${chk.note}${backCents ? ` That's about $${Math.round(backCents / 100).toLocaleString('en-US')} back every 28 days at what you buy now.` : ''}` });
       continue;
     }
     const ok = checkExpect(t.expect, room);
