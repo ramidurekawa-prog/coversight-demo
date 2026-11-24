@@ -14,8 +14,8 @@ import { CV_D, CV_DS, CV_ROOM, Callout, Claim, Pill, useCv } from '../core';
 import { engine, useEngine } from '../../engine';
 import { SCHEMAS, guessColumns, mapColumns, parseCSV, templateRows } from '../../../lib/data/ingest';
 import { readDraft, recordAttempt, saveDraft } from '../attempts';
-import { analyze, checkRows, cleanOpts, fingerprint, mappingReview, safeCSV } from '../../../lib/data/page/inputs';
-import { jfetch } from './inputs-data';
+import { analyze, checkRows, cleanOpts, fingerprint, mappingReview, rememberedMapping, safeCSV } from '../../../lib/data/page/inputs';
+import { jfetch, useHistory } from './inputs-data';
 import { linkRows, shortDate } from '../../../lib/data/page/staffing';
 import s from './inputs.module.css';
 
@@ -97,6 +97,7 @@ function Mapping({ kind, review, map, setMap, confirmed, setConfirmed }) {
   return (
     <div className="cv-col" style={{ gap: 8 }}>
       <span className="cv-over">Columns · how your headers were matched</span>
+      {review.remembered && <Callout tone="good" icon="CircleCheck">Same columns as the last file you saved here, so they are matched the way you confirmed then.</Callout>}
       <div className="cv-tablewrap">
         <table className={`cv-table ${s.mapTable}`}>
           <thead><tr><th>Your column</th><th>Read as</th><th>Match</th></tr></thead>
@@ -345,8 +346,11 @@ export function Editor({ kind, seed, startMode, lastEntry = null, onUndo, onHist
   const autoMap = React.useMemo(() => (parsed ? mapColumns(parsed.headers, kind).map : {}), [parsed, kind]);
   // Headers no name matched get a suggested column from their words, shown as a guess that needs a yes.
   const guesses = React.useMemo(() => (parsed ? guessColumns(parsed.headers, kind, autoMap) : {}), [parsed, kind, autoMap]);
-  const curMap = map ?? { ...autoMap, ...guesses };
-  const review = parsed ? mappingReview(parsed.headers, kind, curMap, guesses) : null;
+  // The same file as last time (a weekly schedule or payroll export): matched the way this location confirmed before.
+  const past = useHistory({ server: eng.mode === 'server' && mode === 'csv', roomId: CV_D.id, kind });
+  const remembered = React.useMemo(() => (parsed ? rememberedMapping(past.entries, parsed.headers, kind) : null), [parsed, past.entries, kind]);
+  const curMap = map ?? remembered ?? { ...autoMap, ...guesses };
+  const review = parsed ? (remembered && !map ? { ...mappingReview(parsed.headers, kind, curMap, {}), needsConfirm: false, remembered: true } : mappingReview(parsed.headers, kind, curMap, guesses)) : null;
   const missingCols = schema.columns.filter((c) => c.required && !Object.values(curMap).includes(c.k));
 
   const stale = () => { setResult(null); setA(null); setYes(false); setDirty(true); setSaveError(null); };

@@ -2,9 +2,9 @@
 
 import * as React from 'react';
 import { Icon, Button, Tabs } from '../../kit';
-import { useCv, cvMoney, CV_D, CV_ROOM, Claim, Pill, Callout, Interval, PageHead, cvScale } from '../core';
+import { useCv, cvMoney, CV_D, CV_DS, CV_ROOM, Claim, Pill, Callout, Interval, PageHead, cvScale } from '../core';
 import { leverReport } from '../../../lib/data/levers.js';
-import { windowState, METHOD_LABEL, MAGNITUDE_FLOOR_PCT } from '../../../lib/data/pilot.js';
+import { windowState, METHOD_LABEL, MAGNITUDE_FLOOR_PCT, WAITING_LABEL } from '../../../lib/data/pilot.js';
 import { LEVER_METRIC } from '../../../lib/data/readers.js';
 import { engine, useEngine } from '../../engine';
 import { pilotOf, locOf } from '../live';
@@ -13,6 +13,7 @@ import { pilotOf, locOf } from '../live';
 const STATUS = {
   running: { label: 'Running', tone: 'info', icon: 'Timer' },
   waiting: { label: 'Waiting on data', tone: 'warn', icon: 'CirclePause' },
+  pending: { label: 'Pending evidence', tone: 'warn', icon: 'Hourglass' },
   verified: { label: 'Verified', tone: 'good', icon: 'BadgeCheck' },
   rejected: { label: 'Rejected', tone: 'bad', icon: 'CircleX' },
   reversed: { label: 'Reversed', tone: 'bad', icon: 'Undo2' },
@@ -76,6 +77,25 @@ function SeriesChart({ w }) {
   );
 }
 
+/** Projected, Measured, Verified side by side: three different figures, and only the last is savings. */
+function ProofStages({ stages }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8 }} role="list" aria-label="What this test is worth, step by step">
+      {stages.map((st, i) => {
+        const good = st.key === 'verified' && st.cents > 0;
+        return (
+          <div key={st.key} role="listitem" className="cv-col" style={{ gap: 4, padding: '10px 12px', borderRadius: 10, border: `1px solid ${good ? 'var(--money-up)' : 'var(--border)'}`, background: good ? 'color-mix(in srgb, var(--money-up) 8%, transparent)' : 'var(--surface)' }}>
+            <span className="cv-xs cv-faint">{i + 1}. {st.label}</span>
+            <span className="cv-num" style={{ fontSize: 22, fontWeight: 700, color: good ? 'var(--money-up)' : undefined }}>{st.cents == null ? '—' : `$${Math.round(Math.max(0, st.cents) / 100).toLocaleString('en-US')}/wk`}</span>
+            <Claim k={st.claim} />
+            <span className="cv-xs cv-muted">{st.note}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function YourTests() {
   const cv = useCv();
   const eng = useEngine();
@@ -104,7 +124,8 @@ function YourTests() {
       </div>
       {mine.length === 0 && <span className="cv-small cv-muted">No tests here yet. Start one on the lever worth the most below, or from Today.</span>}
       {mine.map((w) => {
-        const st = STATUS[w.status] || STATUS.running;
+        const evidence = w.status === 'waiting' && (w.waitingOn || []).length > 0 && !(w.waitingOn || []).includes('feed');
+        const st = (evidence ? STATUS.pending : STATUS[w.status]) || STATUS.running;
         return (
           <div key={w.id} className="cv-col" style={{ gap: 8, borderTop: '1px solid var(--border)', paddingTop: 12 }}>
             <div className="cv-row nowrap" style={{ gap: 10 }}>
@@ -115,8 +136,11 @@ function YourTests() {
               <Pill tone={st.tone} icon={st.icon}>{st.label}</Pill>
               {(w.status === 'running' || w.status === 'waiting') && <Button size="sm" variant="ghost" onClick={async () => { const r = await engine.stopWindow(w.id); cv.toast(r.ok ? 'Stopped. Nothing is booked from it.' : r.error); }}>Stop</Button>}
             </div>
+            {w.stages && <ProofStages stages={w.stages} />}
+            {evidence && <Callout tone="warn" icon="Hourglass">The 28 days are up, but your own data doesn’t have {w.waitingOn.map((k) => WAITING_LABEL[k]).join(' or ')} for the last week yet. Nothing is booked and nothing is assumed. Add that week on Data and the test closes on the next run.</Callout>}
             <SeriesChart w={w} />
             <dl className="cv-kv">
+              <dt>Compared with</dt><dd style={{ fontFamily: 'var(--font-sans)' }}>{w.controls?.length ? `${w.controls.map((id) => CV_DS.rooms[id]?.profile?.short || id).join(', ')} over the same weeks (matched control)` : 'Its own baseline only: no other location has its own data for these weeks'}</dd>
               <dt>Baseline (frozen)</dt><dd>{fmtM(w.unit, w.baseline)}</dd>
               <dt>Checkpoints</dt><dd>{w.checkpoints.length ? w.checkpoints.map((c) => `day ${c.day}: ${fmtM(w.unit, c.observed)}`).join(' · ') : 'none yet'}</dd>
               {w.method && <><dt>Method</dt><dd style={{ fontFamily: 'var(--font-sans)' }}>{METHOD_LABEL[w.method]}</dd></>}

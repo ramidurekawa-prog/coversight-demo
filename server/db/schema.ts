@@ -222,7 +222,10 @@ export const checkpoints = pgTable(
     weekEnd: text('week_end').notNull(),
     observed: doublePrecision('observed').notNull(),
     controlDelta: doublePrecision('control_delta'),
-    services: integer('services').notNull(),
+    /** The group's other rooms the control reading came from (empty: measured before/after). */
+    controls: jsonb('controls').$type<string[]>(),
+    /** Services in the room's own data for that week; null = not known yet, so the test waits. */
+    services: integer('services'),
     recordedAt: at('recorded_at').notNull().defaultNow(),
   },
   (t) => [unique('checkpoints_window_day').on(t.windowId, t.day)],

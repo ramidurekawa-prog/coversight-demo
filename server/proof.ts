@@ -5,8 +5,8 @@ import { and, asc, eq, inArray } from 'drizzle-orm';
 
 import { leverReport } from '../lib/data/levers.js';
 import { deriveRoom } from '../lib/data/model.js';
-import { guardrailCheck, windowState } from '../lib/data/pilot.js';
-import { baselineOf, dataDay, dataEnd, dueCheckpoints, LEVER_METRIC, weeklySeries } from '../lib/data/readers.js';
+import { guardrailCheck, proofStages, windowState } from '../lib/data/pilot.js';
+import { baselineOf, controlReading, dataDay, dataEnd, dueCheckpoints, LEVER_METRIC, servicesOf, weeklySeries } from '../lib/data/readers.js';
 import type { Db } from './db/client';
 import { auditLog, checkpoints, testWindows } from './db/schema';
 import { loadDataset } from './dataset';
@@ -38,23 +38,38 @@ function centsPerUnit(metric: string, room: Room, lever: { weekly?: number; expe
 
 const last = <T>(a: T[]) => a[a.length - 1];
 
-/** The pilot-shaped object windowState() reads, from a window and its checkpoints. */
+type Guard = { avgCheckBase: number; turnBase: number; projectedCents?: number | null };
+
+/**
+ * The pilot-shaped object windowState() reads, from a window and its
+ * checkpoints. A guardrail week the room's own data doesn't have stays empty
+ * (null): it is never filled in with the baseline, so a missing reading keeps
+ * the test pending instead of quietly passing it.
+ */
 function pilotOf(w: Win, cps: Cp[], room: Room) {
-  const g = w.guard as { avgCheckBase: number; turnBase: number };
+  const g = w.guard as Guard;
   const check = weeklySeries(room, 'avgCheck');
   const turn = weeklySeries(room, 'turnMinutes');
   const weekly = [0, 7, 14, 21, 28, 35].map((d) => {
     const end = new Date(Date.parse(`${w.startedAt}T00:00:00Z`) + d * 864e5).toISOString().slice(0, 10);
-    const c = check.find((p) => p.weekEnd === end)?.value;
-    const t = turn.find((p) => p.weekEnd === end)?.value;
-    return { avgCheck: c ?? g.avgCheckBase, turn: t ?? g.turnBase };
+    const own = d === 0 || servicesOf(room, end) != null;
+    const c = own ? check.find((p) => p.weekEnd === end)?.value : undefined;
+    const t = own ? turn.find((p) => p.weekEnd === end)?.value : undefined;
+    return { avgCheck: c ?? null, turn: t ?? null };
   });
   return {
     baseline: w.baseline, direction: w.direction, sign: w.direction === 'up' ? 1 : -1, centsPerUnitWeek: w.centsPerUnitWeek,
     windowDays: WINDOW_DAYS, checkpointEvery: EVERY,
     checkpoints: cps.map((c) => ({ day: c.day, observed: c.observed, controlDelta: c.controlDelta, services: c.services })),
     guardrails: { ...GUARD, avgCheckBase: g.avgCheckBase, turnBase: g.turnBase, weekly },
+    projectedCents: g.projectedCents ?? null,
   };
+}
+
+/** The window's state on its current day: matched controls are used when every checkpoint has one. */
+function stateOf(w: Win, cps: Cp[], room: Room, opts: { day: number; feedFailing?: boolean }) {
+  const controls = cps.length > 0 && cps.every((c) => c.controlDelta != null);
+  return windowState(pilotOf(w, cps, room), { ...opts, controls });
 }
 
 export async function startWindow(db: Db, v: { orgId: string; userId: string | null; rooms: string[] | null }, { roomId, lever, dish }: { roomId: unknown; lever: unknown; dish?: unknown }) {
@@ -83,7 +98,9 @@ export async function startWindow(db: Db, v: { orgId: string; userId: string | n
   const title = `${l?.name ?? lever}: ${spec.metric === 'dishMargin' ? room.menu.find((m: { key: string }) => m.key === dishKey).name : l?.scope ?? room.profile.short}`;
   const [row] = await db.insert(testWindows).values({
     orgId: v.orgId, roomId, lever, metric: spec.metric, dish: dishKey, title, direction: spec.direction, baseline,
-    centsPerUnitWeek: centsPerUnit(spec.metric, room, l), startedAt, guard: { avgCheckBase: check, turnBase: turn }, userId: v.userId,
+    centsPerUnitWeek: centsPerUnit(spec.metric, room, l), startedAt,
+    // projectedCents: the lever's own weekly estimate at the start, kept apart from what is measured and verified.
+    guard: { avgCheckBase: check, turnBase: turn, projectedCents: l?.weekly > 0 ? Math.round(l.weekly * 100) : null }, userId: v.userId,
   }).returning();
   await db.insert(auditLog).values({ orgId: v.orgId, userId: v.userId, action: 'window.started', detail: { id: row!.id, roomId, lever, baseline, startedAt } });
   return row!;
@@ -109,7 +126,13 @@ export async function listWindows(db: Db, orgId: string, roomScope: string[] | n
     const room = loaded.ds.rooms[w.roomId];
     const mine = cps.filter((c) => c.windowId === w.id);
     const series = room ? weeklySeries(room, w.metric, { dish: w.dish ?? undefined }) : [];
-    return { ...w, checkpoints: mine, series: series.slice(-12), staleDays: room ? Math.round((now.getTime() - Date.parse(`${dataEnd(room)}T23:59:59Z`)) / 864e5) : null, unit: LEVER_METRIC[w.lever as keyof typeof LEVER_METRIC]?.unit };
+    const st = room ? stateOf(w, mine, room, { day: w.day, feedFailing: w.status === 'waiting' && (now.getTime() - Date.parse(`${dataEnd(room)}T23:59:59Z`)) / 864e5 > STALE_DAYS }) : null;
+    const waitingOn = w.status === 'waiting' ? (st?.waitingOn ?? []) : [];
+    const controls = [...new Set(mine.flatMap((c) => c.controls ?? []))];
+    // The stored status wins (a reversal happens after the close); the figures come from the stored effect.
+    const effect = { method: w.method ?? 'unmeasured', pointCents: w.pointCents ?? 0, lowCents: w.lowCents ?? 0 };
+    const stages = proofStages({ status: w.status, effect, waitingOn, projectedCents: (w.guard as Guard).projectedCents ?? null });
+    return { ...w, checkpoints: mine, series: series.slice(-12), staleDays: room ? Math.round((now.getTime() - Date.parse(`${dataEnd(room)}T23:59:59Z`)) / 864e5) : null, unit: LEVER_METRIC[w.lever as keyof typeof LEVER_METRIC]?.unit, waitingOn, controls, stages, gates: st?.gates ?? [] };
   });
 }
 
@@ -124,14 +147,28 @@ export async function runProofLoop(db: Db, orgId: string, now = new Date()) {
     const room = loaded.ds.rooms[w.roomId];
     if (!room) continue;
     const series = weeklySeries(room, w.metric, { dish: w.dish ?? undefined });
+    // Rooms running the same test can't be each other's control.
+    const busy = ws.filter((o) => o.id !== w.id && o.lever === w.lever).map((o) => o.roomId);
+    const spec = { roomId: w.roomId, metric: w.metric, dish: w.dish, startedAt: w.startedAt, baseline: w.baseline, exclude: busy };
     for (const c of dueCheckpoints(series, w.startedAt, WINDOW_DAYS, EVERY)) {
-      const res = await db.insert(checkpoints).values({ windowId: w.id, day: c.day, weekEnd: c.weekEnd, observed: c.observed, services: 7 }).onConflictDoNothing().returning({ id: checkpoints.id });
+      const ctl = controlReading(loaded.ds.rooms, spec, c.weekEnd);
+      const res = await db.insert(checkpoints).values({
+        windowId: w.id, day: c.day, weekEnd: c.weekEnd, observed: c.observed, services: servicesOf(room, c.weekEnd),
+        controlDelta: ctl.controlDelta, controls: ctl.controls,
+      }).onConflictDoNothing().returning({ id: checkpoints.id });
       recorded += res.length;
+    }
+    // Evidence that arrived after a checkpoint was first read (a late upload) fills it in; a recorded value is never changed.
+    for (const c of await db.select().from(checkpoints).where(eq(checkpoints.windowId, w.id))) {
+      const fill: Partial<Cp> = {};
+      if (c.services == null) { const n = servicesOf(room, c.weekEnd); if (n != null) fill.services = n; }
+      if (c.controlDelta == null) { const ctl = controlReading(loaded.ds.rooms, spec, c.weekEnd); if (ctl.controlDelta != null) { fill.controlDelta = ctl.controlDelta; fill.controls = ctl.controls; } }
+      if (Object.keys(fill).length) await db.update(checkpoints).set(fill).where(eq(checkpoints.id, c.id));
     }
     const cps = await db.select().from(checkpoints).where(eq(checkpoints.windowId, w.id)).orderBy(asc(checkpoints.day));
     const day = Math.min(WINDOW_DAYS, dataDay(room, w.startedAt));
     const stale = (now.getTime() - Date.parse(`${dataEnd(room)}T23:59:59Z`)) / 864e5 > STALE_DAYS;
-    const st = windowState(pilotOf(w, cps, room), { day, feedFailing: stale && day < WINDOW_DAYS });
+    const st = stateOf(w, cps, room, { day, feedFailing: stale && day < WINDOW_DAYS });
     const isClosed = st.status === 'verified' || st.status === 'rejected';
     await db.update(testWindows).set({
       status: st.status as Win['status'], day, bookedCents: st.bookedCents, lowCents: st.effect.lowCents, pointCents: st.effect.pointCents, method: st.effect.method,
@@ -148,6 +185,12 @@ export async function runProofLoop(db: Db, orgId: string, now = new Date()) {
           ? `The 28-day test closed. Coversight books ${dollars} a week, the cautious end of what the data shows, and keeps checking the guardrails every week.`
           : 'The 28-day test closed without a move big and steady enough to count. Nothing is booked. You can keep the change or undo it.',
       });
+    } else if (st.status === 'waiting' && w.status !== 'waiting' && !st.waitingOn.includes('feed')) {
+      await notify(db, {
+        orgId, roomId: w.roomId, kind: 'window.pending', severity: 'warn', link: '/windows/', dedupe: `window.pending:${w.id}`,
+        title: `Pending: ${w.title}`,
+        body: `The 28 days are up, but ${st.waitingOn.map((k: string) => (k === 'guardrails' ? 'average check and turn time' : 'the number of services')).join(' and ')} for the last week ${st.waitingOn.length > 1 ? 'are' : 'is'} missing from your own data. Nothing is booked, and nothing is assumed. Add the week on Data and the test closes on the next run.`,
+      });
     } else if (st.status === 'waiting' && w.status !== 'waiting') {
       await notify(db, {
         orgId, roomId: w.roomId, kind: 'window.waiting', severity: 'warn', link: '/inputs/', dedupe: `window.waiting:${w.id}:${dataEnd(room)}`,
@@ -162,27 +205,32 @@ export async function runProofLoop(db: Db, orgId: string, now = new Date()) {
 /** Weekly reverification: a verified result whose guardrail has since broken is reversed. */
 export async function runReverify(db: Db, orgId: string) {
   const loaded = await loadDataset(db, orgId);
-  if (!loaded) return { checked: 0, reversed: [] };
+  if (!loaded) return { checked: 0, reversed: [], unchecked: [] };
   const ws = await db.select().from(testWindows).where(and(eq(testWindows.orgId, orgId), eq(testWindows.status, 'verified')));
   const reversed: string[] = [];
+  const unchecked: string[] = [];
   for (const w of ws) {
     const room = loaded.ds.rooms[w.roomId];
     if (!room) continue;
-    const g = w.guard as { avgCheckBase: number; turnBase: number };
-    const check = last(weeklySeries(room, 'avgCheck'))?.value ?? g.avgCheckBase;
-    const turn = last(weeklySeries(room, 'turnMinutes'))?.value ?? g.turnBase;
+    const g = w.guard as Guard;
+    // The latest week of the room's own data; a reading it doesn't have is unknown, never the baseline.
+    const end = dataEnd(room);
+    const own = servicesOf(room, end) != null;
+    const check = own ? weeklySeries(room, 'avgCheck').find((p) => p.weekEnd === end)?.value ?? null : null;
+    const turn = own ? weeklySeries(room, 'turnMinutes').find((p) => p.weekEnd === end)?.value ?? null : null;
     const pilot = { guardrails: { ...GUARD, avgCheckBase: g.avgCheckBase, turnBase: g.turnBase, weekly: [{ avgCheck: check, turn }] } };
     const res = guardrailCheck(pilot, 0, false);
-    if (!res.ok) {
+    if (res.missing) { unchecked.push(w.id); continue; }
+    if (res.failed) {
       reversed.push(w.id);
       await db.update(testWindows).set({ status: 'reversed', bookedCents: 0, reversedAt: new Date(), updatedAt: new Date() }).where(eq(testWindows.id, w.id));
       await notify(db, {
         orgId, roomId: w.roomId, kind: 'window.reversed', severity: 'warn', link: '/windows/', dedupe: `window.reversed:${w.id}`,
         title: `Reversed: ${w.title}`,
-        body: `A guardrail broke after this result was verified (${res.rows.filter((r: { ok: boolean }) => !r.ok).map((r: { label: string; pct: number }) => `${r.label} ${r.pct.toFixed(1)}%`).join(', ')}). It no longer books savings. Consider undoing the change.`,
+        body: `A guardrail broke after this result was verified (${res.rows.filter((r: { ok: boolean }) => !r.ok).map((r: { label: string; pct: number | null }) => `${r.label} ${(r.pct ?? 0).toFixed(1)}%`).join(', ')}). It no longer books savings. Consider undoing the change.`,
       });
-      await db.insert(auditLog).values({ orgId, userId: null, action: 'window.reversed', detail: { id: w.id, rows: res.rows.filter((r: { ok: boolean }) => !r.ok).map((r: { label: string; pct: number }) => ({ label: r.label, pct: r.pct })) } });
+      await db.insert(auditLog).values({ orgId, userId: null, action: 'window.reversed', detail: { id: w.id, rows: res.rows.filter((r: { ok: boolean }) => !r.ok).map((r: { label: string; pct: number | null }) => ({ label: r.label, pct: r.pct })) } });
     }
   }
-  return { checked: ws.length, reversed };
+  return { checked: ws.length, reversed, unchecked };
 }
