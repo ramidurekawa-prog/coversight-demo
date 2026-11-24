@@ -1269,7 +1269,7 @@ body { background: var(--background); color: var(--fg-1); }
 .cv-money:hover { border-bottom-color: var(--accent); }
 
 /* ---- Claim chip ------------------------------------------------------------ */
-.cv-claim { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px 0 6px; border-radius: 99px; font: 600 11px/1 var(--font-sans); border: 1px solid; white-space: nowrap; }
+.cv-claim { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px 0 6px; border-radius: 99px; font: 600 12px/1 var(--font-sans); border: 1px solid; white-space: nowrap; }
 .cv-claim svg { width: 12px; height: 12px; }
 .cv-claim.est { color: var(--claim-est); background: var(--claim-est-bg); border-color: var(--claim-est-line); }
 .cv-claim.est svg { stroke-dasharray: 3 2; }

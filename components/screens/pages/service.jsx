@@ -5,6 +5,7 @@ import * as React from 'react';
 import { Icon, Button } from '../../kit';
 import { engine, useEngine, useSaved } from '../../engine';
 import { useCv, cvMoney, CV_D, CV_ROOM, CV_NOW, Claim, Money, Pill, PageHead } from '../core';
+import { ServiceCheck } from '../touches';
 import { DenseService } from '../dense-sections';
 import { covercastPace, shiftPulseDay } from '../../../lib/data/forecast/index.js';
 import { useCovercast } from '../covercast';
@@ -677,7 +678,10 @@ function CvService() {
         </div>
       </div>
 
-      <div className={s.mode}><span className={`${s.dot} ${source.dot}`} />{source.text}</div>
+      <div className="cv-row" style={{ justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+        <div className={s.mode}><span className={`${s.dot} ${source.dot}`} />{source.text}</div>
+        {!own && <ServiceCheck d={CV_D} period="Last week" />}
+      </div>
       {banner}
 
       <div className={`${s.strip} ${s.stripSlim}`} role="group" aria-label="Lunch, dinner or the full day">
@@ -689,7 +693,7 @@ function CvService() {
       {/* The call before the shift leads while there's one to make; once guests are in, the live call below does. */}
       <ShiftCall date={date} meal={meal} back={link?.back} />
 
-      <section className={`${s.hero} ${s[`h_${answer.tone}`] || ''} ${pf ? s.heroPf : ''}`} aria-labelledby="svc-hero">
+            <section className={`${s.hero} ${s[`h_${answer.tone}`] || ''} ${pf ? s.heroPf : ''}`} aria-labelledby="svc-hero" data-agent-here="today" data-agent-label="Go to the decision">
         <div className={s.heroMain}>
           <span className={s.heroKicker}><Icon name={TONE_ICON[answer.tone] || 'Activity'} size={16} />{view.meal === 'day' ? `Full day · ${M.label} now · ` : ''}{answer.kicker}</span>
           {promise && <p className={s.heroOutcome}><Icon name={role === 'floor' ? 'Users' : role === 'owner' ? 'TrendingUp' : 'Gauge'} size={18} /><span>{promise.text}</span>{promise.money && <Claim k="est" />}</p>}

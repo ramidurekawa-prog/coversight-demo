@@ -182,6 +182,23 @@ function LegendPop({ onClose }) {
 }
 
 /** The date and time, from the same running clock the page uses. */
+/**
+ * Fixes happen on the page itself (Ramidu, 2026-11-19). When the page in view
+ * carries what a suggestion would open elsewhere, marked
+ * data-agent-here="<page>", act on it here: a button is pressed, anything
+ * else is scrolled to and focused. Returns false when the page has no such place.
+ */
+function actHere(target) {
+  const el = typeof document !== 'undefined' && document.querySelector(`[data-agent-here="${target}"]`);
+  if (!el) return false;
+  if (el.tagName === 'BUTTON') { el.click(); return true; }
+  const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+  if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '-1');
+  el.focus({ preventScroll: true });
+  return true;
+}
+
 function TopClock() {
   const clock = useClock({ own: !!CV_D.room?.fromToast, tz: CV_D.room?.tz });
   return (
@@ -209,7 +226,9 @@ function TopBar({ page, loc, onLoc, role, onRole, go, onMenu, onAsk, tools }) {
         <Icon name="Menu" size={18} />
       </button>
       <div className="col" style={{ lineHeight: 1.25, minWidth: 0 }}>
-        <h1>{CV_PAGES[page].title}</h1>
+        <h1>{CV_PAGES[page].navTitle && CV_PAGES[page].navTitle !== CV_PAGES[page].title
+          ? <><span className="cv-title-long">{CV_PAGES[page].title}</span><span className="cv-title-short">{CV_PAGES[page].navTitle}</span></>
+          : CV_PAGES[page].title}</h1>
         <TopClock />
       </div>
       <div className="spacer" />
@@ -515,14 +534,15 @@ function AppShell({ children }) {
       <div className={tools ? 'cv-shellwrap' : 'cv-shellwrap cv-notools'}>
       {tools && <ModeStrip build={false} />}
       <div className="cv-host">
+        <a className="cv-skip" href="#cv-main" onClick={(e) => { e.preventDefault(); document.getElementById('cv-main')?.focus(); }}>Skip to the page</a>
         <div className={`app cv-app ${navOpen ? 'nav-open' : ''}`}>
           <Sidebar page={page} role={role} onNavigate={() => setNavOpen(false)} />
           {navOpen && <div className="cv-scrim" style={{ zIndex: 'calc(var(--z-drawer) - 1)' }} onClick={() => setNavOpen(false)} />}
           <div className="content">
             <TopBar page={page} loc={loc} onLoc={chooseLoc} role={role} onRole={chooseRole} go={go} onMenu={() => setNavOpen(true)} onAsk={() => setAsk({})} tools={tools} />
-            <main className="scroll" ref={scrollRef} tabIndex={0} aria-label="Screen">
+            <main id="cv-main" className="scroll" ref={scrollRef} tabIndex={0} aria-label={CV_PAGES[page].title}>
               <PageTabs page={page} />
-              <PageAgent key={`${eng.room}:${page}`} page={page} role={role} onOpen={(q, run) => (run && run.act.kind === 'approve' ? setApproval({ id: run.act.id }) : run && run.act.kind === 'go' ? go(run.act.page, run.act.goId ? { id: run.act.goId } : undefined) : setAsk({ q: q || '', run: run || null }))} />
+              <PageAgent key={`${eng.room}:${page}`} page={page} role={role} onOpen={(q, run) => (run && run.act.kind === 'approve' ? setApproval({ id: run.act.id }) : run && run.act.kind === 'go' ? (actHere(run.act.page) || go(run.act.page, run.act.goId ? { id: run.act.goId } : undefined)) : setAsk({ q: q || '', run: run || null }))} />
               <React.Fragment key={`${eng.room}-${eng.version}`}>{children}</React.Fragment>
             </main>
           </div>
