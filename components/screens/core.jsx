@@ -6,6 +6,7 @@ import { Icon, Button } from '../kit';
 import { LOCS, NOW, SEED } from '../../lib/data/seed';
 import * as M from '../../lib/data/model';
 import { findingBlocked } from '../../lib/data/findings';
+import { payRuleCheck } from '../../lib/ai/playbook';
 
 /* Coversight demo core: the current room's data (loaded from lib/data),
    money helpers, claim chips, derivation drawer, approval modal and shared
@@ -393,6 +394,8 @@ function ApprovalModal({ id, onClose, onConfirm, eng }) {
   const blockedBy = inputBlock(id);
   const breach = fenceBreach(id, eng);
   const [step, setStep] = React.useState("review");
+  // A schedule change is checked against the pay rules for where the room is (lib/ai/playbook.js tables only).
+  const pay = a && a.system === "7shifts" ? payRuleCheck(CV_D.profile, { sameDay: /\b(tonight|today)\b/i.test(a.title) }) : null;
   React.useEffect(() => {
     const k = (e) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", k);
@@ -427,10 +430,17 @@ function ApprovalModal({ id, onClose, onConfirm, eng }) {
                   <span className="cv-small">{a.fence}</span>
                 </div>
                 <div className="cv-col" style={{ gap: 8 }}>
-                  <span className="cv-over">We stop and tell you if</span>
+                  <span className="cv-over">While this runs, we watch. We stop and tell you if</span>
                   <ul className="cv-ul">{a.kill.map((k) => <li key={k}><Icon name="ShieldAlert" size={14} />{k}</li>)}</ul>
                 </div>
               </div>
+              {pay && (
+                <div className="cv-col" style={{ gap: 8 }} data-pay-rules>
+                  <span className="cv-over">Pay rules to clear first · {pay.where}</span>
+                  {pay.rules.length > 0 && <ul className="cv-ul">{pay.rules.map((r) => <li key={r.id}><Icon name="Scale" size={14} /><span><b>{r.name}.</b> {r.text}</span></li>)}</ul>}
+                  <span className="cv-xs cv-muted">{pay.caveat}</span>
+                </div>
+              )}
               <Callout icon="Timer">{a.window}</Callout>
               <Callout icon="Undo2">{a.revert}</Callout>
               {blockedBy && <Callout tone="bad" icon="TriangleAlert">{blockedBy}</Callout>}
