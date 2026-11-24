@@ -693,7 +693,7 @@ function CvService() {
       {/* The call before the shift leads while there's one to make; once guests are in, the live call below does. */}
       <ShiftCall date={date} meal={meal} back={link?.back} />
 
-            <section className={`${s.hero} ${s[`h_${answer.tone}`] || ''} ${pf ? s.heroPf : ''}`} aria-labelledby="svc-hero" data-agent-here="today" data-agent-label="Go to the decision">
+      <section className={`${s.hero} ${s[`h_${answer.tone}`] || ''} ${pf ? s.heroPf : ''}`} aria-labelledby="svc-hero" data-agent-here="today" data-agent-label="Go to the decision">
         <div className={s.heroMain}>
           <span className={s.heroKicker}><Icon name={TONE_ICON[answer.tone] || 'Activity'} size={16} />{view.meal === 'day' ? `Full day · ${M.label} now · ` : ''}{answer.kicker}</span>
           {promise && <p className={s.heroOutcome}><Icon name={role === 'floor' ? 'Users' : role === 'owner' ? 'TrendingUp' : 'Gauge'} size={18} /><span>{promise.text}</span>{promise.money && <Claim k="est" />}</p>}
