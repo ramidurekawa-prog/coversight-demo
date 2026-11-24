@@ -9,12 +9,14 @@ import { ServiceCheck } from '../touches';
 import { DenseService } from '../dense-sections';
 import { covercastPace, shiftPulseDay } from '../../../lib/data/forecast/index.js';
 import { useCovercast } from '../covercast';
+import { ShiftCall } from '../staffing';
 import {
   addDays, bandSpread, clockLabel, clockMinutes, cutApprovalId, dayOfDate, dayOutlook, fencesOf, hhmm, hourRows, isCutFor, localNow,
   manualNight, MEALS, mealOf, MIN_CALIBRATED, needsFrom, pacing, planTotals, serviceRecap, servicePlan, slotRows, SLOT_MIN, toCsv,
 } from '../../../lib/data/page/service.js';
 import { GuestsChart, HourChart } from './service.charts';
 import s from './service.module.css';
+import { ShadowRecord } from './service.shadow';
 
 /*
  * The Service page: during the day, which service needs you and what to do.
@@ -316,7 +318,22 @@ function CvService() {
   const eng = useEngine();
   const server = eng.mode === 'server';
   const own = !!CV_D.room.fromToast;
-  const [view, setView] = useView();
+  // A room whose service history is typed on Data (guests and servers by hour): its own plan, no live feed, never the sample's scene.
+  const handOwn = !own && !!CV_D.room.serviceOwn;
+  const [view0, setView0] = useView();
+  // A link from Today or Data names the service (?date=&meal=&back=). It wins over the remembered view until the manager picks another.
+  const [link, setLink] = React.useState(/** @type {{ date: string|null, meal: string|null, back: string|null }|null} */ (null));
+  React.useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    const d = p.get('date'); const m = p.get('meal'); const b = p.get('back');
+    if (d || m || b) setLink({ date: /^\d{4}-\d{2}-\d{2}$/.test(d || '') ? d : null, meal: m === 'lunch' || m === 'dinner' ? m : null, back: b && /^[a-z]{2,20}$/.test(b) ? b : null });
+  }, []);
+  const view = { ...view0, ...(link?.meal ? { meal: link.meal } : {}), ...(link?.date ? { when: link.date } : {}) };
+  const setView = (patch) => {
+    const kept = link ? { ...(link.date ? { when: link.date } : {}), ...(link.meal ? { meal: link.meal } : {}) } : {};
+    setLink((l) => (l ? { date: null, meal: null, back: l.back } : l));
+    setView0({ ...kept, ...patch });
+  };
   const tools = useDemoTools();
   const [more, setMore] = React.useState(false);
   const [showDetail, setShowDetail] = React.useState(false);
@@ -329,20 +346,21 @@ function CvService() {
   // The clock: the room's own when Toast answered, the sample's fixed evening, else this device's.
   const clock = own
     ? (live?.dinner?.date ? { date: live.dinner.date, day: live.dinner.day, minutes: live.dinner.nowMin } : localNow(new Date()))
-    : { date: CV_NOW.iso, day: dayOfDate(CV_NOW.iso), minutes: clockMinutes(CV_NOW.time) ?? 19 * 60 + 15 };
+    : handOwn ? localNow(new Date(), CV_D.room.tz) : { date: CV_NOW.iso, day: dayOfDate(CV_NOW.iso), minutes: clockMinutes(CV_NOW.time) ?? 19 * 60 + 15 };
   const date = view.when === 'today' ? clock.date : view.when === 'tomorrow' ? addDays(clock.date, 1) : /^\d{4}-\d{2}-\d{2}$/.test(view.when) ? view.when : clock.date;
   const isToday = date === clock.date;
   const day = dayOfDate(date);
   const nowMin = clock.minutes;
 
-  const cc = useCovercast(CV_D.room, CV_D.id, server);
+  // Covercast reads Toast or the sample; a history typed by hand stands on its own (lib/data/page/staffing.js does the same).
+  const cc = useCovercast(CV_D.room, CV_D.id, server, !handOwn);
   const sp = cc ? shiftPulseDay(cc, date) : null;
   const plans = { lunch: servicePlan(CV_D.room, day, fencesSaved, 'lunch', sp?.lunch ?? null), dinner: servicePlan(CV_D.room, day, fencesSaved, 'dinner', sp?.dinner ?? null) };
   const outlook = dayOutlook(plans);
 
   // Live per service (today only).
   const liveFor = (m) => {
-    if (!isToday) return null;
+    if (!isToday || handOwn) return null;
     if (!own) {
       if (m === 'dinner') return CV_D.room.service ? fromSample(CV_D.room.service, cc, date, plans.dinner, fences) : null;
       const lt = CV_D.room.levers?.lunchToday;
@@ -491,7 +509,7 @@ function CvService() {
     </div>
   ) : null;
 
-  const showManual = isToday && own && !L;
+  const showManual = isToday && (own || handOwn) && !L;
   const before = cut ? { on: cut.servers, need: cut.servers - 1 } : null;
   const impact = cut ? (cut.source === 'live' ? L.value : plan?.value ?? null) : null;
   const hoursLeft = cut ? Math.max(0, ((L?.end ?? M.to * 60) - cut.at) / 60) : 0;
@@ -580,7 +598,7 @@ function CvService() {
     if (!t) return 'Approved';
     return { open: 'Approved · not done yet', done: 'Marked done on Today', verified: 'Confirmed', mismatch: 'Didn’t match Toast', cancelled: 'Undone' }[t.status] ?? 'Approved';
   };
-  const detailTabs = [['slots', 'Every 15 minutes'], ['hours', 'Hour by hour'], ['rules', NAMES.guard], ['money', 'The money'], ['past', 'Past decisions'], ['busy', 'Busy times']];
+  const detailTabs = [['slots', 'Every 15 minutes'], ['hours', 'Hour by hour'], ['rules', NAMES.guard], ['money', 'The money'], ['past', 'Past decisions'], ['shadow', 'Track record'], ['busy', 'Busy times']];
   const pick = sel == null ? null : sel >= SLOT_FLOOR ? sel : sel * 60;
 
   // The problem and the fix, side by side: only figures the page already computed.
@@ -671,6 +689,9 @@ function CvService() {
         <MealCard id="dinner" active={view.meal !== 'lunch' && view.meal !== 'day'} onPick={(id) => { setView({ meal: id }); setSel(null); }} title="Dinner" {...dc} foot={null} />
         {both && <MealCard id="day" active={view.meal === 'day'} onPick={(id) => { setView({ meal: id }); setSel(null); }} title="Full day" big={dayTotal} unit={[lc, dc].some((c) => ['Done', 'Sample', 'Live', 'Typed', 'Overstaffed', 'Busier than forecast', 'Busier than usual'].includes(c.state)) ? 'guests' : 'covers forecast'} foot={null} state={null} />}
       </div>
+
+      {/* The call before the shift leads while there's one to make; once guests are in, the live call below does. */}
+      <ShiftCall date={date} meal={meal} back={link?.back} />
 
       <section className={`${s.hero} ${s[`h_${answer.tone}`] || ''} ${pf ? s.heroPf : ''}`} aria-labelledby="svc-hero" data-agent-here="today" data-agent-label="Go to the decision">
         <div className={s.heroMain}>
@@ -846,6 +867,7 @@ function CvService() {
           {view.detail === 'past' && (past.length ? (
             <ul className={s.past}>{past.map((p, k) => <li key={k}><b>{p.date}{p.meal ? ` · ${MEALS[p.meal].label}` : ''}</b><span>{p.answer === 'yes' ? `Send 1 home at ${p.at ? clockLabel(clockMinutes(p.at)) : '—'}` : p.answer === 'later' ? 'Decide later' : p.answer === 'no' ? 'Kept everyone on' : 'Send-home call'}{p.to ? ` · handed to the ${HANDOFF[p.to]}` : ''}</span><span className="cv-faint">{outcome(p)}</span></li>)}</ul>
           ) : <Note icon="ListChecks">No decisions yet. Each one shows here with what came of it.</Note>)}
+          {view.detail === 'shadow' && <ShadowRecord roomId={CV_D.id} server={server} />}
           {view.detail === 'busy' && <DenseService />}
         </div>
       </section>}

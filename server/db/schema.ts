@@ -222,7 +222,10 @@ export const checkpoints = pgTable(
     weekEnd: text('week_end').notNull(),
     observed: doublePrecision('observed').notNull(),
     controlDelta: doublePrecision('control_delta'),
-    services: integer('services').notNull(),
+    /** The group's other rooms the control reading came from (empty: measured before/after). */
+    controls: jsonb('controls').$type<string[]>(),
+    /** Services in the room's own data for that week; null = not known yet, so the test waits. */
+    services: integer('services'),
     recordedAt: at('recorded_at').notNull().defaultNow(),
   },
   (t) => [unique('checkpoints_window_day').on(t.windowId, t.day)],
@@ -278,6 +281,10 @@ export const tasks = pgTable(
     createdAt: at('created_at').notNull().defaultNow(),
     doneAt: at('done_at'),
     checkedAt: at('checked_at'),
+    /** What the recommendation rested on when it was approved (forecast, schedule, guardrails, estimate), built on the server. Null for tasks that predate it. */
+    evidence: jsonb('evidence'),
+    /** What the data later showed (clock-ins, observed difference, guardrail result). Null until there is something to show. */
+    outcome: jsonb('outcome'),
   },
   (t) => [index('tasks_org_status_idx').on(t.orgId, t.status)],
 );
@@ -685,4 +692,27 @@ export const staffConnections = pgTable('staff_connections', {
   createdAt: at('created_at').notNull().defaultNow(),
 });
 
-export const schema = { users, sessions, accounts, verifications, orgs, memberships, rooms, roomData, inputs, actions, auditLog, memberRole, windowStatus, testWindows, checkpoints, jobRuns, snapshots, taskStatus, tasks, notifications, notificationReads, outbox, invites, invoices, toastConnections, posDays, linkedSources, agentCycles, agentEvents, agentRuns, agentProposals, meetingSessions, meetingActions, serviceLive, staffConnections };
+/**
+ * Shadow mode: the staffing call Coversight would have made for a service,
+ * logged before the service (frozen: the first issue wins) and graded once it
+ * is over (lib/data/page/staffing.js shadowEntry / gradeShadow). Nobody acts
+ * on it; it is the record that earns trust before the calls are used.
+ */
+export const shadowCalls = pgTable(
+  'shadow_calls',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => orgs.id, { onDelete: 'cascade' }),
+    roomId: text('room_id').notNull(),
+    date: text('date').notNull(),
+    meal: text('meal').notNull(),
+    state: text('state').notNull(),
+    entry: jsonb('entry').notNull(),
+    issuedAt: at('issued_at').notNull().defaultNow(),
+    graded: jsonb('graded'),
+    gradedAt: at('graded_at'),
+  },
+  (t) => [unique('shadow_calls_service').on(t.orgId, t.roomId, t.date, t.meal), index('shadow_calls_room_idx').on(t.orgId, t.roomId, t.date)],
+);
+
+export const schema = { users, sessions, accounts, verifications, orgs, memberships, rooms, roomData, inputs, actions, auditLog, memberRole, windowStatus, testWindows, checkpoints, jobRuns, snapshots, taskStatus, tasks, notifications, notificationReads, outbox, invites, invoices, toastConnections, posDays, linkedSources, agentCycles, agentEvents, agentRuns, agentProposals, meetingSessions, meetingActions, serviceLive, staffConnections, shadowCalls };
