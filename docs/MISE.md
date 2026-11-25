@@ -6,6 +6,41 @@ every page, consultant and Sous answer reads from. It holds no data of its own;
 everything comes from the derived room, the casebook and the room's saved
 decisions.
 
+**Mise is not a page.** It is a system built into the platform that is always
+working: it runs in the background when data arrives and every night, and what
+it knows travels with every decision the platform already shows.
+
+## Always on (`server/ai/mise.ts` `thinkMise()`)
+
+| When | Trigger |
+| --- | --- |
+| Every night, 4:30 am Pacific | the `mise` job (`vercel.json`) |
+| New data or results | right after the `sync`, `links`, `proof` and `reverify` jobs |
+| Someone saves or undoes an entry or import | `after()` in `/api/inputs` and `/api/inputs/:id/undo` |
+
+Each pass re-reads every room. When a room's records changed it keeps the new
+state (`snapshots` kind `mise.state`: what it knows, its gaps, the top things
+that would teach it most, closed tests), tells the room's people what it
+learned from each test that closed since the last pass (`mise.learned`, once
+per test, never for a sample group), and with the AI engine on re-writes the
+brain model's read. The first pass for a room only takes stock.
+
+## Where it shows up
+
+- **Every page's agent strip**: under the move, one line from Mise: what went
+  wrong last time something like it was tried, else the consultant's record.
+- **The Pass (Sous)**: an open ticket carries Mise's brief (how, its record,
+  last time, who does it at its level, how we'll know); tests being watched
+  say how they are pointing; proven ones how they ended against the estimate
+  and the lesson.
+- **Sous answers**: "What do you know about us?" and "What would make you
+  smarter?" (the Data Steward on Data pages asks it too).
+- **Consultants (a Settings tab)**: the casebook, the brain model's read of each
+  consultant, and when Mise last re-read the data.
+- **How We Work** (Proof group): the plain explanation of Mise, Covercast,
+  Sous and the consultants for owners, with what each never does and the fine
+  print. It is the only place Mise is described; nothing about it sits on Proof.
+
 ## What it knows (`lib/ai/understanding.js`)
 
 Five levels, each a list of things it knows (`text`, `source`, optional claim)
@@ -42,7 +77,7 @@ facts (`know:<level>`, `know:smarter`), each with `say`/`todo`.
 a short read of each level and each consultant from the records only. Every
 line must pass `numbersOk()` or it is dropped. Reads are cached in `snapshots`
 (kind `mise`) by the records' hash, spend the `mise` daily allowance, and are
-pre-written by the nightly `sous` job. With no key, the provider down, or the
+re-written by `thinkMise()` whenever the records change. With no key, the provider down, or the
 allowance spent, the page stands on the built-in records.
 
 ## Rules

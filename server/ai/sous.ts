@@ -26,7 +26,6 @@ import { listTasks } from '../tasks';
 import { loadSeries } from '../forecast';
 import { covercastFor } from '../page/service';
 import { aiAllowance, aiConfigured, askClaude } from './claude';
-import { loadMise } from './mise';
 
 type V = Pick<Viewer, 'orgId' | 'role' | 'rooms'> & { userId: string | null };
 type Fact = { id: string; topic: string; text: string; claim?: string; go?: string; label: string };
@@ -254,8 +253,6 @@ export async function runSous(db: Db, orgId: string, { fetchImpl, now = new Date
         if (r.engine === 'ai') briefs += 1;
       }
     }
-    // Mise's read is written ahead too, so the morning starts with it.
-    if (aiConfigured()) await loadMise(db, { orgId, userId: null, role: 'owner', rooms: null }, roomId, { ...(fetchImpl ? { fetchImpl } : {}), now }).catch(() => null);
     byRoom[roomId] = { noticed: noticed.length, told, briefs, calls: next.length - log.length };
   }
   return { rooms: Object.keys(byRoom).length, byRoom };

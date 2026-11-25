@@ -1,0 +1,14 @@
+/* Mise inside the platform: the brief on a move, the line on a strip, the read on a test. Tokens only. */
+.brief { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 6px 10px; margin: 8px 0 0; font-size: 14px; line-height: 1.5; }
+.brief dt { color: var(--fg-3); font-size: 13px; }
+.brief dd { margin: 0; color: var(--fg-1); }
+.brief dd p { margin: 0; }
+.steps { margin: 0; padding-left: 18px; }
+.warn { color: var(--warning-700); }
+.line { display: flex; align-items: center; gap: 5px; min-width: 0; font-size: 13px; color: var(--fg-2); font-weight: 400; }
+.lineText { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.line > svg { flex: none; }
+.read { margin: 0; font-size: 14px; line-height: 1.5; color: var(--fg-1); }
+.lesson { display: flex; gap: 6px; margin: 0; font-size: 13px; line-height: 1.5; color: var(--fg-2); }
+.lesson > svg { flex: none; margin-top: 3px; }
+@media (max-width: 480px) { .brief { grid-template-columns: minmax(0, 1fr); gap: 2px; } .brief dd { margin-bottom: 6px; } }

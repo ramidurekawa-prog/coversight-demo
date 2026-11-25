@@ -19,6 +19,7 @@ import type { Db } from '../db/client';
 import { auditLog, snapshots, testWindows } from '../db/schema';
 import { InputError } from '../org';
 import type { Viewer } from '../session';
+import { notify } from '../notify';
 import { listTasks } from '../tasks';
 import { BRAIN_MODEL, aiAllowance, aiConfigured, askClaude } from './claude';
 
@@ -53,12 +54,10 @@ function records(m: ReturnType<typeof mise>, book: ReturnType<typeof casebook>, 
  * consultant. Kept per room until the records change, so opening Mise
  * doesn't spend a call each time.
  */
-export async function loadMise(db: Db, v: V, roomRaw: unknown, { fetchImpl, now = new Date() }: { fetchImpl?: typeof fetch; now?: Date } = {}) {
-  const loaded = await loadDataset(db, v.orgId, v.rooms);
-  if (!loaded) throw new InputError('Organization not found.');
-  const ids = Object.keys(loaded.ds.rooms);
-  const roomId = typeof roomRaw === 'string' && roomRaw ? roomRaw : ids[0];
-  if (!roomId || !ids.includes(roomId)) throw new InputError('That room is not one of yours.');
+type Loaded = NonNullable<Awaited<ReturnType<typeof loadDataset>>>;
+
+/** Everything Mise holds for one room, from the stored data and the room's saved decisions. */
+async function build(db: Db, v: V, roomId: string, loaded: Loaded, now: Date) {
   const d = deriveRoom(loaded.ds, roomId);
   const group = deriveGroup(loaded.ds);
   const sample = !!(loaded.org as { sample?: boolean } | undefined)?.sample;
@@ -72,8 +71,24 @@ export async function loadMise(db: Db, v: V, roomRaw: unknown, { fetchImpl, now 
   const book = casebook(d, { ...(sample ? { today: loaded.ds.now?.iso } : { windows: wins }), rooms, levels: saved.autonomy as Record<string, number> | undefined });
   const mine = tasks.filter((t) => t.roomId === roomId);
   const m = mise(d, { book, group, tasks: mine, notes: saved['sous.notes'] as unknown[], mem: saved.sous as Record<string, unknown>, moves: roomMoves(d, saved, { windows: wins, tasks: mine, now: now.getTime() }) });
-  const facts = records(m, book, d.profile?.short ?? roomId);
-  const base = { roomId, model: BRAIN_MODEL, ai: aiConfigured(), engine: 'builtin' as 'ai' | 'builtin', reads: { levels: {} as Record<string, string>, consultants: {} as Record<string, string> } };
+  return { d, m, book, sample, facts: records(m, book, d.profile?.short ?? roomId) };
+}
+
+async function load(db: Db, v: V) {
+  const loaded = await loadDataset(db, v.orgId, v.rooms);
+  if (!loaded) throw new InputError('Organization not found.');
+  return loaded;
+}
+
+export async function loadMise(db: Db, v: V, roomRaw: unknown, { fetchImpl, now = new Date(), loaded: pre }: { fetchImpl?: typeof fetch; now?: Date; loaded?: Loaded } = {}) {
+  const loaded = pre ?? await load(db, v);
+  const ids = Object.keys(loaded.ds.rooms);
+  const roomId = typeof roomRaw === 'string' && roomRaw ? roomRaw : ids[0];
+  if (!roomId || !ids.includes(roomId)) throw new InputError('That room is not one of yours.');
+  const { d, m, book, facts } = await build(db, v, roomId, loaded, now);
+  const [st] = await db.select().from(snapshots).where(and(eq(snapshots.orgId, v.orgId), eq(snapshots.roomId, roomId), eq(snapshots.kind, 'mise.state')));
+  const thought = (st?.data as { at?: string } | undefined)?.at ?? null;
+  const base = { roomId, thought, model: BRAIN_MODEL, ai: aiConfigured(), engine: 'builtin' as 'ai' | 'builtin', reads: { levels: {} as Record<string, string>, consultants: {} as Record<string, string> } };
   if (!aiConfigured()) return base;
 
   const hash = sousHash(facts);
@@ -103,4 +118,45 @@ export async function loadMise(db: Db, v: V, roomRaw: unknown, { fetchImpl, now 
     await db.insert(snapshots).values({ orgId: v.orgId, roomId, kind: 'mise', data }).onConflictDoUpdate({ target: [snapshots.orgId, snapshots.roomId, snapshots.kind], set: { data, at: now } });
   }
   return { ...base, engine, reads };
+}
+
+/** What Mise keeps between passes for a room: enough to tell what changed. */
+type State = { hash: string; at: string; known: number; gaps: number; smarter: string[]; closed: string[]; before: number; during: number };
+
+/**
+ * Mise, always on. Re-reads every room of a group whenever data arrives (a
+ * Toast sync, a linked sheet, an entry or import, a test checkpoint) and
+ * nightly, without anyone opening a page. When the records changed it keeps
+ * the new state, tells the room's people what it learned from any test that
+ * closed since its last pass (once per test), and, with the AI engine on,
+ * re-writes its read. The first pass for a room only takes stock.
+ */
+export async function thinkMise(db: Db, orgId: string, { now = new Date(), fetchImpl }: { now?: Date; fetchImpl?: typeof fetch } = {}) {
+  const v: V = { orgId, userId: null, role: 'owner', rooms: null };
+  const loaded = await loadDataset(db, orgId, null);
+  if (!loaded) return { rooms: 0, changed: 0, learned: 0 };
+  let changed = 0;
+  let learned = 0;
+  const ids = Object.keys(loaded.ds.rooms);
+  for (const roomId of ids) {
+    const { m, book, sample, facts } = await build(db, v, roomId, loaded, now);
+    const hash = sousHash(facts);
+    const [snap] = await db.select().from(snapshots).where(and(eq(snapshots.orgId, orgId), eq(snapshots.roomId, roomId), eq(snapshots.kind, 'mise.state')));
+    const prev = snap?.data as State | undefined;
+    if (prev?.hash === hash) continue;
+    changed++;
+    const closed = book.cases.filter((c: { room: string; outcome: string }) => c.room === roomId && endingOf(c.outcome).result) as { id: string; title: string; lesson: string }[];
+    if (prev && !sample) {
+      const had = new Set(prev.closed);
+      for (const c of closed.filter((x) => !had.has(x.id))) {
+        const told = await notify(db, { orgId, roomId, kind: 'mise.learned', title: `Mise learned from “${c.title}”`, body: c.lesson, link: '/consultants', dedupe: `mise:${roomId}:${c.id}` });
+        if (told) learned++;
+      }
+    }
+    const u = m.understanding;
+    const data: State = { hash, at: now.toISOString(), known: u.known, gaps: u.gaps, smarter: u.smarter.slice(0, 3).map((g: { need: string }) => g.need), closed: closed.map((c) => c.id), before: m.loop.before.length, during: m.loop.during.length };
+    await db.insert(snapshots).values({ orgId, roomId, kind: 'mise.state', data }).onConflictDoUpdate({ target: [snapshots.orgId, snapshots.roomId, snapshots.kind], set: { data, at: now } });
+    if (aiConfigured()) await loadMise(db, v, roomId, { loaded, now, ...(fetchImpl ? { fetchImpl } : {}) }).catch(() => null);
+  }
+  return { rooms: ids.length, changed, learned };
 }

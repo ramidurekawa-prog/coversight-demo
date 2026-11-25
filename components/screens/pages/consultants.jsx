@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { Button, Icon } from '../../kit';
 import { useBrain } from '../brain';
-import { CV_ROOM, Claim, Outcome, PageHead, cvMoney, useCv } from '../core';
+import { CV_D, CV_ROOM, Claim, Outcome, PageHead, cvMoney, useCv } from '../core';
 import { LEVELS, MIN_RATE_N, consultantSay, endingOf } from '../../../lib/ai/casebook';
 import s from './consultants.module.css';
 
@@ -76,13 +76,14 @@ function Ladder({ k, onSet, canSet }) {
   );
 }
 
-function Detail({ k, onSet, canSet }) {
+function Detail({ k, onSet, canSet, read }) {
   const room = CV_ROOM.short || CV_ROOM.name;
   const learned = [...k.cases].sort((a, b) => Number(endingOf(b.outcome).result) - Number(endingOf(a.outcome).result));
   return (
     <div className={s.detail}>
       <section className={s.learned} aria-label={`What ${k.name} learned`}>
         <h4 className={s.h}>What it learned</h4>
+        {read && <p className={s.aim}><Icon name="Brain" size={15} />{read}</p>}
         {k.aim && <p className={s.aim}><Icon name="Target" size={15} />{k.aim}</p>}
         {learned.length ? (
           <ul className={s.cases}>
@@ -131,6 +132,16 @@ function CvConsultants() {
   const role = eng.mode === 'server' ? eng.viewer?.role : 'owner';
   const canSet = !role || ['owner', 'admin', 'gm'].includes(role);
 
+  // Mise's own read of each consultant, written in the background when the AI engine is on.
+  const [mind, setMind] = React.useState(/** @type {{ thought: string | null, reads: { consultants: Record<string, string> } } | null} */ (null));
+  React.useEffect(() => {
+    setMind(null);
+    if (eng.mode !== 'server') return;
+    let live = true;
+    fetch(`/api/mise?room=${encodeURIComponent(CV_D.id)}`, { credentials: 'same-origin' }).then((x) => (x.ok ? x.json() : null)).then((b) => { if (live && b) setMind(b); }).catch(() => {});
+    return () => { live = false; };
+  }, [eng.mode, eng.room]);
+
   const withRecord = book.consultants.filter((k) => k.record.calls);
   const [open, setOpen] = React.useState(/** @type {string | null} */ (withRecord[0]?.page || null));
   const r = book.record;
@@ -144,8 +155,8 @@ function CvConsultants() {
 
   return (
     <div className="cv-page wide">
-      <PageHead over="Mise · Consultants" q={q}
-        sub="Every lever has a consultant. Each keeps a casebook of every call it made and how it ended, and learns from it: how often it is right, how close its estimates are, and how much it may do on its own. Nothing here counts as saved until a test verifies it." />
+      <PageHead over="Settings · Consultants" q={q}
+        sub="Every lever has a consultant. Mise, the brain built into Coversight, keeps each one’s casebook: every call, how it ended, what it taught and how much the consultant may now do on its own. Nothing here counts as saved until a test verifies it." />
 
       <div className={s.strip} role="list" aria-label="Every call on record">
         <div role="listitem"><span className={s.n}>{r.calls}</span><span className={s.k}>Calls tested</span></div>
@@ -174,7 +185,7 @@ function CvConsultants() {
                 <span className={s.cell}><span className={s.cellK}>At {room}</span><LevelChip n={k.working} earned={k.earned.level} /></span>
                 <Icon name={isOpen ? 'ChevronDown' : 'ChevronRight'} size={16} />
               </button>
-              {isOpen && <div id={`cb-${k.page}`}><Detail k={k} canSet={canSet} onSet={(n) => setLevel(k, n)} /></div>}
+              {isOpen && <div id={`cb-${k.page}`}><Detail k={k} canSet={canSet} read={mind?.reads?.consultants?.[k.page]} onSet={(n) => setLevel(k, n)} /></div>}
             </div>
           );
         })}
@@ -192,7 +203,7 @@ function CvConsultants() {
           <p className={s.p}>Until then nobody can say these consultants beat plain rules or a person, and we don’t. Rates show as counts until a consultant has {MIN_RATE_N} results.</p>
         </section>
       </div>
-      <p className={s.fine}>Consultants never raise their own level, start a test, change a price or a schedule, or count a saving. A guardrail breach drops a consultant back to Recommends in that room for 90 days. <button type="button" className={s.link} onClick={() => cv.go('system')}>See every agent’s permissions</button></p>
+      <p className={s.fine}>{mind?.thought ? `Mise last re-read your data ${new Date(mind.thought).toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' })}. ` : 'Mise re-reads your data whenever new data lands and every night. '}Consultants never raise their own level, start a test, change a price or a schedule, or count a saving. A guardrail breach drops a consultant back to Recommends in that room for 90 days. <button type="button" className={s.link} onClick={() => cv.go('system')}>See every agent’s permissions</button></p>
     </div>
   );
 }

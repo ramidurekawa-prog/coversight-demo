@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { casebook } from '../lib/ai/casebook.js';
-import { afterRead, callBrief, decisionLoop, duringRead, howTo, levelFor, mise, MISE } from '../lib/ai/mise.js';
+import { afterRead, callBrief, decisionLoop, duringRead, howTo, levelFor, mise, MISE, miseLine, testReads, withMise } from '../lib/ai/mise.js';
 import { roomMoves } from '../lib/ai/room-moves.js';
 import { numbersOk, sousAnswer, sousFacts, sousSheet } from '../lib/ai/sous.js';
 import { LEVELS_OF_UNDERSTANDING, understand, understandingFacts } from '../lib/ai/understanding.js';
@@ -131,5 +131,42 @@ describe('Mise', () => {
     expect(m.understanding.levels).toHaveLength(5);
     expect(m.learning.map((k) => k.name)).toContain('Roster Coach');
     expect(m.record.calls).toBe(16);
+  });
+});
+
+describe('Mise inside the platform', () => {
+  it('travels with every move the platform shows', () => {
+    const minded = withMise(oak, moves, book);
+    expect(minded).toHaveLength(moves.length);
+    for (const m of minded) expect(m.mise.how.length, m.id).toBeGreaterThan(0);
+    const vendor = minded.find((m) => m.topic === 'purchasing');
+    expect(miseLine(vendor.mise)).toMatchObject({ tone: 'warn' });
+    expect(miseLine(vendor.mise).text).toMatch(/^Last time: “Switch romaine/);
+    expect(withMise(oak, minded, book)[0]).toBe(minded[0]); // already minded: left alone
+    expect(miseLine(null)).toBeNull();
+  });
+
+  it('reads every test of the room for the Pass', () => {
+    const r = testReads(oak, book);
+    expect(r['tue-dinner'].text).toMatch(/^Not clear yet/);
+    expect(r['thu-prep']).toMatchObject({ tone: 'good' });
+    expect(r['thu-prep'].lesson).toMatch(/^Held up at Oakland/);
+    expect(r['wc-romaine']).toBeUndefined(); // another room's test
+  });
+
+  it('has no page of its own', async () => {
+    const { CV_PAGES, CV_NAV } = await import('../lib/pages.js');
+    expect(CV_PAGES.mise).toBeUndefined();
+    expect(CV_NAV.flatMap((g) => g.items)).not.toContain('mise');
+  });
+});
+
+describe('How We Work', () => {
+  it('is the one page that explains Mise, last in the Proof group, and Proof itself carries none of it', async () => {
+    const { CV_PAGES, CV_NAV, CV_TABS } = await import('../lib/pages.js');
+    expect(CV_PAGES.how.title).toBe('How We Work');
+    expect(CV_NAV.find((g) => g.label === 'Proof').items.at(-1)).toBe('how');
+    expect(CV_TABS.proof.map(([id]) => id)).not.toContain('consultants');
+    expect(CV_TABS.team.map(([id]) => id)).toContain('consultants');
   });
 });
