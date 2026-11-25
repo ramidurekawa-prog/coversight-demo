@@ -195,3 +195,15 @@ describe('what Sous can say about the consultants', () => {
     expect(b.today).toBe(NOW.iso);
   });
 });
+
+describe('a saved level out of range (found by scripts/mise-stress.mjs)', () => {
+  it('is held inside the ladder instead of breaking the casebook', async () => {
+    const { casebook: cb, casebookFacts: facts } = await import('../lib/ai/casebook.js');
+    const { deriveRoom: dr } = await import('../lib/data/model.js');
+    const { SEED: seed } = await import('../lib/data/seed.js');
+    const d = dr(seed, 'oakland');
+    const book = cb(d, { levels: { Labour: -1, Menu: 9, Purchasing: 1.7 } });
+    for (const k of book.consultants) expect(k.working >= 0 && k.working <= k.earned.level).toBe(true);
+    expect(() => facts(book, 'Oakland')).not.toThrow();
+  });
+});

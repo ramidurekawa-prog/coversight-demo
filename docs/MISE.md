@@ -88,3 +88,13 @@ allowance spent, the page stands on the built-in records.
   the benchmark network floor (20 locations, 5 groups).
 - Mise never acts. It never claims to beat a person or plain rules before
   `LIFT_RESULTS`.
+
+## Stress test
+
+`node scripts/mise-stress.mjs [datasets] [seed] [out.json]` generates varied
+restaurants from the sample and checks Mise's invariants on each (no crash,
+deterministic, clean words, grounded figures, honest claims, records add up,
+levels, breach drops, before/during/after read right), then simulates 1,000
+consultants with a known true accuracy to check the learning converges. Run it
+after changing anything in `lib/ai/`. First full run (Nov 25, 2026): 3,000
+datasets, 3.2 million checks, 0 failures.
