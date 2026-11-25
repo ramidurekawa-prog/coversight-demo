@@ -31,3 +31,5 @@
 .warn { color: var(--warning-600); }
 .neutral { color: var(--fg-3); }
 @media (max-width: 640px) { .body { padding-left: 8px; } }
+
+.clockIn { margin: 8px 0; }

@@ -10,8 +10,11 @@ import { z } from 'zod';
 
 import { deriveRoom } from '../../lib/data/model.js';
 import { dataEnd } from '../../lib/data/readers.js';
+import { localNow } from '../../lib/data/page/service.js';
+import { staffingCards } from '../../lib/data/page/staffing.js';
 import { applyOp, ASSIGNEES, assigneeLabel, cardState, DECLINE, DEFAULT_TZ, localDay, OPS, queueChanges, queueHistory, queueSummary, queueView, PERSON, todayCards } from '../../lib/data/page/today.js';
 import { saveAction } from '../actions';
+import { covercastFor } from './service';
 import type { Db } from '../db/client';
 import { actions, memberships, snapshots, tasks, testWindows, users } from '../db/schema';
 import { notify } from '../notify';
@@ -47,15 +50,21 @@ async function context(db: Db, v: V, room: string, now: Date) {
       .where(and(eq(actions.orgId, v.orgId), eq(actions.roomId, room), eq(actions.key, key))).orderBy(desc(actions.at), desc(actions.id)).limit(1);
     return r?.value ?? null;
   };
-  const [stored, dismissed, running, roomTasks] = await Promise.all([
+  const [stored, dismissed, running, roomTasks, fences] = await Promise.all([
     latest('queue') as Promise<QueueValue | null>,
     latest('findings') as Promise<Record<string, string> | null>,
     db.select({ lever: testWindows.lever }).from(testWindows)
       .where(and(eq(testWindows.orgId, v.orgId), eq(testWindows.roomId, room), inArray(testWindows.status, ['running', 'waiting']))),
-    db.select({ approvalId: tasks.approvalId, status: tasks.status, roomId: tasks.roomId }).from(tasks)
+    db.select({ approvalId: tasks.approvalId, status: tasks.status, roomId: tasks.roomId, title: tasks.title }).from(tasks)
       .where(and(eq(tasks.orgId, v.orgId), eq(tasks.roomId, room))),
+    latest('fences'),
   ]);
-  const cards: Card[] = todayCards(d, { today, testing: running.map((w) => w.lever), dismissed: dismissed ?? {}, tasks: roomTasks });
+  // The pre-shift staffing cards, by the same rules (and the same Covercast read) as the browser and the approval check.
+  const r = d.room as { fromToast?: boolean; serviceOwn?: unknown; shifts?: unknown[] };
+  const wantsCast = !r.serviceOwn && (r.fromToast || (r.shifts ?? []).length > 0);
+  const cc = wantsCast ? await covercastFor(db, v, room, today, now, fetch) : null;
+  const staffing = staffingCards(d.room, { today, nowMin: localNow(now, tz).minutes, fences, cc, tasks: roomTasks, entries: loaded.ds.inputs?.[room] ?? {} });
+  const cards: Card[] = todayCards(d, { today, testing: running.map((w) => w.lever), dismissed: dismissed ?? {}, tasks: roomTasks, staffing });
   return { own: !!d.room.fromToast, sample: !!loaded.org.sample, tz, today, through: dataEnd(d.room) as string, stored, cards };
 }
 
