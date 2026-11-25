@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { AI_MODEL } from '../server/ai/claude';
+import { AI_MODEL, BRAIN_MODEL } from '../server/ai/claude';
 import { askSous, loadSous, runSous } from '../server/ai/sous';
 import type { Db } from '../server/db/client';
 import { auditLog, notifications, orgs, snapshots, users } from '../server/db/schema';
@@ -196,6 +196,8 @@ describe('the nightly watch', () => {
     const c = fakeClaude({ headline: 'A good, steady week.', lines: [] });
     const r = await runSous(db, orgId, { fetchImpl: c.f, now: NOW });
     expect(Object.values(r.byRoom!).every((x) => x.briefs === 2)).toBe(true);
-    expect(c.calls).toHaveLength(6);
+    // Two briefs per room on Opus, plus Mise's read per room on the brain model.
+    expect(c.calls.filter((x) => x.body.model === AI_MODEL)).toHaveLength(6);
+    expect(c.calls.filter((x) => x.body.model === BRAIN_MODEL)).toHaveLength(3);
   }, 60_000);
 });

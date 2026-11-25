@@ -82,7 +82,8 @@ here ships to customers.
   does that, as that person. `tests/crew-scenarios.test.js` grades the crew on
   scenarios; add one when an agent learns something new.
 - **AI (Sous):** every AI call goes through `askClaude()` in `server/ai/claude.ts`
-  (one model, `claude-opus-5-5`, via `@anthropic-ai/sdk`; structured JSON
+  (`claude-opus-5-5` for Sous; Mise's reads use `BRAIN_MODEL`, set to
+  `claude-fable-5-2`, both in that file; via `@anthropic-ai/sdk`; structured JSON
   replies; a per-group daily allowance). It is a placeholder that switches on
   with `ANTHROPIC_API_KEY`: with no key, or the provider down, every caller
   falls back to its built-in path, so nothing may depend on AI to work.
@@ -145,8 +146,20 @@ here ships to customers.
   ending and the authority level it has *earned* per room. A person grants the
   working level (`autonomy`, never above earned; the server refuses a raise),
   a guardrail breach drops it to Recommends for 90 days, and no agent raises
-  its own. Shown on Consultants (a Proof tab); System reads the same levels.
+  its own. Shown on Consultants (a tab of Mise); System reads the same levels.
   Never say a consultant beats rules or a person before `LIFT_RESULTS`.
+- **Mise, the restaurant's brain** (`docs/MISE.md`): one understanding every
+  page, consultant and answer reads. `lib/ai/understanding.js` (pure) knows the
+  room at five levels (industry, group, location, management, team), each
+  thing with its source, plus what it doesn't know and the data that would
+  teach it most (`smarter`). `lib/ai/mise.js` (pure) runs the decision loop:
+  *before* (each move's what, why, how, worth read against the consultant's
+  record, past breaches, who does it at its level, how it will be measured),
+  *during* (running tests: pointing the right way or not) and *after* (closed
+  tests against the estimate, and the lesson). Its knowledge is also Sous facts
+  (`know:*`). `server/ai/mise.ts` + `GET /api/mise?room=` add the brain
+  model's read of each level, figure-checked, cached by record hash, built-in
+  without a key. Page: Mise (Every week), tabs What it knows / Consultants.
 - **Forecasting (Covercast):** `lib/data/forecast/` (pure) forecasts covers and
   sales by day, week, service, hour and 15 minutes, with a measured 80% range;
   `server/forecast.ts` + `GET /api/forecast?room=`. Pages that show a forecast

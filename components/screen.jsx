@@ -29,6 +29,7 @@ import { CvPlan } from './screens/pages/plan';
 import { CvPortfolio } from './screens/pages/portfolio';
 import { CvProof } from './screens/pages/proof';
 import { CvConsultants } from './screens/pages/consultants';
+import { CvMise } from './screens/pages/mise';
 import { CvPurchasing } from './screens/pages/purchasing';
 import { CvService } from './screens/pages/service';
 import { CvSources } from './screens/pages/sources';
@@ -67,6 +68,7 @@ export const SCREENS = {
   channels: CvChannels,
   proof: CvProof,
   consultants: CvConsultants,
+  mise: CvMise,
   windows: CvWindows,
   levers: CvLevers,
   team: CvTeam,

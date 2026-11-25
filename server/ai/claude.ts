@@ -13,8 +13,10 @@ import { and, eq, gt, inArray, sql } from 'drizzle-orm';
 import type { Db } from '../db/client';
 import { auditLog, orgs } from '../db/schema';
 
-/** The model every in-app AI call uses. */
+/** The model every in-app AI call uses, unless a feature names its own below. */
 export const AI_MODEL = 'claude-opus-5-5';
+/** The model Mise, the restaurant's brain (server/ai/mise.ts), thinks with. One setting: change it here. */
+export const BRAIN_MODEL = 'claude-fable-5-2';
 
 export const aiConfigured = () => !!process.env.ANTHROPIC_API_KEY;
 
@@ -32,6 +34,8 @@ type AskRequest = {
   /** How hard to think. Quick answers run at low; reading a document at medium. */
   effort?: 'low' | 'medium' | 'high';
   timeoutMs?: number;
+  /** Only a feature with its own model setting passes this (Mise: BRAIN_MODEL). Everything else uses AI_MODEL. */
+  model?: string;
 };
 
 /**
@@ -46,7 +50,7 @@ export async function askClaude<T>(req: AskRequest, fetchImpl?: typeof fetch): P
   const client = new Anthropic({ apiKey: key, maxRetries: fetchImpl ? 0 : 1, timeout: req.timeoutMs ?? 45_000, ...(fetchImpl ? { fetch: fetchImpl } : {}) });
   try {
     const res = await client.beta.messages.create({
-      model: AI_MODEL,
+      model: req.model ?? AI_MODEL,
       max_tokens: req.maxTokens ?? 4000,
       // If the model declines a request on policy grounds, the API retries it on its default fallback model.
       betas: ['server-side-fallback-2026-07-01'],
@@ -76,6 +80,7 @@ export async function askClaude<T>(req: AskRequest, fetchImpl?: typeof fetch): P
 export const AI_DAILY = {
   ask: { sample: 20, real: 500, actions: ['sous.ask', 'agents.ask'] },
   brief: { sample: 12, real: 200, actions: ['sous.brief'] },
+  mise: { sample: 6, real: 60, actions: ['mise.read'] },
 } as const;
 
 /** True while this group still has allowance for the feature today. Counted from the audit log, so it needs no table of its own. */

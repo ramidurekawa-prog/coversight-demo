@@ -2,10 +2,9 @@
 
 import * as React from 'react';
 import { Button, Icon } from '../../kit';
-import { useEngine, useSaved } from '../../engine';
-import { CV_D, CV_GROUP, CV_NOW, CV_ROOM, Claim, Outcome, PageHead, cvMoney, useCv } from '../core';
-import { LEVELS, MIN_RATE_N, casebook, consultantSay, endingOf, recordCalls } from '../../../lib/ai/casebook';
-import { roomMoves } from '../../../lib/ai/room-moves';
+import { useBrain } from '../brain';
+import { CV_ROOM, Claim, Outcome, PageHead, cvMoney, useCv } from '../core';
+import { LEVELS, MIN_RATE_N, consultantSay, endingOf } from '../../../lib/ai/casebook';
 import s from './consultants.module.css';
 
 /* ================================================================ Consultants
@@ -128,31 +127,9 @@ function Detail({ k, onSet, canSet }) {
 
 function CvConsultants() {
   const cv = useCv();
-  const eng = useEngine();
-  const saved = eng.actions?.[CV_D.id] || {};
-  const seeded = Object.fromEntries(Object.entries(CV_D.room.autonomy || {}).map(([k, [now]]) => [k, now]));
-  const [levels, saveLevels] = useSaved('autonomy', seeded);
-  const [calls, saveCalls] = useSaved('sous.calls', []);
-  const own = eng.mode === 'server' && eng.org && !eng.org.sample;
+  const { eng, seeded, saveLevels, book, rooms } = useBrain();
   const role = eng.mode === 'server' ? eng.viewer?.role : 'owner';
   const canSet = !role || ['owner', 'admin', 'gm'].includes(role);
-  const rooms = React.useMemo(() => Object.fromEntries((CV_GROUP.rows || []).map((r) => [r.id, r.name])), [eng.version]);
-
-  // What is on offer now is what the consultants are saying now: log each call once, with what it estimated then.
-  const moves = React.useMemo(() => roomMoves(CV_D, saved, { windows: eng.windows || [], tasks: eng.tasks || [] }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [eng.version, eng.room, eng.actions, eng.windows, eng.tasks]);
-  React.useEffect(() => {
-    const next = recordCalls(calls, moves);
-    if (next !== calls) saveCalls(next, `Logged ${plural(next.length - (calls?.length || 0), 'consultant call')}`);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [moves]);
-
-  const book = React.useMemo(() => casebook(CV_D, {
-    windows: own ? eng.windows || [] : undefined, rooms, today: own ? undefined : CV_NOW.iso,
-    calls, acts: saved['sous.learn'] || [], mem: saved.sous || {}, offered: moves, levels: { ...seeded, ...(levels || {}) },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [own, eng.windows, rooms, calls, saved, moves, levels]);
 
   const withRecord = book.consultants.filter((k) => k.record.calls);
   const [open, setOpen] = React.useState(/** @type {string | null} */ (withRecord[0]?.page || null));
@@ -167,7 +144,7 @@ function CvConsultants() {
 
   return (
     <div className="cv-page wide">
-      <PageHead over="Proof" q={q}
+      <PageHead over="Mise · Consultants" q={q}
         sub="Every lever has a consultant. Each keeps a casebook of every call it made and how it ended, and learns from it: how often it is right, how close its estimates are, and how much it may do on its own. Nothing here counts as saved until a test verifies it." />
 
       <div className={s.strip} role="list" aria-label="Every call on record">
