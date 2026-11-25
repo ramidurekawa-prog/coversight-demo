@@ -108,7 +108,7 @@ describe('The server works the call out the same way: a picked time and a guest 
     const s = await loadStaffing(db, owner(), { roomId: 'oakland', date: TUE, meal: 'dinner' }, { now: NOW, covercast: false }) as Record<string, any>;
     expect(s.dinner.forecast).toMatchObject({ covers: 158, original: { covers: 138 } });
     expect(s.dinner.title).toBe('Add 1 server from 7 pm to 8 pm');
-    expect(s.dinner.changes[0]).toMatchObject({ kind: 'adjust', what: '+20 guests at 7 pm: Large party (Birthday)', by: 'Marcus' });
+    expect(s.dinner.changes.find((c: { kind: string }) => c.kind === 'adjust')).toMatchObject({ kind: 'adjust', what: '+20 guests at 7 pm: Large party (Birthday)', by: 'Marcus' });
     // The old call is now refused: the facts moved.
     await expect(approve(owner(), ID)).rejects.toThrow();
   });

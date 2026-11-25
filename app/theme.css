@@ -44,7 +44,7 @@
   /* Status: green verified, red real problem, amber caution (never persimmon). */
   --success-600: #23846A; --success-700: #23846A;
   --error-600: #C64C50;
-  --warning-50: #FBF2E3; --warning-100: #F3E1C2; --warning-500: #B97923; --warning-600: #B97923; --warning-700: #8F5C14;
+  --warning-50: #FBF2E3; --warning-100: #F3E1C2; --warning-500: #B97923; --warning-600: #94600F; /* text-safe amber: 4.8:1 on warning-50 (was #B97923, 3.3:1; UX pass 2026-11-23) */ --warning-700: #8F5C14;
   --exposure-1: #FBF2E3; --exposure-2: #F3E1C2; --exposure-6: #B97923; --exposure: #B97923;
 
   --cat-1: #172536;

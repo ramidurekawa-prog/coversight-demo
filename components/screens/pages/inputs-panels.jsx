@@ -10,6 +10,7 @@ import * as React from 'react';
 import Link from 'next/link';
 
 import { Button, Icon } from '../../kit';
+import { useDialogFocus } from '../../dialog';
 import { CV_D, CV_DS, CV_ROOM, Claim, Pill } from '../core';
 import { CALC, METHODS, NEEDS, READY, SCHEMAS, STEP_ORDER, kindStatus } from '../../../lib/data/page/inputs';
 import { templateRows } from '../../../lib/data/ingest';
@@ -21,22 +22,15 @@ const when = (d) => new Date(d).toLocaleString('en-US', { month: 'short', day: '
 
 /* ------------------------------------------------------------------ the shell */
 export function SidePanel({ over, title, onClose, children, foot, wide = false, workspace = false }) {
-  const ref = React.useRef(null);
-  const back = React.useRef(null);
-  React.useEffect(() => {
-    back.current = document.activeElement;
-    ref.current?.focus();
-    const key = (e) => { if (e.key === 'Escape' && !workspace) onClose(); }; // a workspace holds unsaved rows: only its Close button closes it
-    window.addEventListener('keydown', key);
-    return () => { window.removeEventListener('keydown', key); try { back.current?.focus?.(); } catch { /* gone */ } };
-  }, [onClose, workspace]);
+  const box = React.useRef(null);
+  useDialogFocus(box, onClose, { escape: !workspace }); // a workspace holds unsaved rows: only its Close button closes it
   return (
     <div className={s.scrim} onMouseDown={(e) => { if (e.target === e.currentTarget && !workspace) onClose(); }}>
-      <aside className={`${s.panel} ${wide ? s.panelWide : ''} ${workspace ? s.panelWork : ''}`} role="dialog" aria-modal="true" aria-labelledby="inputs-panel-title">
+      <aside ref={box} className={`${s.panel} ${wide ? s.panelWide : ''} ${workspace ? s.panelWork : ''}`} role="dialog" aria-modal="true" aria-labelledby="inputs-panel-title">
         <header className={s.panelHead}>
           <div className={s.panelHeadText}>
             {over && <span className={s.panelOver}>{over}</span>}
-            <h2 className={s.panelTitle} id="inputs-panel-title" tabIndex={-1} ref={ref}>{title}</h2>
+            <h2 className={s.panelTitle} id="inputs-panel-title" tabIndex={-1} data-autofocus>{title}</h2>
           </div>
           {workspace
             ? <Button size="sm" variant="secondary" icon="X" onClick={onClose}>Close</Button>

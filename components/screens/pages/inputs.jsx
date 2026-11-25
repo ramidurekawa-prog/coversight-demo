@@ -151,7 +151,7 @@ function CvInputs() {
       </section>
 
       <nav className={s.moreLinks} aria-label="More">
-        <button type="button" onClick={() => setPanel({ type: 'conns' })}><Icon name="PlugZap" size={16} />Connections<span className={s.moreNote}>{systems.filter(applies).filter((x) => x.ok).length} of {systems.filter(applies).length} up to date</span></button>
+        <button type="button" data-agent-here="sources" data-agent-label="Check connections" onClick={() => setPanel({ type: 'conns' })}><Icon name="PlugZap" size={16} />Connections<span className={s.moreNote}>{systems.filter(applies).filter((x) => x.ok).length} of {systems.filter(applies).length} up to date</span></button>
         <button type="button" onClick={() => { setHistKind(''); setPanel({ type: 'hist' }); }}><Icon name="History" size={16} />History and undo</button>
         <Link href="/data"><Icon name="Download" size={16} />Export or delete</Link>
       </nav>

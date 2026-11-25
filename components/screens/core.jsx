@@ -3,6 +3,7 @@
 import * as React from 'react';
 
 import { Icon, Button } from '../kit';
+import { useDialogFocus } from '../dialog';
 import { LOCS, NOW, SEED } from '../../lib/data/seed';
 import * as M from '../../lib/data/model';
 import { findingBlocked } from '../../lib/data/findings';
@@ -199,8 +200,8 @@ function Money({ id, children, className = "" }) {
   return <button type="button" className={`cv-money ${className}`} onClick={() => cv.openDeriv(id)} title="See how this is calculated">{children}</button>;
 }
 
-function Pill({ tone = "neutral", icon, children }) {
-  return <span className={`cv-pill ${tone}`}>{icon && <Icon name={icon} size={13} />}{children}</span>;
+function Pill({ tone = "neutral", icon, children, title }) {
+  return <span className={`cv-pill ${tone}`} title={title}>{icon && <Icon name={icon} size={13} />}{children}</span>;
 }
 function Outcome({ k }) {
   const o = CV_OUTCOME[k];
@@ -248,16 +249,13 @@ function PageHead({ over, q, sub, right }) {
 /* ---------------------------------------------------------------- drawer */
 function DerivDrawer({ id, onClose }) {
   const d = cvDerivFor(id);
-  React.useEffect(() => {
-    const k = (e) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", k);
-    return () => window.removeEventListener("keydown", k);
-  }, [onClose]);
+  const ref = React.useRef(null);
+  useDialogFocus(ref, onClose);
   if (!d) return null;
   return (
     <>
       <div className="cv-scrim" onClick={onClose} />
-      <aside className="cv-drawer" role="dialog" aria-label={`How ${d.title} is calculated`}>
+      <aside ref={ref} className="cv-drawer" role="dialog" aria-modal="true" aria-label={`How ${d.title} is calculated`}>
         <div className="hd">
           <div className="cv-col" style={{ gap: 8 }}>
             <span className="cv-over">How this is calculated</span>
@@ -394,23 +392,20 @@ function ApprovalModal({ id, onClose, onConfirm, eng }) {
   const blockedBy = inputBlock(id);
   const breach = fenceBreach(id, eng);
   const [step, setStep] = React.useState("review");
+  const ref = React.useRef(null);
+  useDialogFocus(ref, onClose);
   // A schedule change is checked against the pay rules for where the room is (lib/ai/playbook.js tables only).
   const pay = a && a.system === "7shifts" ? payRuleCheck(CV_D.profile, { sameDay: /\b(tonight|today)\b/i.test(a.title) }) : null;
-  React.useEffect(() => {
-    const k = (e) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", k);
-    return () => window.removeEventListener("keydown", k);
-  }, [onClose]);
   if (!a) return null;
   return (
     <>
       <div className="cv-scrim" style={{ zIndex: "var(--z-modal)" }} onClick={onClose} />
-      <div className="cv-modal" role="dialog" aria-label={a.title}>
+      <div ref={ref} className="cv-modal" role="dialog" aria-modal="true" aria-labelledby="cv-approval-title">
         <div className="hd">
           <div className="cv-col" style={{ gap: 6 }}>
             <span className="cv-over">{a.where}</span>
-            <span className="cv-h3">{a.title}</span>
-            <div className="cv-row"><Pill icon="Gauge">Autonomy {a.level}</Pill><Claim k={a.claim} /><span className="cv-small cv-muted">{a.value}</span></div>
+            <span className="cv-h3" id="cv-approval-title" tabIndex={-1} data-autofocus>{a.title}</span>
+            <div className="cv-row"><Pill icon="UserCheck" title={`Autonomy ${a.level}`}>Needs your approval</Pill><Claim k={a.claim} /><span className="cv-small cv-muted">{a.value}</span></div>
           </div>
           <button className="iconbtn" onClick={onClose} aria-label="Close"><Icon name="X" size={18} /></button>
         </div>
@@ -448,7 +443,6 @@ function ApprovalModal({ id, onClose, onConfirm, eng }) {
             </div>
             <div className="ft">
               <Button variant="ghost" onClick={onClose}>Not now</Button>
-              <Button variant="secondary" onClick={onClose}>Edit first</Button>
               <Button icon="Check" disabled={!!breach || !!blockedBy} onClick={() => { setStep("done"); onConfirm && onConfirm(id); }}>Approve</Button>
             </div>
           </>

@@ -61,6 +61,8 @@ export function errorResponse(err: unknown) {
   if (err instanceof AuthError) return Response.json({ error: err.message }, { status: err.status });
   const e = err as { name?: string; message?: string };
   if (e?.name === 'InputError') return Response.json({ error: e.message }, { status: 400 });
+  // No database: a 503 the browser reads as "run the demo locally", not a crash with a stack trace on every request.
+  if (e?.name === 'NoDatabaseError') return Response.json({ error: 'No database is connected, so this runs in your browser only.' }, { status: 503 });
   console.error(err);
   return Response.json({ error: 'Something went wrong on our side.' }, { status: 500 });
 }
