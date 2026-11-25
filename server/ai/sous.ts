@@ -11,12 +11,14 @@ import { numbersOk, sousBrief, sousCites, sousFacts, sousHash, sousNoticed, sous
 import { agentAnswer, agentBrief, agentFor, agentRead } from '../../lib/ai/agents.js';
 import { agentRecord, sousMoves, sousRemember } from '../../lib/ai/moves.js';
 import { rankMoves, respectNotes, sousLearned } from '../../lib/ai/learn.js';
+import { recordCalls } from '../../lib/ai/casebook.js';
+import { roomMoves } from '../../lib/ai/room-moves.js';
 import { deriveGroup, deriveRoom } from '../../lib/data/model.js';
 import { CV_PAGES } from '../../lib/pages.js';
 import { loadActions } from '../actions';
 import { loadDataset } from '../dataset';
 import type { Db } from '../db/client';
-import { auditLog, meetingActions, snapshots, testWindows } from '../db/schema';
+import { actions, auditLog, meetingActions, snapshots, testWindows } from '../db/schema';
 import { notify } from '../notify';
 import { InputError } from '../org';
 import type { Viewer } from '../session';
@@ -224,9 +226,19 @@ export async function askSous(db: Db, v: V, raw: unknown, { fetchImpl, now = new
 export async function runSous(db: Db, orgId: string, { fetchImpl, now = new Date() }: { fetchImpl?: typeof fetch; now?: Date } = {}) {
   const loaded = await loadDataset(db, orgId);
   if (!loaded) return { rooms: 0 };
-  const byRoom: Record<string, { noticed: number; told: number; briefs: number }> = {};
+  const byRoom: Record<string, { noticed: number; told: number; briefs: number; calls: number }> = {};
+  const [acts, wins, tasks] = await Promise.all([
+    loadActions(db, orgId),
+    db.select().from(testWindows).where(eq(testWindows.orgId, orgId)),
+    listTasks(db, orgId, null),
+  ]);
   for (const roomId of Object.keys(loaded.ds.rooms)) {
     const d = deriveRoom(loaded.ds, roomId);
+    // The consultants' casebook: every move put forward tonight is a call, logged once with what it estimated then.
+    const saved = (acts[roomId] ?? {}) as Record<string, unknown>;
+    const log = (saved['sous.calls'] ?? []) as unknown[];
+    const next = recordCalls(log, roomMoves(d, saved, { windows: wins, tasks, now: now.getTime() }), now.getTime());
+    if (next !== log) await db.insert(actions).values({ orgId, roomId, key: 'sous.calls', value: next, summary: `Logged ${next.length - log.length} consultant call${next.length - log.length === 1 ? '' : 's'}`, userId: null });
     const week = d.hist?.rows?.at(-1)?.iso ?? 'now';
     const noticed = sousNoticed(d).filter((n: { tone: string }) => n.tone === 'warn');
     let told = 0;
@@ -241,7 +253,7 @@ export async function runSous(db: Db, orgId: string, { fetchImpl, now = new Date
         if (r.engine === 'ai') briefs += 1;
       }
     }
-    byRoom[roomId] = { noticed: noticed.length, told, briefs };
+    byRoom[roomId] = { noticed: noticed.length, told, briefs, calls: next.length - log.length };
   }
   return { rooms: Object.keys(byRoom).length, byRoom };
 }

@@ -52,7 +52,7 @@ here ships to customers.
   hours, the period package) use `useSaved(key, initial)` from
   `components/engine.js`; each key needs a zod schema and scope in
   `server/actions.ts` `ACTION_KEYS`, or the server refuses it.
-- **Jobs and tests:** `server/jobs.ts` (sync, links, detection, proof, reverify, billing, cleanup, sous)
+- **Jobs and tests:** `server/jobs.ts` (sync, links, detection, proof, reverify, billing, cleanup, sous, mise)
   run from Vercel Cron (`vercel.json` → `/api/cron/<job>`, `CRON_SECRET`) or
   "Run now". Test windows (`server/proof.ts`) are measured in weeks of the
   room's *data* via `lib/data/readers.js` and closed with `lib/data/pilot.js`;
@@ -82,7 +82,8 @@ here ships to customers.
   does that, as that person. `tests/crew-scenarios.test.js` grades the crew on
   scenarios; add one when an agent learns something new.
 - **AI (Sous):** every AI call goes through `askClaude()` in `server/ai/claude.ts`
-  (one model, `claude-opus-5-5`, via `@anthropic-ai/sdk`; structured JSON
+  (`claude-opus-5-5` for Sous; Mise's reads use `BRAIN_MODEL`, set to
+  `claude-fable-5-2`, both in that file; via `@anthropic-ai/sdk`; structured JSON
   replies; a per-group daily allowance). It is a placeholder that switches on
   with `ANTHROPIC_API_KEY`: with no key, or the provider down, every caller
   falls back to its built-in path, so nothing may depend on AI to work.
@@ -138,6 +139,34 @@ here ships to customers.
   what it noticed and pre-writes briefs. `tests/sous.test.js` and
   `tests/sous.test.ts` cover it; `tests/helpers/fake-claude.ts` stands in for
   the API.
+- **Consultant agents that learn:** each lever's consultant keeps a casebook
+  (`lib/ai/casebook.js`, contract in `docs/CONSULTANTS.md`): every call it made
+  (`sous.calls`), every call that went to a test as an outcome record, its
+  record (counts before rates), its aim (measured vs estimated), a lesson per
+  ending and the authority level it has *earned* per room. A person grants the
+  working level (`autonomy`, never above earned; the server refuses a raise),
+  a guardrail breach drops it to Recommends for 90 days, and no agent raises
+  its own. Shown on Consultants (a Settings tab, next to Autonomy); System reads the same levels.
+  Never say a consultant beats rules or a person before `LIFT_RESULTS`.
+- **Mise, the restaurant's brain** (`docs/MISE.md`): an always-on system
+  built into the platform, never a page. `lib/ai/understanding.js` (pure) knows
+  the room at five levels (industry, group, location, management, team), each
+  thing with its source, plus what it doesn't know and what would teach it
+  most (`smarter`), and becomes Sous facts (`know:*`). `lib/ai/mise.js` (pure)
+  is the decision loop: before (`callBrief`: how, record, last time, who does
+  it, how we'll know), during and after (`testReads`). `withMise()` attaches the
+  brief to every move, so it shows on each page's agent strip (`MiseLine`) and
+  on the Pass (`MiseBrief`, `MiseTest`) from `components/mise.jsx`; add Mise to
+  a new surface there, not as a page. `server/ai/mise.ts` `thinkMise()` runs
+  with no one looking: the nightly `mise` job, after `sync`/`links`/`proof`/
+  `reverify`, and after an input is saved or undone (`after()` in the route).
+  It keeps `mise.state` per room, notifies `mise.learned` once per test that
+  closed, and with a key re-writes the brain model's read (figure-checked,
+  cached by hash), shown on Consultants (a Settings tab). Nothing about Mise
+  goes on the Proof page; *How We Work* (`how`, last in the Proof group)
+  explains Mise, Covercast, Sous and the consultants in plain, careful words
+  (no models, thresholds or formulas; no promises), with each consultant's
+  record and Covercast's accuracy computed from the room in view.
 - **Forecasting (Covercast):** `lib/data/forecast/` (pure) forecasts covers and
   sales by day, week, service, hour and 15 minutes, with a measured 80% range;
   `server/forecast.ts` + `GET /api/forecast?room=`. Pages that show a forecast

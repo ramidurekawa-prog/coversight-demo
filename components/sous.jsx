@@ -5,13 +5,15 @@ import * as React from 'react';
 import { agentAnswer, agentFor, agentRead, agentTeam } from '../lib/ai/agents';
 import { agentRecord, noticedSig, sousBoard, sousMoves, sousRemember } from '../lib/ai/moves';
 import { addNote, asNote, favoriteTopic, learnAsk, notesFor, rankMoves, rankQuestions, respectNotes, sousLearned } from '../lib/ai/learn';
+import { testReads, withMise } from '../lib/ai/mise';
 import { lineCheck } from '../lib/ai/playbook';
 import { SOUS, firstSentence, sousBrief, sousCites, sousFacts, sousNoticed, sousRelevant, sousRole, sousSuggest, sousToday } from '../lib/ai/sous';
 import { money } from '../lib/data/model';
 import { CV_PAGES } from '../lib/pages';
 import { ME, engine, useEngine, useSaved } from './engine';
 import { Button, Icon } from './kit';
-import { Claim, CV_D, CV_GROUP, useCv } from './screens/core';
+import { Claim, CV_D, CV_GROUP, CV_NOW, useCv } from './screens/core';
+import { MiseBrief, MiseLine, MiseTest, roomBook } from './mise';
 import './sous.css';
 
 /* Sous, the AI teammate. Every page has its own Sous agent (lib/ai/agents.js):
@@ -43,8 +45,10 @@ function useLocalSous(role, page) {
     const day = { tasks: (eng.tasks || []).filter((t) => t.roomId === CV_D.id), assigned: today.view?.assigned || {}, open: today.open, fences: saved.fences ?? null };
     const facts = sousFacts(CV_D, { role, windows: eng.windows || [], card: today.card, open: today.open, noticed, group: CV_GROUP, notes, learned, day });
     const brief = sousBrief(CV_D, { role, facts, noticed, card: today.card, open: today.open });
-    const moves = respectNotes(rankMoves(sousMoves(CV_D, { noticed, card: today.card, role, quietIds: memory.quietIds, day }), learned), notes);
-    return { facts, brief, noticed, memory, moves, day, notes, learned, me: eng.actions?.[ME]?.['sous.me'] || { asked: {} }, record: agentRecord(CV_D), suggest: sousSuggest(facts, role), agent: agentRead(page, facts, noticed, { role, moves }) };
+    // Mise, the restaurant's brain: the casebook behind every move, so each one carries its how, its record and what went wrong last time.
+    const book = roomBook(CV_D, { own: eng.mode === 'server' && eng.org && !eng.org.sample, windows: eng.windows, group: CV_GROUP, today: CV_NOW.iso, levels: saved.autonomy });
+    const moves = withMise(CV_D, respectNotes(rankMoves(sousMoves(CV_D, { noticed, card: today.card, role, quietIds: memory.quietIds, day }), learned), notes), book);
+    return { tests: testReads(CV_D, book), facts, brief, noticed, memory, moves, day, notes, learned, me: eng.actions?.[ME]?.['sous.me'] || { asked: {} }, record: agentRecord(CV_D), suggest: sousSuggest(facts, role), agent: agentRead(page, facts, noticed, { role, moves }) };
     // eng.version changes whenever the room or its data does.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [role, page, mem, eng.version, eng.room, eng.actions, eng.windows, eng.tasks]);
@@ -150,6 +154,7 @@ export function PageAgent({ page, role: shellRole = 'owner', onOpen }) {
         <button type="button" className="cv-agent-main" onClick={() => onOpen()} title={`${read.agent.name}: ${read.agent.job}`}>
           <span className="cv-agent-name">{read.agent.name}<i className="new">{warn ? 'Noticed' : 'Suggests'}</i></span>
           <span className="cv-agent-lead">{title}</span>
+          <MiseLine b={move.mise} />
         </button>
         <Stake move={move} />
         <span className="cv-agent-acts">
@@ -555,6 +560,7 @@ export function SousPanel({ onClose, go, role: shellRole = 'owner', tools = fals
                       <div className="cv-ticket-why">
                         <p>{m.why}</p>
                         {link && <p className="link"><Icon name="Link2" size={14} />{link.short}</p>}
+                        <MiseBrief b={m.mise} />
                         {m.source === 'plan' && <p>This is a potential gain, not money saved. It counts only after a test verifies it.</p>}
                       </div>
                     )}
@@ -578,6 +584,7 @@ export function SousPanel({ onClose, go, role: shellRole = 'owner', tools = fals
                   <p className="t">{w.title}</p>
                   {w.progress != null && <span className="cv-ticket-bar" aria-hidden="true"><i style={{ width: `${Math.max(4, Math.min(100, w.progress))}%` }} /></span>}
                   <p className="note">{w.note}</p>
+                  {w.kind === 'test' && <MiseTest r={local.tests[w.goId]} />}
                   <div className="cv-ticket-acts">
                     {w.kind === 'test' ? <button type="button" className="cv-sous-more" onClick={() => leave(w.go, { id: w.goId })}>See the test</button>
                       : <button type="button" className="cv-sous-more" onClick={() => forget(w.memId)}>Bring it back</button>}
@@ -595,6 +602,7 @@ export function SousPanel({ onClose, go, role: shellRole = 'owner', tools = fals
                   <p className="t">{w.title}</p>
                   {w.value && <span className="cv-stake"><b>{w.value}</b>{w.claim && <Claim k={w.claim} />}</span>}
                   <p className="note">{w.note}</p>
+                  {w.kind === 'win' && <MiseTest r={local.tests[w.goId]} />}
                   {w.go && <div className="cv-ticket-acts"><button type="button" className="cv-sous-more" onClick={() => leave(w.go, { id: w.goId })}>See the proof</button></div>}
                 </article>
               ))}

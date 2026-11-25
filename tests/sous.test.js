@@ -572,7 +572,10 @@ describe('Sous learns the restaurant and the person', () => {
     const facts = sousFacts(d, { notes });
     expect(facts.filter((f) => f.topic === 'notes')).toHaveLength(noteFacts(notes).length);
     expect(sousAnswer('Are we open on Mondays?', facts).used).toContain(`note:${notes[0].id}`);
-    expect(sousAnswer('What do you know about us?', facts).used.every((id) => id.startsWith('note:'))).toBe(true);
+    // What people told it comes first; Mise's own understanding of the room may follow.
+    const known = sousAnswer('What do you know about us?', facts).used;
+    expect(known[0]).toMatch(/^note:/);
+    expect(known.every((id) => id.startsWith('note:') || id.startsWith('know:'))).toBe(true);
     const { sousMoves } = await import('../lib/ai/moves.js');
     const vendor = sousMoves(d, { noticed: sousNoticed(d) }).find((m) => m.act.kind === 'email');
     expect(notesFor(`${vendor.title} ${vendor.why}`, notes).map((n) => n.text)).toEqual(['Call Bay Fish Co., never email them']);

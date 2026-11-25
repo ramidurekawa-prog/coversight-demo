@@ -14,6 +14,10 @@ import { actions, auditLog, rooms } from './db/schema';
 import { InputError } from './org';
 import { AuthError, roomLevel, type Viewer } from './session';
 import { CAUSES as TRENDS_CAUSES, NOTE_KEY_RE as TRENDS_NOTE_KEY } from '../lib/data/page/trends.js';
+import { casebook, LEVELS } from '../lib/ai/casebook.js';
+import { deriveRoom } from '../lib/data/model.js';
+import { loadDataset } from './dataset';
+import { testWindows } from './db/schema';
 
 const id = z.string().min(1).max(120);
 const isoDate = z.string().max(40);
@@ -103,9 +107,11 @@ export const ACTION_KEYS = {
   'sous.me': { scope: 'person', schema: z.object({ asked: z.record(z.string().min(1).max(40).regex(/^[\w-]+$/), z.number().int().min(0).max(999)).refine((r) => Object.keys(r).length <= 40, 'too many') }) },
   /** What each page's agent last told this person, by "room:page", so it only speaks up when something is new. */
   'sous.seen': { scope: 'person', schema: z.record(z.string().min(1).max(110), z.string().max(40)).refine((r) => Object.keys(r).length <= 300, 'too many') },
+  /** Every call a lever consultant made in this room (the moves it put forward), once each, with what it estimated then. lib/ai/casebook.js recordCalls. */
+  'sous.calls': { scope: 'room', schema: z.array(z.object({ id: z.string().min(1).max(120), topic: z.string().min(1).max(40).regex(/^[\w-]+$/), title: z.string().max(200), value: z.string().max(40).optional(), claim: z.string().max(10).optional(), at: isoDate })).max(100) },
   /** Ideas to test later that can't be valued yet (no data source for them). */
   ideas: { scope: 'room', schema: z.array(z.object({ id: id, title: z.string().trim().min(1).max(200), why: z.string().max(400).optional(), at: isoDate })).max(50) },
-  /** Autonomy level per lever (0 observes … 4 holds the line), set on System. */
+  /** Autonomy level per lever (0 observes … 4 holds the line), set on System and Consultants. Never above what the lever's consultant has earned (earnedAutonomy). */
   autonomy: { scope: 'room', schema: z.record(z.string().min(1).max(40), z.number().int().min(0).max(4)) },
   /** Pricing on the invoice: per room per month, and the fee on reconciled savings. */
   pricing: { scope: 'group', schema: z.object({ perRoomMonthlyCents: z.number().int().min(0).max(1_000_000), feePct: z.number().min(0).max(50) }) },
@@ -221,6 +227,7 @@ export async function saveAction(
   const parsed = spec.schema.safeParse(value);
   if (!parsed.success) throw new InputError(`invalid ${key}: ${parsed.error.issues[0]?.message ?? 'bad value'}`);
   if (JSON.stringify(parsed.data ?? null).length > MAX_BYTES) throw new InputError(`${key} is too large`);
+  if (key === 'autonomy') await guardAutonomy(db, v, room, parsed.data as Record<string, number>);
   const note = String(summary ?? '').slice(0, 400);
   const [row] = await db
     .insert(actions)
@@ -228,4 +235,37 @@ export async function saveAction(
     .returning({ id: actions.id, at: actions.at });
   await db.insert(auditLog).values({ orgId: v.orgId, userId: v.userId, action: `action.${key}`, detail: { roomId: room, summary: note } });
   return { id: row!.id, at: row!.at.toISOString(), value: parsed.data ?? null };
+}
+
+/**
+ * The level each lever's consultant has earned in one room, from the group's
+ * evidence (lib/ai/casebook.js earnedLevel). A real group reads its own test
+ * windows; the sample reads its proof history.
+ */
+export async function earnedAutonomy(db: Db, v: Pick<Viewer, 'orgId' | 'rooms'>, roomId: string): Promise<Record<string, number>> {
+  const loaded = await loadDataset(db, v.orgId, v.rooms);
+  if (!loaded || !(roomId in loaded.ds.rooms)) throw new InputError(`no room '${roomId}' in this org`);
+  const d = deriveRoom(loaded.ds, roomId);
+  const wins = loaded.org?.sample ? [] : await db.select().from(testWindows).where(eq(testWindows.orgId, v.orgId));
+  const book = casebook(d, loaded.org?.sample ? { today: loaded.ds.now?.iso } : { windows: wins });
+  return Object.fromEntries(book.consultants.map((k: { lever: string; earned: { level: number } }) => [k.lever, k.earned.level]));
+}
+
+/**
+ * A person may lower any lever or keep it where it is, but may raise one only
+ * as far as its consultant has earned. Agents never call this path at all
+ * (lib/agents/policy.js refuses autonomy.raise).
+ */
+async function guardAutonomy(db: Db, v: Pick<Viewer, 'orgId' | 'rooms'>, roomId: string, next: Record<string, number>) {
+  const [prev] = await db.select({ value: actions.value }).from(actions)
+    .where(and(eq(actions.orgId, v.orgId), eq(actions.roomId, roomId), eq(actions.key, 'autonomy'))).orderBy(desc(actions.at)).limit(1);
+  const loaded = await loadDataset(db, v.orgId, v.rooms);
+  const seeded = Object.fromEntries(Object.entries(((loaded?.ds.rooms[roomId] as { autonomy?: Record<string, [number, number]> } | undefined)?.autonomy) ?? {}).map(([k, [now]]) => [k, now]));
+  const cur: Record<string, number> = { ...seeded, ...((prev?.value as Record<string, number> | null) ?? {}) };
+  const raised = Object.entries(next).filter(([k, n]) => n > (cur[k] ?? 0));
+  if (!raised.length) return;
+  const earned = await earnedAutonomy(db, v, roomId);
+  for (const [k, n] of raised) {
+    if (n > (earned[k] ?? 0)) throw new InputError(`${k} has earned ${LEVELS[earned[k] ?? 0]?.name ?? 'Observes'} here, so it can't be set to ${LEVELS[n]?.name ?? n} yet.`);
+  }
 }
