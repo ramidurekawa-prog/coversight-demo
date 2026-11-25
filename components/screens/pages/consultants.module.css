@@ -9,7 +9,7 @@
 
 .lead { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0; font-size: 15px; color: var(--fg-1); }
 .lead > svg { color: var(--money-up); flex: none; }
-.lead > span { flex: 1 1 240px; min-width: 0; }
+.lead > svg + span { flex: 1 1 240px; min-width: 0; }
 
 .table { overflow: hidden; }
 .thead, .summary { display: grid; grid-template-columns: minmax(180px, 1.2fr) minmax(200px, 1.4fr) minmax(150px, 1fr) minmax(190px, 1.1fr) 20px; gap: 16px; align-items: center; }
