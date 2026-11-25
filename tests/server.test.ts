@@ -215,11 +215,39 @@ describe('activity feed', () => {
     await db.insert(users).values({ id: 'u1', name: 'Maria', email: 'm@x.co' });
     const org = await createSampleOrg(db, { ownerId: 'u1' });
     await commitInput(db, { orgId: org.id, userId: 'u1', roomId: 'oakland', kind: 'waste', rows: [{ item: 'Salmon', qty: 1, reason: 'spoiled' }] });
-    await saveAction(db, { orgId: org.id, userId: 'u1', role: 'owner', rooms: null }, { roomId: 'berkeley', key: 'autonomy', value: { Labour: 2 }, summary: 'Autonomy changed' });
+    await saveAction(db, { orgId: org.id, userId: 'u1', role: 'owner', rooms: null }, { roomId: 'berkeley', key: 'autonomy', value: { Labour: 0 }, summary: 'Autonomy changed' });
     const all = await activity(db, { orgId: org.id, rooms: null });
     expect(all.map((a) => a.what)).toEqual(['decided: Autonomy changed', 'entered data', 'created the group']);
     expect(all[0]!.who).toBe('Maria');
     const gm = await activity(db, { orgId: org.id, rooms: ['berkeley'] });
     expect(gm.map((a) => a.what)).toEqual(['decided: Autonomy changed', 'created the group']);
+  });
+});
+
+describe('earned autonomy', () => {
+  it('a person can raise a lever only as far as its consultant has earned, and can always lower it', async () => {
+    const { users } = await import('../server/db/schema');
+    await db.insert(users).values({ id: 'u-auto', name: 'Ana', email: 'a@x.co' });
+    const org = await createSampleOrg(db, { ownerId: 'u-auto' });
+    const v = { orgId: org.id, userId: 'u-auto', role: 'owner' as const, rooms: null };
+    const { earnedAutonomy } = await import('../server/actions');
+    // Labor held up at Oakland and Walnut Creek, but broke a guardrail at Berkeley on Aug 24: Berkeley is back to Recommends.
+    expect(await earnedAutonomy(db, v, 'oakland')).toMatchObject({ Labour: 3, Menu: 1, Throughput: 0 });
+    expect((await earnedAutonomy(db, v, 'berkeley')).Labour).toBe(1);
+    await expect(saveAction(db, v, { roomId: 'berkeley', key: 'autonomy', value: { Labour: 2 } })).rejects.toThrow(/Labour has earned Recommends here/);
+    await expect(saveAction(db, v, { roomId: 'oakland', key: 'autonomy', value: { Labour: 4 } })).rejects.toThrow(/can't be set to Holds the line/);
+    await saveAction(db, v, { roomId: 'oakland', key: 'autonomy', value: { Labour: 3 } });
+    await saveAction(db, v, { roomId: 'oakland', key: 'autonomy', value: { Labour: 0, Menu: 0 } });
+    // Saving the levels a room already has is never a raise.
+    await saveAction(db, v, { roomId: 'walnut', key: 'autonomy', value: { Labour: 3, Purchasing: 1, Controls: 2 } });
+  });
+
+  it('keeps the consultants’ call log, bounded', async () => {
+    const { users } = await import('../server/db/schema');
+    await db.insert(users).values({ id: 'u-calls', name: 'Bo', email: 'b@x.co' });
+    const org = await createSampleOrg(db, { ownerId: 'u-calls' });
+    const v = { orgId: org.id, userId: 'u-calls', role: 'gm' as const, rooms: ['oakland'] };
+    await saveAction(db, v, { roomId: 'oakland', key: 'sous.calls', value: [{ id: 'do:plan:x', topic: 'labor', title: 'Trim Tuesday close', value: '$120', claim: 'est', at: '2026-10-27T12:00:00.000Z' }] });
+    await expect(saveAction(db, v, { roomId: 'oakland', key: 'sous.calls', value: Array.from({ length: 101 }, (_, i) => ({ id: `c${i}`, topic: 'labor', title: 't', at: 'x' })) })).rejects.toThrow(/invalid sous.calls/);
   });
 });

@@ -4,20 +4,21 @@ import * as React from 'react';
 import { PlatformHealth } from '../live';
 import { Crew } from '../crew';
 import { useEngine, useSaved } from '../../engine';
-import { CV_D, CV_ROOM, Pill, Callout, PageHead } from '../core';
+import { CV_D, CV_NOW, CV_ROOM, Pill, Callout, PageHead } from '../core';
+import { casebook } from '../../../lib/ai/casebook';
 
 /* ================================================================ System (autonomy and the crew) */
-const LEVER_NEED = {
-  Labour: "A4 needs a full quarter at A3 without an un-caught reversal",
-  Menu: "A2 needs write access to Toast menus and a preview of the change",
-  Purchasing: "A3 needs a verified renegotiation at this room",
-  Controls: "A2 needs a measured comp rate at this room",
-  Throughput: "A1 needs waitlist data, so a recommendation can rest on a measured figure",
-};
-const cvLevers = () => Object.entries(CV_D.room.autonomy).map(([k, [now, earned]]) => ({ k, now, earned, need: LEVER_NEED[k] }));
+/** Each lever's level and what it has earned: computed from its consultant's casebook (lib/ai/casebook.js), never typed. */
+const cvLevers = (book) => Object.entries(CV_D.room.autonomy).map(([k, [now]]) => {
+  const c = book.consultants.find((x) => x.lever === k);
+  const earned = c?.earned.level ?? 0;
+  const need = c?.earned.capped ? `Dropped back: ${c.earned.capped.why}` : c?.earned.next ? `A${c.earned.next.level} needs: ${c.earned.next.needs.join('; ').toLowerCase()}` : '';
+  return { k, now: Math.min(now, earned), earned, need, name: c?.name };
+});
 function CvSystem() {
-  const CV_LEVERS = cvLevers();
   const eng = useEngine();
+  const own = eng.mode === 'server' && eng.org && !eng.org.sample;
+  const CV_LEVERS = cvLevers(casebook(CV_D, own ? { windows: eng.windows || [] } : { today: CV_NOW.iso }));
   const [levels, saveLevels] = useSaved('autonomy', Object.fromEntries(CV_LEVERS.map((l) => [l.k, l.now])));
   const setLevels = (fn) => saveLevels(fn, 'Autonomy changed');
   const [real, setReal] = React.useState(null);
@@ -30,7 +31,7 @@ function CvSystem() {
   return (
     <div className="cv-page wide">
       <PageHead over="System" q="Who is doing what, and how much rope do they have?"
-        sub="Autonomy is granted per lever and per room, never globally. Each level is earned by evidence, and any guardrail breach drops that lever back to recommending." />
+        sub="Autonomy is granted per lever and per room, never globally. Each level is earned by the lever consultant's own record (see Consultants under Proof), and any guardrail breach drops that lever back to recommending." />
       <PlatformHealth />
       <Callout icon="Info">Autonomy is saved per room, but in practice every lever is at most <b>Recommends</b> today: Coversight can&apos;t write to Toast or 7shifts yet, so an approval becomes a guided task (Today) rather than a change made for you.</Callout>
       <section className="cv-card">
@@ -41,11 +42,11 @@ function CvSystem() {
               <span style={{ fontWeight: 600 }}>{l.k}</span>
               <div className="cv-dial" role="radiogroup" aria-label={`${l.k} autonomy`}>
                 {[0, 1, 2, 3, 4].map((i) => (
-                  <button key={i} role="radio" aria-checked={levels[l.k] === i} className={`${levels[l.k] === i ? "on" : ""} ${i <= l.earned ? "earned" : ""}`} disabled={i > l.earned}
+                  <button key={i} role="radio" aria-checked={Math.min(levels[l.k] ?? l.now, l.earned) === i} className={`${Math.min(levels[l.k] ?? l.now, l.earned) === i ? "on" : ""} ${i <= l.earned ? "earned" : ""}`} disabled={i > l.earned}
                     title={i > l.earned ? l.need : LV[i]} onClick={() => setLevels((s) => ({ ...s, [l.k]: i }))}>A{i}</button>
                 ))}
               </div>
-              <span className="cv-small cv-muted">{LV[levels[l.k]]}. {l.earned < 4 ? l.need + "." : ""}</span>
+              <span className="cv-small cv-muted">{LV[Math.min(levels[l.k] ?? l.now, l.earned)]}. {l.need ? l.need + "." : ""}</span>
             </div>
           ))}
         </div>

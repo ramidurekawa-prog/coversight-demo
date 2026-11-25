@@ -138,6 +138,15 @@ here ships to customers.
   what it noticed and pre-writes briefs. `tests/sous.test.js` and
   `tests/sous.test.ts` cover it; `tests/helpers/fake-claude.ts` stands in for
   the API.
+- **Consultant agents that learn:** each lever's consultant keeps a casebook
+  (`lib/ai/casebook.js`, contract in `docs/CONSULTANTS.md`): every call it made
+  (`sous.calls`), every call that went to a test as an outcome record, its
+  record (counts before rates), its aim (measured vs estimated), a lesson per
+  ending and the authority level it has *earned* per room. A person grants the
+  working level (`autonomy`, never above earned; the server refuses a raise),
+  a guardrail breach drops it to Recommends for 90 days, and no agent raises
+  its own. Shown on Consultants (a Proof tab); System reads the same levels.
+  Never say a consultant beats rules or a person before `LIFT_RESULTS`.
 - **Forecasting (Covercast):** `lib/data/forecast/` (pure) forecasts covers and
   sales by day, week, service, hour and 15 minutes, with a measured 80% range;
   `server/forecast.ts` + `GET /api/forecast?room=`. Pages that show a forecast
